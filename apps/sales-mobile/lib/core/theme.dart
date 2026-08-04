@@ -28,7 +28,7 @@ class AppTheme {
         elevation: 0,
         centerTitle: false,
       ),
-      cardTheme: CardTheme(
+      cardTheme: ThemeData().cardTheme.copyWith(
         color: Colors.white,
         elevation: 0,
         margin: EdgeInsets.zero,
