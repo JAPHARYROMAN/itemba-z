@@ -27,7 +27,7 @@ jobs:
         run: pnpm --package=@redocly/cli@2.9.0 dlx redocly lint contracts/openapi/itemba-z.v1.yaml
       - name: Validate event schema JSON
         run: node -e "JSON.parse(require('fs').readFileSync('contracts/events/event-envelope.v1.schema.json','utf8'))"
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.8.5
       - name: Validate Terraform
