@@ -4,14 +4,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
-  Bell, Building2, CalendarDays, ChartNoAxesCombined, ChevronDown, CircleHelp, ClipboardList,
-  Landmark, LayoutDashboard, LogOut, MapPin, Menu, PackageOpen, Search, Settings2, ShieldCheck,
+  Bell, ChartNoAxesCombined, ChevronDown, CircleHelp, ClipboardList,
+  Landmark, LayoutDashboard, LogOut, Menu, PackageOpen, Search, Settings2, ShieldCheck,
   ShoppingCart, Truck, UserRoundCog, UsersRound, Wifi, X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
+import { LiveContextStrip } from "@/components/live-sales/live-context-strip";
 import { useLanguage } from "@/components/language-provider";
 import { navigationGroups, type NavigationIcon } from "@/lib/navigation";
+import { text } from "@/lib/i18n";
 
 const iconMap: Record<NavigationIcon, LucideIcon> = {
   dashboard: LayoutDashboard, customers: UsersRound, suppliers: Truck, sales: ShoppingCart,
@@ -55,7 +57,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
         <div className="sidebar-system">
           <div className="system-icon"><Wifi size={17} /></div>
-          <div><strong>{t("connected")}</strong><span>{t("configuration")}</span></div>
+          <div><strong>{l(text("Live API guarded", "API hai inalindwa"))}</strong><span>OIDC · server BFF</span></div>
         </div>
       </aside>
 
@@ -85,9 +87,9 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                 </div>
               </details>
               <details className="header-popover profile-popover">
-                <summary className="profile-summary"><span className="avatar">AM</span><span className="profile-copy"><strong>Amina Msuya</strong><small>Finance Manager</small></span><ChevronDown size={15} /></summary>
+                <summary className="profile-summary"><span className="avatar">OP</span><span className="profile-copy"><strong>{l(text("Signed-in operator", "Mtumiaji aliyeingia"))}</strong><small>{l(text("Live ERP identity", "Utambulisho wa ERP hai"))}</small></span><ChevronDown size={15} /></summary>
                 <div className="popover-panel profile-panel">
-                  <p><span>{t("signedInAs")}</span><strong>amina.msuya@itemba.co.tz</strong></p>
+                  <p><span>{t("signedInAs")}</span><strong>{l(text("OIDC session", "Kikao cha OIDC"))}</strong></p>
                   <button type="button"><CircleHelp size={17} />{t("help")}</button>
                   <button type="button"><ShieldCheck size={17} />{t("securityAccess")}</button>
                   <button type="button"><LogOut size={17} />{t("signOut")}</button>
@@ -95,11 +97,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
               </details>
             </div>
           </div>
-          <div className="context-bar" aria-label={t("activeContext")}>
-            <div><Building2 size={15} /><span><small>{t("company")}</small><strong>Itemba Trading Co. Ltd</strong></span></div>
-            <div><MapPin size={15} /><span><small>{t("branch")}</small><strong>Dar es Salaam HQ</strong></span></div>
-            <div><CalendarDays size={15} /><span><small>{t("period")}</small><strong>Aug 2026 <em>{t("open")}</em></strong></span></div>
-          </div>
+          <LiveContextStrip />
         </header>
         <main id="main-content" className="main-content">{children}</main>
       </div>

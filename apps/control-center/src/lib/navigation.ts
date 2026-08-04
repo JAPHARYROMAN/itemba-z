@@ -34,7 +34,7 @@ export const navigationGroups: Array<{
     items: [
       { href: "/customers", label: text("Customers", "Wateja"), icon: "customers", module: "customers" },
       { href: "/suppliers", label: text("Suppliers", "Wasambazaji"), icon: "suppliers", module: "suppliers" },
-      { href: "/sales", label: text("Sales", "Mauzo"), icon: "sales", module: "sales", badge: "12" },
+      { href: "/sales", label: text("Sales", "Mauzo"), icon: "sales", module: "sales" },
       { href: "/purchases", label: text("Purchases", "Manunuzi"), icon: "purchases", module: "purchases" },
       { href: "/inventory", label: text("Inventory", "Bidhaa"), icon: "inventory", module: "inventory", badge: "4" },
       { href: "/finance", label: text("Finance", "Fedha"), icon: "finance", module: "finance" },

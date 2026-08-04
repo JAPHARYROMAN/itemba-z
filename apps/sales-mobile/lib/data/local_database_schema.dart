@@ -5,7 +5,7 @@ import 'package:sqflite_sqlcipher/sqlite_api.dart';
 class LocalDatabaseSchema {
   const LocalDatabaseSchema._();
 
-  static const version = 4;
+  static const version = 10;
 
   static Future<void> configure(Database database) async {
     await database.execute('PRAGMA foreign_keys = ON');
@@ -21,6 +21,13 @@ class LocalDatabaseSchema {
       await _createDraftTables(database, exactIntegers: exactIntegers);
     }
     if (targetVersion >= 3) await _createSalesAndSyncTables(database);
+    if (targetVersion >= 5) {
+      await _createMobileIdentityTables(
+        database,
+        includeOfflineLease: targetVersion >= 10,
+      );
+    }
+    if (targetVersion >= 8) await _createCandidateDeviceTable(database);
   }
 
   /// Sqflite invokes this callback inside the same transaction used to update
@@ -44,6 +51,29 @@ class LocalDatabaseSchema {
     if (oldVersion < 4 && newVersion >= 4) {
       await _migrateV3ToExactIntegers(database);
     }
+    if (oldVersion < 5 && newVersion >= 5) {
+      await _createMobileIdentityTables(
+        database,
+        includeOfflineLease: newVersion >= 10,
+      );
+      await _upgradeSyncResultsV5(database);
+    }
+    if (oldVersion < 6 && newVersion >= 6) {
+      await _upgradeMobileEnrollmentV6(database);
+      await _upgradeSyncResultsV5(database);
+    }
+    if (oldVersion < 7 && newVersion >= 7) {
+      await _upgradeProductsV7(database);
+    }
+    if (oldVersion < 8 && newVersion >= 8) {
+      await _createCandidateDeviceTable(database);
+    }
+    if (oldVersion < 9 && newVersion >= 9) {
+      await _upgradeEnrollmentVersionsV9(database);
+    }
+    if (oldVersion < 10 && newVersion >= 10) {
+      await _upgradeOfflineLeaseV10(database);
+    }
   }
 
   static Future<void> _createCustomerTable(
@@ -65,7 +95,7 @@ class LocalDatabaseSchema {
         current_exposure $numericType,
         overdue_amount $numericType,
         due_date_epoch INTEGER,
-        master_data_version TEXT NOT NULL,
+        master_data_version INTEGER NOT NULL,
         updated_at_epoch INTEGER NOT NULL
       )
     ''');
@@ -87,11 +117,34 @@ class LocalDatabaseSchema {
         unit TEXT NOT NULL,
         selling_price $numericType NOT NULL CHECK (selling_price >= 0),
         available_quantity $numericType NOT NULL CHECK (available_quantity >= 0),
-        master_data_version TEXT NOT NULL,
-        price_version TEXT NOT NULL,
+        tax_basis_points INTEGER CHECK (tax_basis_points BETWEEN 0 AND 10000),
+        master_data_version INTEGER NOT NULL,
+        price_version INTEGER NOT NULL,
         updated_at_epoch INTEGER NOT NULL
       )
     ''');
+  }
+
+  static Future<void> _createCandidateDeviceTable(Database database) async {
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS mobile_device_identity (
+        singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+        candidate_device_id TEXT NOT NULL,
+        updated_at_epoch INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  static Future<void> _upgradeProductsV7(Database database) async {
+    final columns = await database.rawQuery(
+      'PRAGMA table_info(cached_products)',
+    );
+    if (!columns.any((row) => row['name'] == 'tax_basis_points')) {
+      await database.execute(
+        'ALTER TABLE cached_products ADD COLUMN tax_basis_points INTEGER '
+        'CHECK (tax_basis_points BETWEEN 0 AND 10000)',
+      );
+    }
   }
 
   static Future<void> _createDraftTables(
@@ -146,8 +199,8 @@ class LocalDatabaseSchema {
         branch_id TEXT NOT NULL,
         warehouse_id TEXT NOT NULL,
         app_version TEXT NOT NULL,
-        master_data_version TEXT NOT NULL,
-        price_version TEXT NOT NULL,
+        master_data_version INTEGER NOT NULL,
+        price_version INTEGER NOT NULL,
         sync_attempt_number INTEGER NOT NULL CHECK (sync_attempt_number > 0),
         command_json TEXT NOT NULL,
         queued_at_epoch INTEGER NOT NULL,
@@ -158,7 +211,9 @@ class LocalDatabaseSchema {
       CREATE TABLE IF NOT EXISTS sync_results (
         idempotency_key TEXT PRIMARY KEY,
         server_sale_id TEXT NOT NULL,
-        receipt_number TEXT NOT NULL,
+        receipt_reference TEXT NOT NULL,
+        fiscal_status TEXT NOT NULL,
+        server_total_minor INTEGER,
         recorded_at_epoch INTEGER NOT NULL
       )
     ''');
@@ -170,6 +225,178 @@ class LocalDatabaseSchema {
       CREATE INDEX IF NOT EXISTS idx_sync_queue_queued
       ON sync_queue(queued_at_epoch ASC)
     ''');
+  }
+
+  static Future<void> _createMobileIdentityTables(
+    Database database, {
+    required bool includeOfflineLease,
+  }) async {
+    final offlineLeaseColumn =
+        includeOfflineLease
+            ? 'offline_sales_valid_until_epoch INTEGER NOT NULL,'
+            : '';
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS mobile_connection (
+        singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+        base_url TEXT NOT NULL,
+        identity_mode TEXT NOT NULL
+          CHECK (identity_mode IN ('bearer', 'developmentHeaders')),
+        dev_actor_id TEXT,
+        dev_tenant_id TEXT,
+        dev_company_id TEXT,
+        dev_branch_id TEXT,
+        dev_warehouse_id TEXT,
+        updated_at_epoch INTEGER NOT NULL
+      )
+    ''');
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS device_enrollment (
+        singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+        device_id TEXT NOT NULL,
+        device_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        company_id TEXT NOT NULL,
+        branch_id TEXT NOT NULL,
+        warehouse_id TEXT NOT NULL,
+        app_version TEXT NOT NULL,
+        master_data_version INTEGER NOT NULL,
+        price_version INTEGER NOT NULL,
+        available_master_data_version INTEGER NOT NULL,
+        available_price_version INTEGER NOT NULL,
+        timezone TEXT NOT NULL,
+        offline_enabled INTEGER NOT NULL CHECK (offline_enabled IN (0, 1)),
+        transaction_value_limit_minor INTEGER NOT NULL,
+        daily_value_limit_minor INTEGER NOT NULL,
+        remaining_daily_value_minor INTEGER NOT NULL,
+        $offlineLeaseColumn
+        stock_allocations_json TEXT NOT NULL,
+        enrolled_at_epoch INTEGER NOT NULL,
+        last_seen_at_epoch INTEGER NOT NULL
+      )
+    ''');
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS device_allocation (
+        singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+        offline_enabled INTEGER NOT NULL CHECK (offline_enabled IN (0, 1)),
+        transaction_limit_minor INTEGER NOT NULL,
+        daily_value_limit_minor INTEGER NOT NULL,
+        remaining_daily_minor INTEGER NOT NULL,
+        $offlineLeaseColumn
+        product_quantities_json TEXT NOT NULL,
+        updated_at_epoch INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  static Future<void> _upgradeSyncResultsV5(Database database) async {
+    final columns = await database.rawQuery('PRAGMA table_info(sync_results)');
+    final names = columns.map((row) => row['name']).whereType<String>().toSet();
+    if (!names.contains('receipt_reference')) {
+      await database.execute(
+        "ALTER TABLE sync_results ADD COLUMN receipt_reference TEXT NOT NULL DEFAULT ''",
+      );
+      if (names.contains('receipt_number')) {
+        await database.execute(
+          "UPDATE sync_results SET receipt_reference = receipt_number WHERE receipt_reference = ''",
+        );
+      }
+    }
+    if (!names.contains('fiscal_status')) {
+      await database.execute(
+        "ALTER TABLE sync_results ADD COLUMN fiscal_status TEXT NOT NULL DEFAULT 'notConfigured'",
+      );
+    }
+    if (!names.contains('server_total_minor')) {
+      await database.execute(
+        'ALTER TABLE sync_results ADD COLUMN server_total_minor INTEGER',
+      );
+    }
+  }
+
+  static Future<void> _upgradeMobileEnrollmentV6(Database database) async {
+    final enrollmentColumns = await database.rawQuery(
+      'PRAGMA table_info(device_enrollment)',
+    );
+    final enrollmentNames =
+        enrollmentColumns.map((row) => row['name']).whereType<String>().toSet();
+    final enrollmentAdditions = <String, String>{
+      'timezone': "TEXT NOT NULL DEFAULT 'Africa/Dar_es_Salaam'",
+      'transaction_value_limit_minor': 'INTEGER NOT NULL DEFAULT 0',
+      'daily_value_limit_minor': 'INTEGER NOT NULL DEFAULT 0',
+      'remaining_daily_value_minor': 'INTEGER NOT NULL DEFAULT 0',
+      'stock_allocations_json': "TEXT NOT NULL DEFAULT '[]'",
+    };
+    for (final entry in enrollmentAdditions.entries) {
+      if (!enrollmentNames.contains(entry.key)) {
+        await database.execute(
+          'ALTER TABLE device_enrollment ADD COLUMN ${entry.key} ${entry.value}',
+        );
+      }
+    }
+    final allocationColumns = await database.rawQuery(
+      'PRAGMA table_info(device_allocation)',
+    );
+    final allocationNames =
+        allocationColumns.map((row) => row['name']).whereType<String>().toSet();
+    if (!allocationNames.contains('daily_value_limit_minor')) {
+      await database.execute(
+        'ALTER TABLE device_allocation ADD COLUMN daily_value_limit_minor INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+  }
+
+  static Future<void> _upgradeEnrollmentVersionsV9(Database database) async {
+    final columns = await database.rawQuery(
+      'PRAGMA table_info(device_enrollment)',
+    );
+    final names = columns.map((row) => row['name']).whereType<String>().toSet();
+    if (!names.contains('available_master_data_version')) {
+      await database.execute(
+        'ALTER TABLE device_enrollment ADD COLUMN '
+        'available_master_data_version INTEGER NOT NULL DEFAULT 1',
+      );
+      await database.execute(
+        'UPDATE device_enrollment SET available_master_data_version = '
+        'CASE WHEN master_data_version > 0 THEN master_data_version ELSE 1 END',
+      );
+    }
+    if (!names.contains('available_price_version')) {
+      await database.execute(
+        'ALTER TABLE device_enrollment ADD COLUMN '
+        'available_price_version INTEGER NOT NULL DEFAULT 1',
+      );
+      await database.execute(
+        'UPDATE device_enrollment SET available_price_version = '
+        'CASE WHEN price_version > 0 THEN price_version ELSE 1 END',
+      );
+    }
+  }
+
+  static Future<void> _upgradeOfflineLeaseV10(Database database) async {
+    final enrollmentColumns = await database.rawQuery(
+      'PRAGMA table_info(device_enrollment)',
+    );
+    final enrollmentNames =
+        enrollmentColumns.map((row) => row['name']).whereType<String>().toSet();
+    if (!enrollmentNames.contains('offline_sales_valid_until_epoch')) {
+      await database.execute(
+        'ALTER TABLE device_enrollment ADD COLUMN '
+        'offline_sales_valid_until_epoch INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    final allocationColumns = await database.rawQuery(
+      'PRAGMA table_info(device_allocation)',
+    );
+    final allocationNames =
+        allocationColumns.map((row) => row['name']).whereType<String>().toSet();
+    if (!allocationNames.contains('offline_sales_valid_until_epoch')) {
+      await database.execute(
+        'ALTER TABLE device_allocation ADD COLUMN '
+        'offline_sales_valid_until_epoch INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   static Future<void> _migrateV3ToExactIntegers(Database database) async {

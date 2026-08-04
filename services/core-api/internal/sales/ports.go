@@ -7,6 +7,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/catalog"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
@@ -28,12 +29,17 @@ type Transaction interface {
 	CompleteIdempotency(ctx context.Context, scope tenancy.Scope, operation, key, resultID string) error
 
 	Customer(ctx context.Context, scope tenancy.Scope, customerID string) (customers.Account, error)
+	LockCustomerCredit(ctx context.Context, scope tenancy.Scope, customerID string) error
 	Product(ctx context.Context, scope tenancy.Scope, productID string) (catalog.Product, error)
 	TaxRateBasisPoints(ctx context.Context, scope tenancy.Scope, taxCode string, at time.Time) (int64, error)
 	AvailableStock(ctx context.Context, scope tenancy.Scope, productID string) (int64, error)
 	CreditExposure(ctx context.Context, scope tenancy.Scope, customerID string) (int64, error)
 	FiscalPeriodOpen(ctx context.Context, scope tenancy.Scope, at time.Time) (bool, error)
 	SalesPostingConfig(ctx context.Context, scope tenancy.Scope) (finance.SalesPostingConfig, error)
+	MobileDevice(ctx context.Context, scope tenancy.Scope, actorID, deviceID string) (devices.Device, error)
+	OfflineLeaseValid(ctx context.Context, lease devices.OfflineLease, clientTimestamp time.Time) (bool, error)
+	OfflineAllocation(ctx context.Context, scope tenancy.Scope, deviceID, productID string) (int64, error)
+	OfflineSalesTotal(ctx context.Context, scope tenancy.Scope, deviceID string, startsAt, endsAt time.Time) (int64, error)
 
 	Sale(ctx context.Context, scope tenancy.Scope, saleID string) (Sale, error)
 	CreateSale(ctx context.Context, sale Sale) error

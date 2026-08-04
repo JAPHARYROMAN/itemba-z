@@ -8,8 +8,14 @@ enum SaleRuleCode {
   customerOutOfScope,
   creditRequiresOnline,
   emptyCart,
+  amountOutsideApiRange,
+  staleDraftContext,
+  staleProductVersion,
   stockUnavailable,
   offlineCashDisabled,
+  offlinePhysicalCashRequired,
+  offlineTaxUnsupported,
+  offlineAuthorizationExpired,
   offlineValueLimit,
   offlineDailyLimit,
   offlineAllocationExceeded,
@@ -75,15 +81,46 @@ class SaleRules {
     required SaleDraft draft,
     required bool isOnline,
     required OfflineSalesPolicy offlinePolicy,
+    DeviceContext? currentDevice,
+    DateTime? evaluatedAt,
   }) {
     final violations = validateCustomer(draft.customer, draft.saleType);
-    if (!draft.device.approved) {
+    final authoritativeDevice = currentDevice ?? draft.device;
+    if (!authoritativeDevice.approved) {
       violations.add(const SaleRuleViolation(SaleRuleCode.deviceNotApproved));
+    }
+    if (draft.device.deviceId != authoritativeDevice.deviceId ||
+        draft.device.userId != authoritativeDevice.userId ||
+        draft.device.tenantId != authoritativeDevice.tenantId ||
+        draft.device.companyId != authoritativeDevice.companyId ||
+        draft.device.branchId != authoritativeDevice.branchId ||
+        draft.device.warehouseId != authoritativeDevice.warehouseId ||
+        draft.device.appVersion != authoritativeDevice.appVersion ||
+        draft.device.masterDataVersion !=
+            authoritativeDevice.masterDataVersion ||
+        draft.device.priceVersion != authoritativeDevice.priceVersion) {
+      violations.add(const SaleRuleViolation(SaleRuleCode.staleDraftContext));
     }
     if (draft.lines.isEmpty) {
       violations.add(const SaleRuleViolation(SaleRuleCode.emptyCart));
     }
+    final checkedTotal = draft.checkedTotal;
+    if (!draft.hasApiSafeAmounts) {
+      violations.add(
+        const SaleRuleViolation(SaleRuleCode.amountOutsideApiRange),
+      );
+    }
     for (final line in draft.lines) {
+      if (line.product.masterDataVersion !=
+              authoritativeDevice.masterDataVersion ||
+          line.product.priceVersion != authoritativeDevice.priceVersion) {
+        violations.add(
+          SaleRuleViolation(
+            SaleRuleCode.staleProductVersion,
+            productName: line.product.name,
+          ),
+        );
+      }
       if (line.quantity > line.product.availableQuantity) {
         violations.add(
           SaleRuleViolation(
@@ -102,7 +139,7 @@ class SaleRules {
       }
       final credit = draft.customer.credit;
       if (credit != null) {
-        if (draft.total > credit.availableCredit) {
+        if (checkedTotal != null && checkedTotal > credit.availableCredit) {
           violations.add(
             const SaleRuleViolation(SaleRuleCode.creditLimitExceeded),
           );
@@ -112,15 +149,36 @@ class SaleRules {
         }
       }
     } else if (!isOnline) {
+      if (!offlinePolicy.isLeaseValidAt(evaluatedAt ?? DateTime.now())) {
+        violations.add(
+          const SaleRuleViolation(SaleRuleCode.offlineAuthorizationExpired),
+        );
+      }
+      if (draft.paymentMethod != PaymentMethod.cash) {
+        violations.add(
+          const SaleRuleViolation(SaleRuleCode.offlinePhysicalCashRequired),
+        );
+      }
+      if (draft.lines.any(
+        (line) =>
+            !line.product.hasValidTaxMetadata ||
+            line.product.taxBasisPoints != 0,
+      )) {
+        violations.add(
+          const SaleRuleViolation(SaleRuleCode.offlineTaxUnsupported),
+        );
+      }
       if (!offlinePolicy.enabled) {
         violations.add(
           const SaleRuleViolation(SaleRuleCode.offlineCashDisabled),
         );
       }
-      if (draft.total > offlinePolicy.transactionValueLimit) {
+      if (checkedTotal != null &&
+          checkedTotal > offlinePolicy.transactionValueLimit) {
         violations.add(const SaleRuleViolation(SaleRuleCode.offlineValueLimit));
       }
-      if (draft.total > offlinePolicy.remainingDailyValue) {
+      if (checkedTotal != null &&
+          checkedTotal > offlinePolicy.remainingDailyValue) {
         violations.add(const SaleRuleViolation(SaleRuleCode.offlineDailyLimit));
       }
       for (final line in draft.lines) {
@@ -141,11 +199,15 @@ class SaleRules {
     required SaleDraft draft,
     required bool isOnline,
     required OfflineSalesPolicy offlinePolicy,
+    DeviceContext? currentDevice,
+    DateTime? evaluatedAt,
   }) {
     final violations = validateCompletion(
       draft: draft,
       isOnline: isOnline,
       offlinePolicy: offlinePolicy,
+      currentDevice: currentDevice,
+      evaluatedAt: evaluatedAt,
     );
     if (violations.isNotEmpty) throw SaleRuleException(violations);
   }

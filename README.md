@@ -34,10 +34,31 @@ infra/                  Local dependencies, observability, and deployment founda
 3. Run the Go API, then the Next.js Control Center and Flutter POS using their local READMEs.
 4. Run the backend, web, mobile, contract, and infrastructure checks before opening a pull request.
 
+## Integrated golden-sale environment
+
+The optional `application` Compose profile runs the executable sales slice with
+PostgreSQL migrations, an idempotent development seed, the Go API, local outbox
+worker, and the Next.js Control Center:
+
+```text
+Copy-Item infra/docker/.env.example infra/docker/.env
+docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml --profile application up --build
+```
+
+Open `http://localhost:3000/sales`. The development seed uses stable, fictional
+master data and a zero-rated `DEV_ZERO` tax rule; it is not statutory Tanzania
+configuration and the seed command runs only with `ITEMBA_ENV=development`.
+The API is available on `http://localhost:8080` for an Android emulator or an
+HTTP smoke test. Production deployments require OIDC and never accept the local
+development identity headers.
+
+The transaction boundary and executable acceptance scenarios are documented in
+[`docs/implementation/live-golden-sale.md`](docs/implementation/live-golden-sale.md).
+
 The first production release is intentionally stage-gated. A working screen is not complete until permissions, audit, posting, reconciliation, failure handling, documentation, and acceptance tests pass.
 
 ## Current milestone
 
-This repository currently implements the executable platform foundation and the golden sales transaction slice: a bilingual Control Center prototype, an offline-capable Android POS foundation, the Go sales posting/reversal core, PostgreSQL persistence, verified-scope authentication, transactional outbox processing, contracts, infrastructure, and automated checks.
+This repository currently implements the executable platform foundation and a live golden-sales transaction slice: bilingual Control Center sale entry/register/reversal screens, an encrypted Android POS with enrolled-device offline synchronization, the Go sales posting/reversal core, PostgreSQL persistence, verified-scope authentication, transactional outbox processing, generated contract bindings, infrastructure, and database-backed automated checks. Non-sales Control Center modules remain clearly separated demonstration screens until their live APIs are implemented.
 
 It is not yet the complete production Release 1 ERP. Purchasing, supplier operations, full inventory workflows, complete finance, HR/payroll, statutory integrations, production migrations, and the formal release gates remain tracked in [the implementation status](docs/implementation/current-status.md).

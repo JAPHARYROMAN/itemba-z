@@ -20,7 +20,7 @@ export const searchRecords = cache(async (query: string): Promise<SearchResult[]
   const normalized = query.trim().toLocaleLowerCase();
   if (!normalized) return [];
 
-  return moduleKeys.flatMap((key) => {
+  return moduleKeys.filter((key) => key !== "sales").flatMap((key) => {
     const moduleData = modules[key];
     return moduleData.records.flatMap((record) => {
       const haystack = [record.id, record.primary.en, record.primary.sw, record.secondary, ...Object.values(record.values)]

@@ -11,19 +11,19 @@ import (
 	"time"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/httpapi"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/memory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/postgres"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	environment := os.Getenv("ITEMBA_ENV")
-	if environment == "" {
-		environment = "development"
-	}
+	development := allowsUnsafeFallback(environment)
 
 	startupContext, cancelStartup := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelStartup()
@@ -39,8 +39,8 @@ func main() {
 		closeRepository = store.Close
 		logger.Info("PostgreSQL repository initialized")
 	} else {
-		if environment == "production" {
-			logger.Error("DATABASE_URL is required in production")
+		if !development {
+			logger.Error("DATABASE_URL is required outside explicit development", "environment", environment)
 			os.Exit(1)
 		}
 		repository = memory.New()
@@ -58,8 +58,8 @@ func main() {
 		}
 		authenticator = oidcAuthenticator
 	} else {
-		if environment == "production" {
-			logger.Error("OIDC_ISSUER_URL and OIDC_AUDIENCE are required in production")
+		if !development {
+			logger.Error("OIDC_ISSUER_URL and OIDC_AUDIENCE are required outside explicit development", "environment", environment)
 			os.Exit(1)
 		}
 		authenticator = httpapi.DevelopmentHeaderAuthenticator{}
@@ -70,7 +70,27 @@ func main() {
 		logger.Error("initialize sales service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.New(salesService, logger, authenticator)
+	readRepository, ok := repository.(readmodel.Repository)
+	if !ok {
+		logger.Error("repository does not implement live read models")
+		os.Exit(1)
+	}
+	readService, err := readmodel.NewService(readRepository)
+	if err != nil {
+		logger.Error("initialize read service", "error", err)
+		os.Exit(1)
+	}
+	mobileRepository, ok := repository.(mobile.Repository)
+	if !ok {
+		logger.Error("repository does not implement mobile enrollment")
+		os.Exit(1)
+	}
+	mobileService, err := mobile.NewService(mobileRepository, salesService, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize mobile service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLive(salesService, readService, mobileService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)
@@ -99,3 +119,5 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+func allowsUnsafeFallback(environment string) bool { return environment == "development" }

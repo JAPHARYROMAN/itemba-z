@@ -65,3 +65,26 @@ func TestCorrelationIDIsPropagatedAndIncludedInProblems(t *testing.T) {
 		t.Fatalf("problem lacks correlation: %s", recorder.Body.String())
 	}
 }
+
+func TestWebIdempotencyKeyBoundsAreEnforced(t *testing.T) {
+	principal := Principal{ActorID: "10000000-0000-4000-8000-000000000005", Scope: tenancy.Scope{TenantID: "10000000-0000-4000-8000-000000000001", CompanyID: "10000000-0000-4000-8000-000000000002", BranchID: "10000000-0000-4000-8000-000000000003", WarehouseID: "10000000-0000-4000-8000-000000000004"}}
+	handler := (&Handler{authenticator: fixedAuthenticator{principal: principal}}).Routes()
+	request := httptest.NewRequest(http.MethodPost, "/v1/sales", strings.NewReader(`{}`))
+	request.Header.Set("Idempotency-Key", "too-short")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "16 to 128") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestPublicSalePresentationOmitsInternalCostFacts(t *testing.T) {
+	response := presentSale(sales.Sale{ID: "10000000-0000-4000-8000-000000000001", COGSMinor: 700, Lines: []sales.Line{{ID: "10000000-0000-4000-8000-000000000002", ProductID: "10000000-0000-4000-8000-000000000003", UnitCostMinor: 700, COGSMinor: 700}}})
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "cogs_minor") || strings.Contains(string(encoded), "unit_cost_minor") {
+		t.Fatalf("public presentation leaked cost facts: %s", encoded)
+	}
+}

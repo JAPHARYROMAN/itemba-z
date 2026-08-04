@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as path_utils;
 import 'package:sqflite_sqlcipher/sqflite.dart' as sqlcipher;
 import 'package:sqflite_sqlcipher/sqlite_api.dart';
 
 import '../domain/models.dart';
+import '../domain/connection_models.dart';
 import 'database_key_provider.dart';
 import 'encrypted_database_opener.dart';
 import 'local_data_codec.dart';
@@ -49,32 +52,242 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
   }
 
   @override
+  Future<void> saveConnection(MobileConnection connection) async {
+    final database = await _database;
+    final development = connection.developmentIdentity;
+    await database.insert('mobile_connection', {
+      'singleton_id': 1,
+      'base_url': connection.baseUrl.toString(),
+      'identity_mode': connection.identityMode.name,
+      'dev_actor_id': development?.actorId,
+      'dev_tenant_id': development?.tenantId,
+      'dev_company_id': development?.companyId,
+      'dev_branch_id': development?.branchId,
+      'dev_warehouse_id': development?.warehouseId,
+      'updated_at_epoch': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<MobileConnection?> readConnection() async {
+    final database = await _database;
+    final rows = await database.query(
+      'mobile_connection',
+      where: 'singleton_id = 1',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final row = rows.single;
+    final mode = MobileIdentityMode.values.byName(
+      row['identity_mode']! as String,
+    );
+    return MobileConnection(
+      baseUrl: Uri.parse(row['base_url']! as String),
+      identityMode: mode,
+      developmentIdentity:
+          mode == MobileIdentityMode.developmentHeaders
+              ? DevelopmentIdentity(
+                actorId: row['dev_actor_id']! as String,
+                tenantId: row['dev_tenant_id']! as String,
+                companyId: row['dev_company_id']! as String,
+                branchId: row['dev_branch_id']! as String,
+                warehouseId: row['dev_warehouse_id']! as String,
+              )
+              : null,
+    );
+  }
+
+  @override
+  Future<void> saveCandidateDeviceId(String deviceId) async {
+    final database = await _database;
+    await database.insert('mobile_device_identity', {
+      'singleton_id': 1,
+      'candidate_device_id': deviceId,
+      'updated_at_epoch': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<String?> readCandidateDeviceId() async {
+    final database = await _database;
+    final rows = await database.query(
+      'mobile_device_identity',
+      columns: ['candidate_device_id'],
+      where: 'singleton_id = 1',
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.single['candidate_device_id'] as String;
+  }
+
+  @override
+  Future<void> saveEnrollment(DeviceEnrollment enrollment) async {
+    final database = await _database;
+    await database.insert(
+      'device_enrollment',
+      _enrollmentRow(enrollment),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  @override
+  Future<DeviceEnrollment?> readEnrollment() async {
+    final database = await _database;
+    final rows = await database.query(
+      'device_enrollment',
+      where: 'singleton_id = 1',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final row = rows.single;
+    final allocationValues =
+        jsonDecode(row['stock_allocations_json']! as String) as List<Object?>;
+    return DeviceEnrollment(
+      deviceId: row['device_id']! as String,
+      deviceName: row['device_name']! as String,
+      status: row['status']! as String,
+      actorId: row['actor_id']! as String,
+      scope: EnrollmentScope(
+        tenantId: row['tenant_id']! as String,
+        companyId: row['company_id']! as String,
+        branchId: row['branch_id']! as String,
+        warehouseId: row['warehouse_id']! as String,
+      ),
+      appVersion: row['app_version']! as String,
+      masterDataVersion: _exactInt(
+        row['master_data_version'],
+        'device_enrollment.master_data_version',
+      ),
+      priceVersion: _exactInt(
+        row['price_version'],
+        'device_enrollment.price_version',
+      ),
+      availableMasterDataVersion: _exactInt(
+        row['available_master_data_version'],
+        'device_enrollment.available_master_data_version',
+      ),
+      availablePriceVersion: _exactInt(
+        row['available_price_version'],
+        'device_enrollment.available_price_version',
+      ),
+      timezone: row['timezone']! as String,
+      offlineEnabled: row['offline_enabled'] == 1,
+      transactionValueLimitMinor: _exactInt(
+        row['transaction_value_limit_minor'],
+        'device_enrollment.transaction_value_limit_minor',
+      ),
+      dailyValueLimitMinor: _exactInt(
+        row['daily_value_limit_minor'],
+        'device_enrollment.daily_value_limit_minor',
+      ),
+      remainingDailyValueMinor: _exactInt(
+        row['remaining_daily_value_minor'],
+        'device_enrollment.remaining_daily_value_minor',
+      ),
+      offlineSalesValidUntil: DateTime.fromMillisecondsSinceEpoch(
+        row['offline_sales_valid_until_epoch']! as int,
+        isUtc: true,
+      ),
+      stockAllocations: allocationValues
+          .map((value) {
+            final allocation = value! as Map<String, Object?>;
+            return MobileStockAllocation(
+              productId: allocation['product_id']! as String,
+              allocatedQuantity: _exactInt(
+                allocation['allocated_quantity'],
+                'device_enrollment.stock_allocations.allocated_quantity',
+              ),
+              remainingQuantity: _exactInt(
+                allocation['remaining_quantity'],
+                'device_enrollment.stock_allocations.remaining_quantity',
+              ),
+            );
+          })
+          .toList(growable: false),
+      enrolledAt: DateTime.fromMillisecondsSinceEpoch(
+        row['enrolled_at_epoch']! as int,
+        isUtc: true,
+      ),
+      lastSeenAt: DateTime.fromMillisecondsSinceEpoch(
+        row['last_seen_at_epoch']! as int,
+        isUtc: true,
+      ),
+    );
+  }
+
+  @override
+  Future<void> saveAllocation(DeviceAllocation allocation) async {
+    final database = await _database;
+    await database.insert('device_allocation', {
+      'singleton_id': 1,
+      'offline_enabled': _bool(allocation.offlineEnabled),
+      'transaction_limit_minor': allocation.transactionLimitMinor,
+      'daily_value_limit_minor': allocation.dailyValueLimitMinor,
+      'remaining_daily_minor': allocation.remainingDailyMinor,
+      'offline_sales_valid_until_epoch':
+          allocation.offlineSalesValidUntil.millisecondsSinceEpoch,
+      'product_quantities_json': jsonEncode(allocation.productQuantities),
+      'updated_at_epoch': allocation.updatedAt.millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<DeviceAllocation?> readAllocation() async {
+    final database = await _database;
+    final rows = await database.query(
+      'device_allocation',
+      where: 'singleton_id = 1',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final row = rows.single;
+    final quantities = (jsonDecode(row['product_quantities_json']! as String)
+            as Map<String, Object?>)
+        .map(
+          (key, value) => MapEntry(
+            key,
+            _exactInt(value, 'device_allocation.product_quantities.$key'),
+          ),
+        );
+    return DeviceAllocation(
+      offlineEnabled: row['offline_enabled'] == 1,
+      transactionLimitMinor: _exactInt(
+        row['transaction_limit_minor'],
+        'device_allocation.transaction_limit_minor',
+      ),
+      dailyValueLimitMinor: _exactInt(
+        row['daily_value_limit_minor'],
+        'device_allocation.daily_value_limit_minor',
+      ),
+      remainingDailyMinor: _exactInt(
+        row['remaining_daily_minor'],
+        'device_allocation.remaining_daily_minor',
+      ),
+      offlineSalesValidUntil: DateTime.fromMillisecondsSinceEpoch(
+        row['offline_sales_valid_until_epoch']! as int,
+        isUtc: true,
+      ),
+      productQuantities: quantities,
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(
+        row['updated_at_epoch']! as int,
+        isUtc: true,
+      ),
+    );
+  }
+
+  @override
   Future<void> replaceCachedCustomers(
     List<Customer> customers, {
-    required String masterDataVersion,
+    required int masterDataVersion,
   }) async {
     final database = await _database;
     final updatedAt = DateTime.now().millisecondsSinceEpoch;
     await database.transaction((transaction) async {
       await transaction.delete('cached_customers');
       for (final customer in customers) {
-        final credit = customer.credit;
-        await transaction.insert('cached_customers', {
-          'id': customer.id,
-          'name': customer.name,
-          'code': customer.code,
-          'is_general': _bool(customer.isGeneral),
-          'is_active': _bool(customer.isActive),
-          'credit_enabled': _bool(customer.creditEnabled),
-          'in_attendant_scope': _bool(customer.inAttendantScope),
-          'phone': customer.phone,
-          'credit_limit': credit?.limit,
-          'current_exposure': credit?.currentExposure,
-          'overdue_amount': credit?.overdueAmount,
-          'due_date_epoch': credit?.dueDate.millisecondsSinceEpoch,
-          'master_data_version': masterDataVersion,
-          'updated_at_epoch': updatedAt,
-        });
+        await transaction.insert(
+          'cached_customers',
+          _customerRow(customer, masterDataVersion, updatedAt),
+        );
       }
     });
   }
@@ -89,28 +302,18 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
   @override
   Future<void> replaceCachedProducts(
     List<Product> products, {
-    required String masterDataVersion,
-    required String priceVersion,
+    required int masterDataVersion,
+    required int priceVersion,
   }) async {
     final database = await _database;
     final updatedAt = DateTime.now().millisecondsSinceEpoch;
     await database.transaction((transaction) async {
       await transaction.delete('cached_products');
       for (final product in products) {
-        await transaction.insert('cached_products', {
-          'id': product.id,
-          'code': product.code,
-          'name': product.name,
-          'common_description': product.commonDescription,
-          'brand': product.brand,
-          'category': product.category,
-          'unit': product.unit,
-          'selling_price': product.sellingPrice,
-          'available_quantity': product.availableQuantity,
-          'master_data_version': masterDataVersion,
-          'price_version': priceVersion,
-          'updated_at_epoch': updatedAt,
-        });
+        await transaction.insert(
+          'cached_products',
+          _productRow(product, masterDataVersion, priceVersion, updatedAt),
+        );
       }
     });
   }
@@ -120,6 +323,66 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
     final database = await _database;
     final rows = await database.query('cached_products', orderBy: 'name ASC');
     return rows.map(_productFromRow).toList(growable: false);
+  }
+
+  @override
+  Future<InstalledMasterDataVersions?> readInstalledMasterDataVersions() async {
+    final database = await _database;
+    final customerVersions = await database.rawQuery(
+      'SELECT DISTINCT master_data_version FROM cached_customers',
+    );
+    final productVersions = await database.rawQuery(
+      'SELECT DISTINCT master_data_version, price_version FROM cached_products',
+    );
+    if (customerVersions.length != 1 || productVersions.length != 1) {
+      return null;
+    }
+    final customerMaster = _versionInt(
+      customerVersions.single['master_data_version'],
+    );
+    final productMaster = _versionInt(
+      productVersions.single['master_data_version'],
+    );
+    if (customerMaster != productMaster) return null;
+    return InstalledMasterDataVersions(
+      masterDataVersion: customerMaster,
+      priceVersion: _versionInt(productVersions.single['price_version']),
+    );
+  }
+
+  @override
+  Future<void> installMasterData({
+    required List<Customer> customers,
+    required List<Product> products,
+    required int masterDataVersion,
+    required int priceVersion,
+    DeviceEnrollment? enrollment,
+  }) async {
+    final database = await _database;
+    final updatedAt = DateTime.now().millisecondsSinceEpoch;
+    await database.transaction((transaction) async {
+      await transaction.delete('cached_customers');
+      for (final customer in customers) {
+        await transaction.insert(
+          'cached_customers',
+          _customerRow(customer, masterDataVersion, updatedAt),
+        );
+      }
+      await transaction.delete('cached_products');
+      for (final product in products) {
+        await transaction.insert(
+          'cached_products',
+          _productRow(product, masterDataVersion, priceVersion, updatedAt),
+        );
+      }
+      if (enrollment != null) {
+        await transaction.insert(
+          'device_enrollment',
+          _enrollmentRow(enrollment),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
   }
 
   @override
@@ -201,6 +464,9 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
           unit: stored.unit,
           sellingPrice: capturedPrice,
           availableQuantity: stored.availableQuantity,
+          taxBasisPoints: stored.taxBasisPoints,
+          masterDataVersion: stored.masterDataVersion,
+          priceVersion: stored.priceVersion,
         );
         draft.lines.add(
           CartLine(
@@ -238,6 +504,62 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
   }
 
   @override
+  Future<void> persistPendingSync({
+    required CompletedSale sale,
+    required SyncCommand command,
+  }) async {
+    final database = await _database;
+    await database.transaction((transaction) async {
+      await transaction.insert(
+        'local_sales',
+        _saleRow(sale),
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      await transaction.insert(
+        'sync_queue',
+        _syncQueueRow(command),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await transaction.delete(
+        'sale_drafts',
+        where: 'client_transaction_id = ?',
+        whereArgs: [sale.clientTransactionId],
+      );
+    });
+  }
+
+  @override
+  Future<void> persistOfflineCompletion({
+    required CompletedSale sale,
+    required SyncCommand command,
+    required DeviceAllocation allocation,
+  }) async {
+    final database = await _database;
+    await database.transaction((transaction) async {
+      await transaction.insert(
+        'local_sales',
+        _saleRow(sale),
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      await transaction.insert(
+        'sync_queue',
+        _syncQueueRow(command),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await transaction.insert(
+        'device_allocation',
+        _allocationRow(allocation),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await transaction.delete(
+        'sale_drafts',
+        where: 'client_transaction_id = ?',
+        whereArgs: [sale.clientTransactionId],
+      );
+    });
+  }
+
+  @override
   Future<List<CompletedSale>> readSales() async {
     final database = await _database;
     final rows = await database.query(
@@ -262,22 +584,11 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
   @override
   Future<void> enqueueSync(SyncCommand command) async {
     final database = await _database;
-    await database.insert('sync_queue', {
-      'idempotency_key': command.idempotencyKey,
-      'device_id': command.deviceId,
-      'client_transaction_id': command.clientTransactionId,
-      'user_id': command.userId,
-      'client_timestamp_epoch': command.clientTimestamp.millisecondsSinceEpoch,
-      'company_id': command.companyId,
-      'branch_id': command.branchId,
-      'warehouse_id': command.warehouseId,
-      'app_version': command.appVersion,
-      'master_data_version': command.masterDataVersion,
-      'price_version': command.priceVersion,
-      'sync_attempt_number': command.syncAttemptNumber,
-      'command_json': LocalDataCodec.encodeSyncCommand(command),
-      'queued_at_epoch': DateTime.now().millisecondsSinceEpoch,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await database.insert(
+      'sync_queue',
+      _syncQueueRow(command),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   @override
@@ -311,7 +622,9 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
     await database.insert('sync_results', {
       'idempotency_key': idempotencyKey,
       'server_sale_id': result.serverSaleId,
-      'receipt_number': result.receiptNumber,
+      'receipt_reference': result.receiptReference,
+      'fiscal_status': result.fiscalStatus.name,
+      'server_total_minor': result.serverTotalMinor,
       'recorded_at_epoch': DateTime.now().millisecondsSinceEpoch,
     }, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
@@ -329,15 +642,79 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
     final row = rows.single;
     return SyncResult(
       serverSaleId: row['server_sale_id']! as String,
-      receiptNumber: row['receipt_number']! as String,
+      receiptReference: row['receipt_reference']! as String,
+      fiscalStatus: FiscalStatus.values.byName(row['fiscal_status']! as String),
+      serverTotalMinor:
+          row['server_total_minor'] == null
+              ? null
+              : _exactInt(
+                row['server_total_minor'],
+                'sync_results.server_total_minor',
+              ),
       wasDuplicate: true,
     );
+  }
+
+  @override
+  Future<void> finalizeSync({
+    required CompletedSale sale,
+    required SyncCommand command,
+    required SyncResult result,
+  }) async {
+    final database = await _database;
+    await database.transaction((transaction) async {
+      await transaction.insert('sync_results', {
+        'idempotency_key': command.idempotencyKey,
+        'server_sale_id': result.serverSaleId,
+        'receipt_reference': result.receiptReference,
+        'fiscal_status': result.fiscalStatus.name,
+        'server_total_minor': result.serverTotalMinor,
+        'recorded_at_epoch': DateTime.now().millisecondsSinceEpoch,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await transaction.insert(
+        'local_sales',
+        _saleRow(sale),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await transaction.delete(
+        'sync_queue',
+        where: 'idempotency_key = ?',
+        whereArgs: [command.idempotencyKey],
+      );
+    });
+  }
+
+  @override
+  Future<void> recordSyncFailure({
+    required CompletedSale sale,
+    required String idempotencyKey,
+    required bool authoritativeRejection,
+  }) async {
+    final database = await _database;
+    await database.transaction((transaction) async {
+      await transaction.insert(
+        'local_sales',
+        _saleRow(sale),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      if (authoritativeRejection) {
+        await transaction.delete(
+          'sync_queue',
+          where: 'idempotency_key = ?',
+          whereArgs: [idempotencyKey],
+        );
+      }
+    });
   }
 
   @override
   Future<void> clearSensitiveCache() async {
     final database = await _database;
     await database.transaction((transaction) async {
+      await transaction.delete('device_allocation');
+      await transaction.delete('device_enrollment');
+      await transaction.delete('mobile_connection');
+      await transaction.delete('mobile_device_identity');
       await transaction.delete('sync_queue');
       await transaction.delete('sync_results');
       await transaction.delete('local_sales');
@@ -370,6 +747,114 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
     'updated_at_epoch': DateTime.now().millisecondsSinceEpoch,
   };
 
+  Map<String, Object?> _syncQueueRow(SyncCommand command) => {
+    'idempotency_key': command.idempotencyKey,
+    'device_id': command.deviceId,
+    'client_transaction_id': command.clientTransactionId,
+    'user_id': command.userId,
+    'client_timestamp_epoch': command.clientTimestamp.millisecondsSinceEpoch,
+    'company_id': command.companyId,
+    'branch_id': command.branchId,
+    'warehouse_id': command.warehouseId,
+    'app_version': command.appVersion,
+    'master_data_version': command.masterDataVersion,
+    'price_version': command.priceVersion,
+    'sync_attempt_number': command.syncAttemptNumber,
+    'command_json': LocalDataCodec.encodeSyncCommand(command),
+    'queued_at_epoch': DateTime.now().millisecondsSinceEpoch,
+  };
+
+  Map<String, Object?> _allocationRow(DeviceAllocation allocation) => {
+    'singleton_id': 1,
+    'offline_enabled': _bool(allocation.offlineEnabled),
+    'transaction_limit_minor': allocation.transactionLimitMinor,
+    'daily_value_limit_minor': allocation.dailyValueLimitMinor,
+    'remaining_daily_minor': allocation.remainingDailyMinor,
+    'offline_sales_valid_until_epoch':
+        allocation.offlineSalesValidUntil.millisecondsSinceEpoch,
+    'product_quantities_json': jsonEncode(allocation.productQuantities),
+    'updated_at_epoch': allocation.updatedAt.millisecondsSinceEpoch,
+  };
+
+  Map<String, Object?> _enrollmentRow(DeviceEnrollment enrollment) => {
+    'singleton_id': 1,
+    'device_id': enrollment.deviceId,
+    'device_name': enrollment.deviceName,
+    'status': enrollment.status,
+    'actor_id': enrollment.actorId,
+    'tenant_id': enrollment.scope.tenantId,
+    'company_id': enrollment.scope.companyId,
+    'branch_id': enrollment.scope.branchId,
+    'warehouse_id': enrollment.scope.warehouseId,
+    'app_version': enrollment.appVersion,
+    'master_data_version': enrollment.masterDataVersion,
+    'price_version': enrollment.priceVersion,
+    'available_master_data_version': enrollment.availableMasterDataVersion,
+    'available_price_version': enrollment.availablePriceVersion,
+    'timezone': enrollment.timezone,
+    'offline_enabled': _bool(enrollment.offlineEnabled),
+    'transaction_value_limit_minor': enrollment.transactionValueLimitMinor,
+    'daily_value_limit_minor': enrollment.dailyValueLimitMinor,
+    'remaining_daily_value_minor': enrollment.remainingDailyValueMinor,
+    'offline_sales_valid_until_epoch':
+        enrollment.offlineSalesValidUntil.millisecondsSinceEpoch,
+    'stock_allocations_json': jsonEncode([
+      for (final allocation in enrollment.stockAllocations)
+        {
+          'product_id': allocation.productId,
+          'allocated_quantity': allocation.allocatedQuantity,
+          'remaining_quantity': allocation.remainingQuantity,
+        },
+    ]),
+    'enrolled_at_epoch': enrollment.enrolledAt.millisecondsSinceEpoch,
+    'last_seen_at_epoch': enrollment.lastSeenAt.millisecondsSinceEpoch,
+  };
+
+  Map<String, Object?> _customerRow(
+    Customer customer,
+    int masterDataVersion,
+    int updatedAt,
+  ) {
+    final credit = customer.credit;
+    return {
+      'id': customer.id,
+      'name': customer.name,
+      'code': customer.code,
+      'is_general': _bool(customer.isGeneral),
+      'is_active': _bool(customer.isActive),
+      'credit_enabled': _bool(customer.creditEnabled),
+      'in_attendant_scope': _bool(customer.inAttendantScope),
+      'phone': customer.phone,
+      'credit_limit': credit?.limit,
+      'current_exposure': credit?.currentExposure,
+      'overdue_amount': credit?.overdueAmount,
+      'due_date_epoch': credit?.dueDate?.millisecondsSinceEpoch,
+      'master_data_version': masterDataVersion,
+      'updated_at_epoch': updatedAt,
+    };
+  }
+
+  Map<String, Object?> _productRow(
+    Product product,
+    int masterDataVersion,
+    int priceVersion,
+    int updatedAt,
+  ) => {
+    'id': product.id,
+    'code': product.code,
+    'name': product.name,
+    'common_description': product.commonDescription,
+    'brand': product.brand,
+    'category': product.category,
+    'unit': product.unit,
+    'selling_price': product.sellingPrice,
+    'available_quantity': product.availableQuantity,
+    'tax_basis_points': product.taxBasisPoints,
+    'master_data_version': masterDataVersion,
+    'price_version': priceVersion,
+    'updated_at_epoch': updatedAt,
+  };
+
   Customer _customerFromRow(Map<String, Object?> row) {
     final limit = row['credit_limit'];
     return Customer(
@@ -394,9 +879,12 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
                   row['overdue_amount'],
                   'cached_customers.overdue_amount',
                 ),
-                dueDate: DateTime.fromMillisecondsSinceEpoch(
-                  row['due_date_epoch']! as int,
-                ),
+                dueDate:
+                    row['due_date_epoch'] == null
+                        ? null
+                        : DateTime.fromMillisecondsSinceEpoch(
+                          row['due_date_epoch']! as int,
+                        ),
               ),
     );
   }
@@ -417,6 +905,15 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
       row['available_quantity'],
       'cached_products.available_quantity',
     ),
+    taxBasisPoints:
+        row['tax_basis_points'] == null
+            ? null
+            : _exactInt(
+              row['tax_basis_points'],
+              'cached_products.tax_basis_points',
+            ),
+    masterDataVersion: _versionInt(row['master_data_version']),
+    priceVersion: _versionInt(row['price_version']),
   );
 
   int _bool(bool value) => value ? 1 : 0;
@@ -429,5 +926,11 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
       return value.toInt();
     }
     throw StateError('$field must be an exact integer');
+  }
+
+  int _versionInt(Object? value) {
+    if (value is int && value > 0) return value;
+    if (value is String) return int.tryParse(value) ?? 1;
+    return 1;
   }
 }

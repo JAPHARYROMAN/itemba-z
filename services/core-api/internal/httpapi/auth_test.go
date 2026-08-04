@@ -20,7 +20,7 @@ func (a fixedAuthenticator) Authenticate(context.Context, *http.Request) (Princi
 }
 
 func TestVerifiedPrincipalIgnoresSpoofedScopeHeaders(t *testing.T) {
-	trusted := Principal{ActorID: "trusted-user", Scope: tenancy.Scope{TenantID: "trusted-tenant", CompanyID: "trusted-company", BranchID: "trusted-branch", WarehouseID: "trusted-warehouse"}}
+	trusted := Principal{ActorID: "10000000-0000-4000-8000-000000000005", Scope: tenancy.Scope{TenantID: "10000000-0000-4000-8000-000000000001", CompanyID: "10000000-0000-4000-8000-000000000002", BranchID: "10000000-0000-4000-8000-000000000003", WarehouseID: "10000000-0000-4000-8000-000000000004"}}
 	handler := &Handler{authenticator: fixedAuthenticator{principal: trusted}}
 	request := httptest.NewRequest(http.MethodGet, "/v1/sales/sale-1", nil)
 	request.Header.Set("X-Actor-ID", "spoofed-user")
@@ -56,17 +56,21 @@ func TestRejectedAuthenticationDoesNotFallBackToScopeHeaders(t *testing.T) {
 
 func TestDevelopmentHeaderAuthenticatorIsExplicitAndValidatesAllScope(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/v1/sales/sale-1", nil)
-	request.Header.Set("X-Actor-ID", "dev-user")
-	request.Header.Set("X-Tenant-ID", "dev-tenant")
-	request.Header.Set("X-Company-ID", "dev-company")
-	request.Header.Set("X-Branch-ID", "dev-branch")
+	request.Header.Set("X-Actor-ID", " 10000000-0000-4000-8000-00000000000A ")
+	request.Header.Set("X-Tenant-ID", "10000000-0000-4000-8000-000000000001")
+	request.Header.Set("X-Company-ID", "10000000-0000-4000-8000-000000000002")
+	request.Header.Set("X-Branch-ID", "10000000-0000-4000-8000-000000000003")
 	if _, err := (DevelopmentHeaderAuthenticator{}).Authenticate(context.Background(), request); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("incomplete scope accepted: %v", err)
 	}
-	request.Header.Set("X-Warehouse-ID", "dev-warehouse")
+	request.Header.Set("X-Warehouse-ID", "10000000-0000-4000-8000-000000000004")
 	principal, err := (DevelopmentHeaderAuthenticator{}).Authenticate(context.Background(), request)
-	if err != nil || principal.ActorID != "dev-user" {
+	if err != nil || principal.ActorID != "10000000-0000-4000-8000-00000000000a" {
 		t.Fatalf("development auth failed: %+v %v", principal, err)
+	}
+	request.Header.Set("X-Actor-ID", "opaque-dev-user")
+	if _, err := (DevelopmentHeaderAuthenticator{}).Authenticate(context.Background(), request); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("non-UUID development actor accepted: %v", err)
 	}
 }
 

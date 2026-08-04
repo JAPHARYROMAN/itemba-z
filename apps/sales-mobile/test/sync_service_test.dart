@@ -14,7 +14,7 @@ void main() {
       final now = DateTime(2026, 8, 4, 10, 30);
       final sale = CompletedSale(
         serverSaleId: '',
-        receiptNumber: 'Pending',
+        receiptReference: 'Pending',
         clientTransactionId: 'client-001',
         deviceId: demoDevice.deviceId,
         customer: demoCustomers.first,
@@ -47,7 +47,7 @@ void main() {
       expect(first.wasDuplicate, isFalse);
       expect(retry.wasDuplicate, isTrue);
       expect(retry.serverSaleId, first.serverSaleId);
-      expect(retry.receiptNumber, first.receiptNumber);
+      expect(retry.receiptReference, first.receiptReference);
       expect(gateway.postedTransactionCount, 1);
     },
   );

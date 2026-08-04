@@ -4,9 +4,10 @@ info:
   version: 1.0.0
   description: >-
     Versioned contract for the ITEMBA-Z Control Center, Sales POS, and approved
-    integrations. Posted-sale money uses integer minor units and the current
-    transactional slice accepts whole-unit quantities. Planned read models use
-    decimal strings where fractional quantities or display money are required.
+    integrations. Posted-sale money uses integer minor units: exactly 100 stored
+    minor units equal TZS 1. The current transactional slice and live bootstrap
+    read models use whole-unit quantities. Every JSON integer is constrained to
+    the JavaScript safe-integer range even though PostgreSQL retains bigint.
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
@@ -68,7 +69,7 @@ paths:
       summary: Get the caller's working context
       operationId: getWorkingContext
       tags: [Context]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       responses:
         '200':
           description: Current authorized working context.
@@ -78,6 +79,8 @@ paths:
                 $ref: '#/components/schemas/WorkingContext'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /v1/dashboard:
     get:
       summary: Get governed executive metrics
@@ -107,9 +110,8 @@ paths:
       summary: List scoped customers
       operationId: listCustomers
       tags: [Customers]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
-        - $ref: '#/components/parameters/LegalCompanyId'
         - name: query
           in: query
           schema: { type: string, maxLength: 120 }
@@ -127,19 +129,17 @@ paths:
                 $ref: '#/components/schemas/CustomerPage'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/products:
     get:
       summary: List scoped products and availability
       operationId: listProducts
       tags: [Products]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
-        - $ref: '#/components/parameters/LegalCompanyId'
-        - $ref: '#/components/parameters/BranchId'
-        - name: warehouse_id
-          in: query
-          required: true
-          schema: { type: string, format: uuid }
         - name: query
           in: query
           schema: { type: string, maxLength: 120 }
@@ -154,6 +154,10 @@ paths:
                 $ref: '#/components/schemas/ProductPage'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/sales:
     post:
       summary: Complete and atomically post a sale
@@ -193,10 +197,8 @@ paths:
       summary: List scoped sales
       operationId: listSales
       tags: [Sales]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
-        - $ref: '#/components/parameters/LegalCompanyId'
-        - $ref: '#/components/parameters/BranchId'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/PageSize'
       responses:
@@ -208,6 +210,10 @@ paths:
                 $ref: '#/components/schemas/SalePage'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/sales/{sale_id}:
     get:
       summary: Get an immutable posted sale
@@ -267,9 +273,13 @@ paths:
   /v1/mobile/sync/sales:
     post:
       summary: Synchronize a mobile sale idempotently
+      description: >-
+        Synchronizes cash sales from an enrolled device. CREDIT commands are
+        rejected with 422 even while online until the mobile workflow carries
+        an authoritative AR-aging and approval decision.
       operationId: syncMobileSale
       tags: [Mobile Sync]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -285,6 +295,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MobileSyncResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /v1/mobile/devices/enroll:
+    post:
+      summary: Enroll or refresh a POS device binding
+      description: >-
+        Binds the device to the authenticated actor and exact tenant, company,
+        branch, and warehouse scope. Re-enrollment is idempotent only for that
+        same binding and returns authoritative offline policy and allocations.
+        The acknowledged app and installed version fields are advanced only
+        when both optional installed-version acknowledgements equal the current
+        available versions. A successful acknowledgement also issues a bounded,
+        server-persisted offline-sales lease for that exact app and cache pair.
+        A client must atomically install its cache before acknowledging it; a
+        repeated acknowledgement is safe after a lost response.
+      operationId: enrollMobileDevice
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileDeviceEnrollmentCommand'
+      responses:
+        '200':
+          description: Current authoritative device binding and policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileDeviceEnrollment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
 components:
@@ -372,19 +429,24 @@ components:
     WorkingContext:
       type: object
       additionalProperties: false
-      required: [tenant_id, legal_company_id, legal_company_name, branch_id, branch_name, currency, locale, permissions]
+      required: [actor_id, tenant_id, company_id, company_name, branch_id, branch_name, warehouse_id, warehouse_name, currency, locale, timezone, permissions, master_data_version, price_version]
       properties:
+        actor_id: { type: string, format: uuid }
         tenant_id: { type: string, format: uuid }
-        legal_company_id: { type: string, format: uuid }
-        legal_company_name: { type: string }
+        company_id: { type: string, format: uuid }
+        company_name: { type: string }
         branch_id: { type: string, format: uuid }
         branch_name: { type: string }
-        warehouse_id: { type: [string, 'null'], format: uuid }
+        warehouse_id: { type: string, format: uuid }
+        warehouse_name: { type: string }
         currency: { type: string, const: TZS }
         locale: { type: string, enum: [en-TZ, sw-TZ] }
+        timezone: { type: string, example: Africa/Dar_es_Salaam }
         permissions:
           type: array
           items: { type: string }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
     Money:
       type: object
       additionalProperties: false
@@ -395,39 +457,48 @@ components:
     CustomerSummary:
       type: object
       additionalProperties: false
-      required: [id, code, name, status, is_general_customer, credit_enabled]
+      required: [id, code, name, status, is_general_customer, credit_enabled, credit_limit_minor, current_exposure_minor, available_credit_minor]
       properties:
         id: { type: string, format: uuid }
         code: { type: string }
         name: { type: string }
-        phone: { type: [string, 'null'] }
-        status: { type: string, enum: [active, blocked, inactive] }
+        status: { type: string, enum: [active, inactive] }
         is_general_customer: { type: boolean }
         credit_enabled: { type: boolean }
-        available_credit: { $ref: '#/components/schemas/Money' }
-        overdue_amount: { $ref: '#/components/schemas/Money' }
+        credit_limit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        current_exposure_minor: { $ref: '#/components/schemas/SafeInteger' }
+        available_credit_minor: { $ref: '#/components/schemas/SafeInteger' }
     CustomerPage:
       type: object
-      required: [items]
+      additionalProperties: false
+      required: [items, next_cursor]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/CustomerSummary' } }
         next_cursor: { type: [string, 'null'] }
     ProductSummary:
       type: object
       additionalProperties: false
-      required: [id, code, name, unit, price, available_quantity]
+      required: [id, code, name, unit, currency, unit_price_minor, available_quantity, price_version, master_data_version, tax_basis_points]
       properties:
         id: { type: string, format: uuid }
         code: { type: string }
         name: { type: string }
         unit: { type: string }
-        price: { $ref: '#/components/schemas/Money' }
-        available_quantity: { type: string, pattern: '^-?[0-9]+(\\.[0-9]{1,6})?$' }
-        price_version: { type: integer, minimum: 1 }
-        master_data_version: { type: integer, minimum: 1 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        unit_price_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        available_quantity: { $ref: '#/components/schemas/SafeInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        tax_basis_points:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 10000
+          description: Effective tax rate; tax_minor is round-half-up(subtotal_minor * tax_basis_points / 10000).
     ProductPage:
       type: object
-      required: [items]
+      additionalProperties: false
+      required: [items, next_cursor]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/ProductSummary' } }
         next_cursor: { type: [string, 'null'] }
@@ -443,19 +514,26 @@ components:
     SaleKind:
       type: string
       enum: [CASH, CREDIT]
+    PaymentMethod:
+      type: string
+      description: Canonical settlement channel for cash-kind sales. Offline sales permit physical CASH only.
+      enum: [CASH, MOBILE_MONEY, BANK_CARD, BANK_TRANSFER]
     SaleRecordType:
       type: string
       enum: [SALE, REVERSAL]
     SaleStatus:
       type: string
       enum: [POSTED, REVERSED]
+    FiscalStatus:
+      type: string
+      enum: [NOT_CONFIGURED, PENDING, FISCALIZED, FAILED]
     SaleLineCommand:
       type: object
       additionalProperties: false
       required: [product_id, quantity]
       properties:
         product_id: { type: string, format: uuid }
-        quantity: { type: integer, format: int64, minimum: 1 }
+        quantity: { $ref: '#/components/schemas/SafePositiveInteger' }
     CompleteSaleCommand:
       type: object
       additionalProperties: false
@@ -463,7 +541,7 @@ components:
       properties:
         customer_id: { type: string, format: uuid }
         kind: { $ref: '#/components/schemas/SaleKind' }
-        payment_method: { type: string, minLength: 1, maxLength: 64 }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
         lines:
           type: array
           minItems: 1
@@ -471,21 +549,19 @@ components:
     SaleLine:
       type: object
       additionalProperties: false
-      required: [id, product_id, quantity, unit_price_minor, subtotal_minor, tax_minor, total_minor, unit_cost_minor, cogs_minor]
+      required: [id, product_id, quantity, unit_price_minor, subtotal_minor, tax_minor, total_minor]
       properties:
         id: { type: string, format: uuid }
         product_id: { type: string, format: uuid }
-        quantity: { type: integer, format: int64, minimum: 1 }
-        unit_price_minor: { type: integer, format: int64 }
-        subtotal_minor: { type: integer, format: int64 }
-        tax_minor: { type: integer, format: int64 }
-        total_minor: { type: integer, format: int64 }
-        unit_cost_minor: { type: integer, format: int64 }
-        cogs_minor: { type: integer, format: int64 }
+        quantity: { $ref: '#/components/schemas/SafePositiveInteger' }
+        unit_price_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        subtotal_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        tax_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        total_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
     Sale:
       type: object
       additionalProperties: false
-      required: [id, scope, record_type, kind, status, customer_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor, created_by, correlation_id, created_at, lines]
+      required: [id, scope, record_type, kind, status, customer_id, currency, subtotal_minor, tax_minor, total_minor, receipt_reference, fiscal_status, created_by, correlation_id, created_at, lines]
       properties:
         id: { type: string, format: uuid }
         scope: { $ref: '#/components/schemas/Scope' }
@@ -494,11 +570,23 @@ components:
         status: { $ref: '#/components/schemas/SaleStatus' }
         customer_id: { type: string, format: uuid }
         currency: { type: string, pattern: '^[A-Z]{3}$' }
-        subtotal_minor: { type: integer, format: int64 }
-        tax_minor: { type: integer, format: int64 }
-        total_minor: { type: integer, format: int64 }
-        cogs_minor: { type: integer, format: int64 }
-        payment_method: { type: string }
+        subtotal_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        tax_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        total_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
+        device_id: { type: string, format: uuid }
+        client_transaction_id: { type: string, format: uuid }
+        client_timestamp: { type: string, format: date-time }
+        app_version: { type: string, minLength: 1, maxLength: 64 }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        offline:
+          type: boolean
+          description: True only for controlled physical-CASH, zero-rated mobile sales in this milestone.
+        receipt_reference:
+          type: string
+          description: Authoritative non-fiscal receipt reference; never a TRA fiscal receipt number.
+        fiscal_status: { $ref: '#/components/schemas/FiscalStatus' }
         reversal_of: { type: string, format: uuid }
         reversal_reason: { type: string }
         created_by: { type: string, format: uuid }
@@ -508,7 +596,8 @@ components:
         lines: { type: array, items: { $ref: '#/components/schemas/SaleLine' } }
     SalePage:
       type: object
-      required: [items]
+      additionalProperties: false
+      required: [items, next_cursor]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Sale' } }
         next_cursor: { type: [string, 'null'] }
@@ -518,6 +607,73 @@ components:
       required: [reason]
       properties:
         reason: { type: string, minLength: 1, maxLength: 500 }
+    MobileDeviceEnrollmentCommand:
+      type: object
+      additionalProperties: false
+      required: [device_id, device_name, app_version]
+      properties:
+        device_id: { type: string, format: uuid }
+        device_name: { type: string, minLength: 1, maxLength: 200 }
+        app_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Application build requesting enrollment. For an existing device, this becomes the acknowledged app version only with a successful cache-version acknowledgement.
+        installed_master_data_version:
+          allOf: [{ $ref: '#/components/schemas/SafePositiveInteger' }]
+          description: Optional durable-cache acknowledgement; must be supplied with installed_price_version and equal the current available version to advance server state.
+        installed_price_version:
+          allOf: [{ $ref: '#/components/schemas/SafePositiveInteger' }]
+          description: Optional durable-cache acknowledgement; must be supplied with installed_master_data_version and equal the current available version to advance server state.
+    MobileStockAllocation:
+      type: object
+      additionalProperties: false
+      required: [product_id, allocated_quantity, remaining_quantity]
+      properties:
+        product_id: { type: string, format: uuid }
+        allocated_quantity: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        remaining_quantity: { $ref: '#/components/schemas/SafeInteger' }
+    MobileDeviceEnrollment:
+      type: object
+      additionalProperties: false
+      required: [device_id, status, actor_id, scope, device_name, app_version, master_data_version, price_version, available_master_data_version, available_price_version, timezone, offline_enabled, transaction_value_limit_minor, daily_value_limit_minor, remaining_daily_value_minor, offline_sales_valid_until, enrolled_at, last_seen_at, stock_allocations]
+      properties:
+        device_id: { type: string, format: uuid }
+        status: { type: string, enum: [ACTIVE, SUSPENDED, REVOKED] }
+        actor_id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        device_name: { type: string }
+        app_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Application build bound to the acknowledged installed cache. It does not advance on an unacknowledged refresh.
+        master_data_version:
+          allOf: [{ $ref: '#/components/schemas/SafeNonNegativeInteger' }]
+          description: Version durably installed and explicitly acknowledged by this device; zero means unacknowledged.
+        price_version:
+          allOf: [{ $ref: '#/components/schemas/SafeNonNegativeInteger' }]
+          description: Price version durably installed and explicitly acknowledged by this device; zero means unacknowledged.
+        available_master_data_version:
+          allOf: [{ $ref: '#/components/schemas/SafePositiveInteger' }]
+          description: Current legal-company master-data version available for download.
+        available_price_version:
+          allOf: [{ $ref: '#/components/schemas/SafePositiveInteger' }]
+          description: Current legal-company price version available for download.
+        timezone: { type: string, example: Africa/Dar_es_Salaam }
+        offline_enabled: { type: boolean }
+        transaction_value_limit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        daily_value_limit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        remaining_daily_value_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        offline_sales_valid_until:
+          type: string
+          format: date-time
+          description: Exclusive UTC deadline for creating offline sales with the acknowledged app and cache pair. It is immediately expired until a successful acknowledgement, lasts at most four hours, and never crosses the next configured tax-rule transition.
+        enrolled_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        stock_allocations:
+          type: array
+          items: { $ref: '#/components/schemas/MobileStockAllocation' }
     MobileSaleSyncCommand:
       type: object
       additionalProperties: false
@@ -525,7 +681,7 @@ components:
       properties:
         customer_id: { type: string, format: uuid }
         kind: { $ref: '#/components/schemas/SaleKind' }
-        payment_method: { type: string, minLength: 1, maxLength: 64 }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
         lines:
           type: array
           minItems: 1
@@ -533,21 +689,29 @@ components:
         device_id: { type: string, format: uuid }
         client_transaction_id: { type: string, format: uuid }
         client_timestamp: { type: string, format: date-time }
-        app_version: { type: string }
-        master_data_version: { type: integer, minimum: 1 }
-        price_version: { type: integer, minimum: 1 }
-        sync_attempt: { type: integer, minimum: 1 }
-        offline: { type: boolean, default: false }
+        app_version: { type: string, minLength: 1, maxLength: 64 }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        sync_attempt: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        offline:
+          type: boolean
+          default: false
+          description: Controlled offline mode accepts only physical CASH and zero-rated product lines. The client timestamp must fall inside a persisted server-issued lease bound to this exact device, app, master-data version, and price version; nonzero effective tax or a changed product price version is rejected with 422.
     MobileSyncResult:
       type: object
       additionalProperties: false
-      required: [client_transaction_id, state]
+      required: [client_transaction_id, state, receipt_reference, fiscal_status, idempotent_replay, sale]
       properties:
         client_transaction_id: { type: string, format: uuid }
-        state: { type: string, enum: [synced, rejected, requires_review] }
+        state: { type: string, enum: [synced] }
+        receipt_reference:
+          type: string
+          description: Authoritative non-fiscal reference for the persisted sale.
+        fiscal_status: { $ref: '#/components/schemas/FiscalStatus' }
+        idempotent_replay:
+          type: boolean
+          description: True only when the server restored a previously committed result for this device and client transaction pair.
         sale: { $ref: '#/components/schemas/Sale' }
-        rejection_code: { type: [string, 'null'] }
-        rejection_message: { type: [string, 'null'] }
     Metric:
       type: object
       required: [key, label, value]
@@ -572,7 +736,25 @@ components:
         as_of: { type: string, format: date-time }
         metrics: { type: array, items: { $ref: '#/components/schemas/Metric' } }
         alerts: { type: array, items: { $ref: '#/components/schemas/DashboardAlert' } }
-        pending_approvals: { type: integer, minimum: 0 }
+        pending_approvals: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+    SafeInteger:
+      type: integer
+      format: int64
+      minimum: -9007199254740991
+      maximum: 9007199254740991
+      description: JSON integer constrained to the JavaScript Number safe-integer range.
+    SafeNonNegativeInteger:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 9007199254740991
+      description: Non-negative JSON integer constrained to the JavaScript Number safe-integer range.
+    SafePositiveInteger:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 9007199254740991
+      description: Positive JSON integer constrained to the JavaScript Number safe-integer range.
     Problem:
       type: object
       additionalProperties: true

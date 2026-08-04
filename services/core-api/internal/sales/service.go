@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
+	"sort"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
@@ -22,8 +24,9 @@ import (
 )
 
 const (
-	operationComplete = "sales.complete.v1"
-	operationReverse  = "sales.reverse.v1"
+	operationComplete   = "sales.complete.v1"
+	operationMobileSync = "mobile.sales.sync.v1"
+	operationReverse    = "sales.reverse.v1"
 )
 
 type Service struct {
@@ -40,9 +43,15 @@ func NewService(repository Repository, ids identity.Generator, currentTime clock
 }
 
 func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, error) {
-	command.PaymentMethod = strings.ToUpper(strings.TrimSpace(command.PaymentMethod))
+	command = normalizeCompleteCommand(command)
 	if err := command.Validate(); err != nil {
 		return Sale{}, err
+	}
+	if command.Kind == KindCash && !IsCanonicalPaymentMethod(command.PaymentMethod) {
+		return Sale{}, ErrUnsupportedPayment
+	}
+	if command.Offline && command.PaymentMethod != PaymentCash {
+		return Sale{}, ErrOfflinePaymentMethod
 	}
 	requestHash, err := hashCommand(command)
 	if err != nil {
@@ -58,13 +67,56 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 		if !authorized {
 			return ErrForbidden
 		}
-		acquired, resultID, err := tx.ClaimIdempotency(ctx, command.Scope, operationComplete, command.IdempotencyKey, requestHash)
+		operation, idempotencyKey := operationComplete, command.IdempotencyKey
+		var enrolled devices.Device
+		if command.DeviceID != "" {
+			canSync, permissionErr := tx.Authorize(ctx, command.Scope, command.ActorID, "mobile.sales.sync")
+			if permissionErr != nil {
+				return permissionErr
+			}
+			if !canSync {
+				return ErrForbidden
+			}
+			enrolled, err = tx.MobileDevice(ctx, command.Scope, command.ActorID, command.DeviceID)
+			if err != nil {
+				return err
+			}
+			if enrolled.Status != devices.StatusActive {
+				return devices.ErrNotActive
+			}
+			operation = operationMobileSync
+			idempotencyKey = command.DeviceID + "::" + command.ClientTransactionID
+		}
+		acquired, resultID, err := tx.ClaimIdempotency(ctx, command.Scope, operation, idempotencyKey, requestHash)
 		if err != nil {
 			return err
 		}
 		if !acquired {
 			result, err = tx.Sale(ctx, command.Scope, resultID)
+			result.IdempotentReplay = err == nil
 			return err
+		}
+		if command.DeviceID != "" {
+			if command.Offline {
+				if !enrolled.OfflineEnabled {
+					return devices.ErrOfflineDisabled
+				}
+				valid, err := tx.OfflineLeaseValid(ctx, devices.OfflineLease{
+					Scope: command.Scope, DeviceID: command.DeviceID, AppVersion: strings.TrimSpace(command.AppVersion),
+					MasterDataVersion: command.MasterDataVersion, PriceVersion: command.PriceVersion,
+				}, command.ClientTimestamp.UTC())
+				if err != nil {
+					return err
+				}
+				if !valid {
+					return devices.ErrOfflineLeaseExpired
+				}
+			} else if strings.TrimSpace(command.AppVersion) != enrolled.AppVersion ||
+				command.MasterDataVersion != enrolled.MasterDataVersion || command.PriceVersion != enrolled.PriceVersion ||
+				enrolled.MasterDataVersion != enrolled.AvailableMasterDataVersion ||
+				enrolled.PriceVersion != enrolled.AvailablePriceVersion {
+				return devices.ErrStaleMasterData
+			}
 		}
 
 		customer, err := tx.Customer(ctx, command.Scope, command.CustomerID)
@@ -101,7 +153,7 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 		if command.Kind == KindCash {
 			cashAccount = posting.CashAccounts[command.PaymentMethod]
 			if cashAccount == "" {
-				return ErrPostingConfig
+				return ErrUnsupportedPayment
 			}
 		}
 
@@ -112,8 +164,19 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 		sale := Sale{
 			ID: saleID, Scope: command.Scope, RecordType: RecordSale,
 			Kind: command.Kind, Status: StatusPosted, CustomerID: customer.ID,
-			PaymentMethod: command.PaymentMethod, CreatedBy: command.ActorID, CreatedAt: now,
+			PaymentMethod: command.PaymentMethod, DeviceID: command.DeviceID,
+			ClientTransactionID: command.ClientTransactionID, Offline: command.Offline,
+			CreatedBy: command.ActorID, CreatedAt: now,
 		}
+		if command.DeviceID != "" {
+			clientTimestamp := command.ClientTimestamp.UTC()
+			sale.ClientTimestamp = &clientTimestamp
+			sale.AppVersion = strings.TrimSpace(command.AppVersion)
+			sale.MasterDataVersion = command.MasterDataVersion
+			sale.PriceVersion = command.PriceVersion
+		}
+		sale.ReceiptReference = sale.ID
+		sale.FiscalStatus = FiscalNotConfigured
 		if command.CorrelationID != "" {
 			sale.CorrelationID = command.CorrelationID
 		} else {
@@ -128,6 +191,13 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 			if !product.Active {
 				return ErrProductInactive
 			}
+			// Per-product versions are the version in which that product last
+			// changed. A historical lease may legitimately predate unrelated
+			// company changes, but it must fail closed if this product moved
+			// beyond either governed cache version in the command.
+			if command.Offline && (product.PriceVersion > command.PriceVersion || product.MasterDataVersion > command.MasterDataVersion) {
+				return devices.ErrStaleMasterData
+			}
 			if product.ListPriceMinor <= 0 || product.StandardCostMinor < 0 ||
 				product.RevenueAccountID == "" || product.COGSAccountID == "" || product.InventoryAccountID == "" {
 				return ErrPostingConfig
@@ -137,6 +207,17 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 			} else if sale.Currency != product.Currency {
 				return ErrInvalidCommand
 			}
+			taxAt := now
+			if command.Offline {
+				taxAt = command.ClientTimestamp.UTC()
+			}
+			rate, err := tx.TaxRateBasisPoints(ctx, command.Scope, product.TaxCode, taxAt)
+			if err != nil {
+				return err
+			}
+			if command.Offline && rate != 0 {
+				return ErrOfflineTaxUnsupported
+			}
 			available, err := tx.AvailableStock(ctx, command.Scope, product.ID)
 			if err != nil {
 				return err
@@ -144,9 +225,14 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 			if available < requested.Quantity {
 				return fmt.Errorf("%w: product=%s available=%d requested=%d", ErrInsufficientStock, product.ID, available, requested.Quantity)
 			}
-			rate, err := tx.TaxRateBasisPoints(ctx, command.Scope, product.TaxCode, now)
-			if err != nil {
-				return err
+			if command.Offline {
+				allocated, err := tx.OfflineAllocation(ctx, command.Scope, command.DeviceID, product.ID)
+				if err != nil {
+					return err
+				}
+				if allocated < requested.Quantity {
+					return fmt.Errorf("%w: product=%s allocated=%d requested=%d", devices.ErrAllocationExceeded, product.ID, allocated, requested.Quantity)
+				}
 			}
 			lineSubtotal, err := checkedMultiply(product.ListPriceMinor, requested.Quantity)
 			if err != nil {
@@ -213,7 +299,33 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 		if len(sale.Currency) != 3 {
 			return ErrInvalidCommand
 		}
+		if command.Offline {
+			if enrolled.OfflineTransactionLimitMinor <= 0 || sale.TotalMinor > enrolled.OfflineTransactionLimitMinor {
+				return devices.ErrOfflineLimit
+			}
+			location, err := time.LoadLocation(enrolled.TimeZone)
+			if err != nil {
+				return devices.ErrInvalidTimeZone
+			}
+			localCreatedAt := command.ClientTimestamp.UTC().In(location)
+			startOfDay := time.Date(localCreatedAt.Year(), localCreatedAt.Month(), localCreatedAt.Day(), 0, 0, 0, 0, location)
+			endOfDay := startOfDay.AddDate(0, 0, 1)
+			dailyTotal, err := tx.OfflineSalesTotal(ctx, command.Scope, command.DeviceID, startOfDay.UTC(), endOfDay.UTC())
+			if err != nil {
+				return err
+			}
+			projected, err := checkedAdd(dailyTotal, sale.TotalMinor)
+			if err != nil {
+				return err
+			}
+			if enrolled.OfflineDailyLimitMinor <= 0 || projected > enrolled.OfflineDailyLimitMinor {
+				return devices.ErrOfflineLimit
+			}
+		}
 		if command.Kind == KindCredit {
+			if err := tx.LockCustomerCredit(ctx, command.Scope, customer.ID); err != nil {
+				return err
+			}
 			exposure, err := tx.CreditExposure(ctx, command.Scope, customer.ID)
 			if err != nil {
 				return err
@@ -272,10 +384,10 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 		if err := tx.CreateJournal(ctx, journal); err != nil {
 			return err
 		}
-		if err := s.recordEvents(ctx, tx, sale, command.ActorID, "sale.posted", command.IdempotencyKey, now); err != nil {
+		if err := s.recordEvents(ctx, tx, sale, command.ActorID, "sale.posted", idempotencyKey, now); err != nil {
 			return err
 		}
-		if err := tx.CompleteIdempotency(ctx, command.Scope, operationComplete, command.IdempotencyKey, sale.ID); err != nil {
+		if err := tx.CompleteIdempotency(ctx, command.Scope, operation, idempotencyKey, sale.ID); err != nil {
 			return err
 		}
 		result = sale
@@ -284,10 +396,19 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 	if err != nil {
 		return Sale{}, err
 	}
+	if err := ValidateWireSafeSale(result); err != nil {
+		return Sale{}, err
+	}
 	return result, nil
 }
 
 func (s *Service) Reverse(ctx context.Context, command ReverseCommand) (Sale, error) {
+	command.Scope = command.Scope.Normalize()
+	command.SaleID = identity.NormalizeClaim(command.SaleID)
+	command.ActorID = identity.NormalizeClaim(command.ActorID)
+	command.Reason = strings.TrimSpace(command.Reason)
+	command.CorrelationID = identity.NormalizeClaim(command.CorrelationID)
+	command.IdempotencyKey = strings.TrimSpace(command.IdempotencyKey)
 	if err := command.Validate(); err != nil {
 		return Sale{}, err
 	}
@@ -339,6 +460,8 @@ func (s *Service) Reverse(ctx context.Context, command ReverseCommand) (Sale, er
 			PaymentMethod: original.PaymentMethod, ReversalOf: original.ID,
 			ReversalReason: strings.TrimSpace(command.Reason), CreatedBy: command.ActorID, CreatedAt: now,
 		}
+		reversal.ReceiptReference = reversal.ID
+		reversal.FiscalStatus = FiscalNotConfigured
 		if command.CorrelationID != "" {
 			reversal.CorrelationID = command.CorrelationID
 		} else {
@@ -442,10 +565,16 @@ func (s *Service) Reverse(ctx context.Context, command ReverseCommand) (Sale, er
 	if err != nil {
 		return Sale{}, err
 	}
+	if err := ValidateWireSafeSale(result); err != nil {
+		return Sale{}, err
+	}
 	return result, nil
 }
 
 func (s *Service) Get(ctx context.Context, scope tenancy.Scope, actorID, saleID string) (Sale, error) {
+	scope = scope.Normalize()
+	actorID = identity.NormalizeClaim(actorID)
+	saleID = identity.NormalizeClaim(saleID)
 	if scope.Validate() != nil || strings.TrimSpace(actorID) == "" || strings.TrimSpace(saleID) == "" {
 		return Sale{}, ErrInvalidCommand
 	}
@@ -464,7 +593,33 @@ func (s *Service) Get(ctx context.Context, scope tenancy.Scope, actorID, saleID 
 	if err != nil {
 		return Sale{}, err
 	}
+	if err := ValidateWireSafeSale(result); err != nil {
+		return Sale{}, err
+	}
 	return result, nil
+}
+
+func normalizeCompleteCommand(command CompleteCommand) CompleteCommand {
+	command.Scope = command.Scope.Normalize()
+	command.CustomerID = identity.NormalizeClaim(command.CustomerID)
+	command.ActorID = identity.NormalizeClaim(command.ActorID)
+	command.DeviceID = identity.NormalizeClaim(command.DeviceID)
+	command.ClientTransactionID = identity.NormalizeClaim(command.ClientTransactionID)
+	command.CorrelationID = identity.NormalizeClaim(command.CorrelationID)
+	command.IdempotencyKey = strings.TrimSpace(command.IdempotencyKey)
+	command.PaymentMethod = strings.ToUpper(strings.TrimSpace(command.PaymentMethod))
+	command.AppVersion = strings.TrimSpace(command.AppVersion)
+	if !command.ClientTimestamp.IsZero() {
+		command.ClientTimestamp = command.ClientTimestamp.UTC()
+	}
+	command.Lines = append([]CommandLine(nil), command.Lines...)
+	for index := range command.Lines {
+		command.Lines[index].ProductID = identity.NormalizeClaim(command.Lines[index].ProductID)
+	}
+	sort.Slice(command.Lines, func(left, right int) bool {
+		return command.Lines[left].ProductID < command.Lines[right].ProductID
+	})
+	return command
 }
 
 func (s *Service) recordEvents(ctx context.Context, tx Transaction, sale Sale, actorID, eventType, causationID string, now time.Time) error {
@@ -506,15 +661,21 @@ func hashCommand(command any) (string, error) {
 }
 
 func checkedMultiply(left, right int64) (int64, error) {
-	if left < 0 || right < 0 || (right != 0 && left > math.MaxInt64/right) {
+	if left < 0 || right < 0 || left > MaxWireSafeInteger || right > MaxWireSafeInteger || (right != 0 && left > MaxWireSafeInteger/right) {
+		if left >= 0 && right >= 0 {
+			return 0, ErrUnsafeWireInteger
+		}
 		return 0, ErrMoneyOverflow
 	}
 	return left * right, nil
 }
 
 func checkedAdd(left, right int64) (int64, error) {
-	if left < 0 || right < 0 || left > math.MaxInt64-right {
+	if left < 0 || right < 0 {
 		return 0, ErrMoneyOverflow
+	}
+	if left > MaxWireSafeInteger || right > MaxWireSafeInteger || left > MaxWireSafeInteger-right {
+		return 0, ErrUnsafeWireInteger
 	}
 	return left + right, nil
 }
@@ -523,13 +684,18 @@ func taxAmount(subtotal, basisPoints int64) (int64, error) {
 	if basisPoints < 0 || basisPoints > 10000 {
 		return 0, ErrInvalidCommand
 	}
-	weighted, err := checkedMultiply(subtotal, basisPoints)
+	if subtotal < 0 || subtotal > MaxWireSafeInteger {
+		return 0, ErrUnsafeWireInteger
+	}
+	whole, remainder := subtotal/10_000, subtotal%10_000
+	wholeTax, err := checkedMultiply(whole, basisPoints)
 	if err != nil {
 		return 0, err
 	}
-	weighted, err = checkedAdd(weighted, 5000)
+	remainderTax := (remainder*basisPoints + 5_000) / 10_000
+	result, err := checkedAdd(wholeTax, remainderTax)
 	if err != nil {
 		return 0, err
 	}
-	return weighted / 10000, nil
+	return result, nil
 }

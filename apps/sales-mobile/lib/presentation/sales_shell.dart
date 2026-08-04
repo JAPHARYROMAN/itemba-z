@@ -588,7 +588,7 @@ class _SaleTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    sale.receiptNumber,
+                    sale.receiptReference,
                     style: const TextStyle(
                       color: Colors.blueGrey,
                       fontSize: 10,
@@ -648,8 +648,20 @@ class SaleDetailsSheet extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            sale.receiptNumber,
+            sale.receiptReference,
             style: const TextStyle(color: Colors.blueGrey),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            strings.t('fiscal_${sale.fiscalStatus.name}'),
+            style: TextStyle(
+              color:
+                  sale.fiscalStatus == FiscalStatus.fiscalized
+                      ? AppTheme.teal
+                      : Colors.blueGrey,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const Divider(height: 30),
           ...sale.lines.map(
@@ -684,6 +696,17 @@ class SaleDetailsSheet extends StatelessWidget {
             ),
           ),
           const Divider(),
+          if (sale.subtotalMinor != null) ...[
+            _CompactFact(
+              label: strings.t('subtotal'),
+              value: money(sale.subtotalMinor!),
+            ),
+            _CompactFact(
+              label: strings.t('tax'),
+              value: money(sale.taxMinor ?? 0),
+            ),
+            const SizedBox(height: 6),
+          ],
           Row(
             children: [
               Text(
@@ -969,23 +992,59 @@ class ProfilePage extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        value: controller.isOnline,
-                        onChanged: controller.setConnectivity,
-                        title: Text(
-                          strings.t('connectionDemo'),
-                          style: const TextStyle(fontWeight: FontWeight.w800),
+                      if (controller.allowConnectivitySimulation)
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: controller.isOnline,
+                          onChanged: controller.setConnectivity,
+                          title: Text(
+                            strings.t('connectionDemo'),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(strings.t('connectionDemoHelp')),
+                          secondary: Icon(
+                            controller.isOnline ? Icons.wifi : Icons.wifi_off,
+                            color:
+                                controller.isOnline
+                                    ? AppTheme.teal
+                                    : const Color(0xFFB54708),
+                          ),
+                        )
+                      else
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            controller.isOnline ? Icons.wifi : Icons.wifi_off,
+                            color:
+                                controller.isOnline
+                                    ? AppTheme.teal
+                                    : const Color(0xFFB54708),
+                          ),
+                          title: Text(
+                            strings.t('connectionStatus'),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(
+                            '${strings.t('connection_${controller.liveConnectionState.name}')}\n'
+                            '${controller.connection?.baseUrl ?? ''}',
+                          ),
+                          trailing: IconButton(
+                            tooltip: strings.t('refreshMasterData'),
+                            onPressed:
+                                controller.isRefreshingMasterData
+                                    ? null
+                                    : controller.refreshLiveMasterData,
+                            icon:
+                                controller.isRefreshingMasterData
+                                    ? const SizedBox.square(
+                                      dimension: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                    : const Icon(Icons.refresh),
+                          ),
                         ),
-                        subtitle: Text(strings.t('connectionDemoHelp')),
-                        secondary: Icon(
-                          controller.isOnline ? Icons.wifi : Icons.wifi_off,
-                          color:
-                              controller.isOnline
-                                  ? AppTheme.teal
-                                  : const Color(0xFFB54708),
-                        ),
-                      ),
                       const Divider(),
                       _CompactFact(
                         label: strings.t('offlineEnabled'),

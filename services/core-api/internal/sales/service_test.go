@@ -47,7 +47,10 @@ func newFixture(t *testing.T) fixture {
 	store.SeedFiscalPeriod(memory.FiscalPeriod{TenantID: scope.TenantID, CompanyID: scope.CompanyID, StartsAt: testTime.AddDate(0, -1, 0), EndsAt: testTime.AddDate(0, 1, 0), Open: true})
 	store.SeedPostingConfig(scope.TenantID, scope.CompanyID, finance.SalesPostingConfig{
 		ReceivableAccountID: "receivable", TaxPayableAccountID: "tax-payable",
-		CashAccounts: map[string]string{"CASH": "cash"},
+		CashAccounts: map[string]string{
+			sales.PaymentCash: "cash-on-hand", sales.PaymentMobileMoney: "mobile-money-clearing",
+			sales.PaymentBankCard: "bank-card-clearing", sales.PaymentBankTransfer: "bank-current",
+		},
 	})
 	store.SeedStock(inventory.Movement{
 		ID: "opening-stock", TenantID: scope.TenantID, CompanyID: scope.CompanyID,
@@ -135,6 +138,79 @@ func TestUnauthorizedActorCannotPost(t *testing.T) {
 	}
 }
 
+func TestUnsupportedPaymentMethodIsABusinessRejection(t *testing.T) {
+	f := newFixture(t)
+	command := f.cashCommand("unsupported-payment")
+	command.PaymentMethod = "CHEQUE"
+	if _, err := f.service.Complete(context.Background(), command); !errors.Is(err, sales.ErrUnsupportedPayment) {
+		t.Fatalf("unsupported payment error=%v", err)
+	}
+	snapshot := f.store.Snapshot()
+	if len(snapshot.Sales) != 0 || len(snapshot.Payments) != 0 || len(snapshot.Journals) != 0 || len(snapshot.Outbox) != 0 {
+		t.Fatalf("unsupported payment left transaction effects: %+v", snapshot)
+	}
+}
+
+func TestCanonicalButUnconfiguredPaymentMethodIsABusinessRejection(t *testing.T) {
+	f := newFixture(t)
+	f.store.SeedPostingConfig(f.scope.TenantID, f.scope.CompanyID, finance.SalesPostingConfig{
+		ReceivableAccountID: "receivable", TaxPayableAccountID: "tax-payable",
+		CashAccounts: map[string]string{sales.PaymentCash: "cash-on-hand"},
+	})
+	command := f.cashCommand("unconfigured-canonical-payment")
+	command.PaymentMethod = sales.PaymentBankCard
+	if _, err := f.service.Complete(context.Background(), command); !errors.Is(err, sales.ErrUnsupportedPayment) {
+		t.Fatalf("unconfigured canonical payment error=%v", err)
+	}
+	snapshot := f.store.Snapshot()
+	if len(snapshot.Sales) != 0 || len(snapshot.Payments) != 0 || len(snapshot.Journals) != 0 || len(snapshot.Outbox) != 0 {
+		t.Fatalf("unconfigured canonical payment left transaction effects: %+v", snapshot)
+	}
+}
+
+func TestCanonicalPaymentMethodsPostToDistinctAccounts(t *testing.T) {
+	methods := []string{sales.PaymentCash, sales.PaymentMobileMoney, sales.PaymentBankCard, sales.PaymentBankTransfer}
+	accounts := make(map[string]bool, len(methods))
+	for _, method := range methods {
+		f := newFixture(t)
+		command := f.cashCommand("canonical-payment-" + method)
+		command.PaymentMethod = method
+		created, err := f.service.Complete(context.Background(), command)
+		if err != nil {
+			t.Fatalf("method %s: %v", method, err)
+		}
+		snapshot := f.store.Snapshot()
+		if created.PaymentMethod != method || len(snapshot.Payments) != 1 || snapshot.Payments[0].Method != method {
+			t.Fatalf("method %s was not preserved: sale=%+v payments=%+v", method, created, snapshot.Payments)
+		}
+		if accounts[snapshot.Payments[0].AccountID] {
+			t.Fatalf("method %s reused settlement account %q", method, snapshot.Payments[0].AccountID)
+		}
+		accounts[snapshot.Payments[0].AccountID] = true
+	}
+}
+
+func TestSaleCannotBeReadOrReversedThroughAnotherBranchScope(t *testing.T) {
+	f := newFixture(t)
+	created, err := f.service.Complete(context.Background(), f.cashCommand("branch-scope-sale"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherScope := f.scope
+	otherScope.BranchID, otherScope.WarehouseID = "branch-b", "warehouse-b"
+	f.store.SeedPermission(otherScope, "user-1", "sales.read")
+	f.store.SeedPermission(otherScope, "user-1", "sales.reverse")
+	if _, err := f.service.Get(context.Background(), otherScope, "user-1", created.ID); !errors.Is(err, sales.ErrNotFound) {
+		t.Fatalf("cross-branch read error=%v", err)
+	}
+	if _, err := f.service.Reverse(context.Background(), sales.ReverseCommand{
+		Scope: otherScope, SaleID: created.ID, Reason: "cross-branch attempt",
+		ActorID: "user-1", IdempotencyKey: "cross-branch-reversal",
+	}); !errors.Is(err, sales.ErrNotFound) {
+		t.Fatalf("cross-branch reversal error=%v", err)
+	}
+}
+
 func TestClosedPeriodRejectsPostingWithoutEffects(t *testing.T) {
 	f := newFixture(t)
 	f.store.ReplaceFiscalPeriods(memory.FiscalPeriod{
@@ -152,10 +228,16 @@ func TestClosedPeriodRejectsPostingWithoutEffects(t *testing.T) {
 
 func TestTransactionRollsBackPartialCrossModuleEffects(t *testing.T) {
 	f := newFixture(t)
+	f.store.SeedProduct(catalog.Product{
+		ID: "product-2", TenantID: f.scope.TenantID, CompanyID: f.scope.CompanyID,
+		SKU: "SKU-2", Name: "Product Two", Active: true, Currency: "TZS",
+		ListPriceMinor: 10_000, StandardCostMinor: 6_000, TaxCode: "VAT",
+		RevenueAccountID: "revenue", COGSAccountID: "cogs", InventoryAccountID: "inventory",
+	})
 	command := f.cashCommand("rollback")
 	command.Lines = []sales.CommandLine{
 		{ProductID: "product-1", Quantity: 1},
-		{ProductID: "product-1", Quantity: 200},
+		{ProductID: "product-2", Quantity: 200},
 	}
 	if _, err := f.service.Complete(context.Background(), command); !errors.Is(err, sales.ErrInsufficientStock) {
 		t.Fatalf("expected stock rejection, got %v", err)
@@ -163,6 +245,49 @@ func TestTransactionRollsBackPartialCrossModuleEffects(t *testing.T) {
 	snapshot := f.store.Snapshot()
 	if len(snapshot.Sales) != 0 || len(snapshot.Payments) != 0 || len(snapshot.Journals) != 0 || len(snapshot.Audits) != 0 || len(snapshot.Outbox) != 0 || len(snapshot.Movements) != 1 {
 		t.Fatalf("transaction did not fully roll back: %+v", snapshot)
+	}
+}
+
+func TestDuplicateProductLinesAreRejectedBeforeAllocationOrPosting(t *testing.T) {
+	f := newFixture(t)
+	command := f.cashCommand("duplicate-product-lines")
+	command.Lines = []sales.CommandLine{
+		{ProductID: "product-1", Quantity: 6},
+		{ProductID: "product-1", Quantity: 6},
+	}
+	if _, err := f.service.Complete(context.Background(), command); !errors.Is(err, sales.ErrDuplicateProductLine) {
+		t.Fatalf("expected duplicate product rejection, got %v", err)
+	}
+	snapshot := f.store.Snapshot()
+	if len(snapshot.Sales) != 0 || len(snapshot.Journals) != 0 || len(snapshot.Movements) != 1 {
+		t.Fatalf("duplicate product command left effects: %+v", snapshot)
+	}
+}
+
+func TestDuplicateProductLinesUseCanonicalIdentity(t *testing.T) {
+	f := newFixture(t)
+	command := f.cashCommand("canonical-duplicate-product-lines")
+	command.Lines = []sales.CommandLine{
+		{ProductID: "product-1", Quantity: 1},
+		{ProductID: " PRODUCT-1 ", Quantity: 1},
+	}
+	if _, err := f.service.Complete(context.Background(), command); !errors.Is(err, sales.ErrDuplicateProductLine) {
+		t.Fatalf("canonical duplicate error=%v", err)
+	}
+	if snapshot := f.store.Snapshot(); len(snapshot.Sales) != 0 || len(snapshot.Journals) != 0 || len(snapshot.Movements) != 1 {
+		t.Fatalf("canonical duplicate left effects: %+v", snapshot)
+	}
+}
+
+func TestUnsafeJSONIntegerIsRejectedWithoutEffects(t *testing.T) {
+	f := newFixture(t)
+	command := f.cashCommand("unsafe-wire-integer")
+	command.Lines[0].Quantity = sales.MaxWireSafeInteger + 1
+	if _, err := f.service.Complete(context.Background(), command); !errors.Is(err, sales.ErrUnsafeWireInteger) {
+		t.Fatalf("unsafe integer error=%v", err)
+	}
+	if snapshot := f.store.Snapshot(); len(snapshot.Sales) != 0 || len(snapshot.Payments) != 0 || len(snapshot.Journals) != 0 || len(snapshot.Outbox) != 0 || len(snapshot.Movements) != 1 {
+		t.Fatalf("unsafe integer left effects: %+v", snapshot)
 	}
 }
 

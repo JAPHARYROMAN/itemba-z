@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/dbrole"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
@@ -26,6 +27,14 @@ type Store struct {
 }
 
 func Open(ctx context.Context, databaseURL string) (*Store, error) {
+	return open(ctx, databaseURL, dbrole.APIRuntimeGroup, dbrole.WorkerRuntimeGroup)
+}
+
+func OpenWorker(ctx context.Context, databaseURL string) (*Store, error) {
+	return open(ctx, databaseURL, dbrole.WorkerRuntimeGroup, dbrole.APIRuntimeGroup)
+}
+
+func open(ctx context.Context, databaseURL, requiredGroup, forbiddenGroup string) (*Store, error) {
 	if databaseURL == "" {
 		return nil, errors.New("DATABASE_URL is required")
 	}
@@ -44,7 +53,47 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 		pool.Close()
 		return nil, fmt.Errorf("ping PostgreSQL: %w", err)
 	}
+	if err := validateRuntimePool(ctx, pool, "itembaz", requiredGroup, forbiddenGroup); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	return New(pool, "itembaz")
+}
+
+func validateRuntimePool(ctx context.Context, pool *pgxpool.Pool, schema, requiredGroup, forbiddenGroup string) error {
+	var groupExists bool
+	if err := pool.QueryRow(ctx, `SELECT count(*)=2 FROM pg_roles WHERE rolname=ANY($1::text[])`,
+		[]string{requiredGroup, forbiddenGroup}).Scan(&groupExists); err != nil {
+		return fmt.Errorf("inspect PostgreSQL runtime role: %w", err)
+	}
+	if !groupExists {
+		return errors.New("PostgreSQL runtime role is absent; apply migrations and provision a runtime login")
+	}
+	var currentUser string
+	var superuser, bypassRLS, inherit, member, ownsTables, schemaExists, schemaUsage bool
+	err := pool.QueryRow(ctx, `
+		SELECT current_user, r.rolsuper, r.rolbypassrls, r.rolinherit,
+		       pg_has_role(current_user, $2, 'MEMBER'),
+		       pg_has_role(current_user, $3, 'MEMBER'),
+		       EXISTS (
+		           SELECT 1 FROM pg_class c
+		           JOIN pg_namespace n ON n.oid=c.relnamespace
+		           WHERE n.nspname=$1 AND c.relowner=r.oid AND c.relkind IN ('r','p')
+		       ),
+		       to_regnamespace($1) IS NOT NULL,
+		       has_schema_privilege(current_user, $1, 'USAGE')
+		FROM pg_roles r WHERE r.rolname=current_user`, schema, requiredGroup, forbiddenGroup).Scan(
+		&currentUser, &superuser, &bypassRLS, &inherit, &member, &groupExists, &ownsTables, &schemaExists, &schemaUsage)
+	if err != nil {
+		return fmt.Errorf("verify PostgreSQL runtime identity: %w", err)
+	}
+	if superuser || bypassRLS || ownsTables {
+		return fmt.Errorf("PostgreSQL identity %q can bypass row-level security", currentUser)
+	}
+	if !inherit || !member || groupExists || !schemaExists || !schemaUsage {
+		return fmt.Errorf("PostgreSQL identity %q is not a provisioned ITEMBA-Z runtime login", currentUser)
+	}
+	return nil
 }
 
 func New(pool *pgxpool.Pool, schema string) (*Store, error) {

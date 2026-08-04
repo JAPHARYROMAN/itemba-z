@@ -40,15 +40,35 @@ jobs:
           POSTGRES_DB: itemba_z
           POSTGRES_USER: itemba_z
           POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_API_RUNTIME_USER: itemba_z_api_runtime
+          POSTGRES_API_RUNTIME_PASSWORD: ci-only-api-runtime-password
+          POSTGRES_WORKER_RUNTIME_USER: itemba_z_worker_runtime
+          POSTGRES_WORKER_RUNTIME_PASSWORD: ci-only-worker-runtime-password
           MINIO_ROOT_USER: itemba_z_ci
           MINIO_ROOT_PASSWORD: ci-only-password
         run: docker compose -f infra/docker/compose.yaml config --quiet
 
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: itemba_z_test
+          POSTGRES_USER: itemba_z_test
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U itemba_z_test -d itemba_z_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     defaults:
       run:
         working-directory: services/core-api
+    env:
+      TEST_DATABASE_URL: postgres://itemba_z_test:ci-only-password@127.0.0.1:5432/itemba_z_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -77,6 +97,10 @@ jobs:
           cache: npm
           cache-dependency-path: apps/control-center/package-lock.json
       - run: npm ci
+      - name: Verify generated API types are current
+        run: |
+          npm run generate:api
+          git diff --exit-code -- src/generated/itemba-z.v1.ts
       - run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm run typecheck
@@ -84,6 +108,102 @@ jobs:
       - run: npm run build
       - name: Build Control Center container
         run: docker build --tag itemba-z-control-center:ci .
+
+  golden-sale-http:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: itemba_z_http
+          POSTGRES_USER: itemba_z_http
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U itemba_z_http -d itemba_z_http"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://itemba_z_http:ci-only-password@127.0.0.1:5432/itemba_z_http?sslmode=disable
+      API_RUNTIME_DATABASE_URL: postgres://itemba_z_api_runtime:ci-only-api-runtime-password@127.0.0.1:5432/itemba_z_http?sslmode=disable
+      WORKER_RUNTIME_DATABASE_URL: postgres://itemba_z_worker_runtime:ci-only-worker-runtime-password@127.0.0.1:5432/itemba_z_http?sslmode=disable
+      ITEMBA_ENV: development
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/core-api/go.mod
+          cache-dependency-path: services/core-api/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply database migrations
+        working-directory: services/core-api
+        run: go run ./cmd/migrate
+      - name: Provision restricted API database login
+        working-directory: services/core-api
+        env:
+          ITEMBA_RUNTIME_USER: itemba_z_api_runtime
+          ITEMBA_RUNTIME_PASSWORD: ci-only-api-runtime-password
+          ITEMBA_RUNTIME_CAPABILITY: api
+        run: go run ./cmd/devdbrole
+      - name: Provision restricted worker database login
+        working-directory: services/core-api
+        env:
+          ITEMBA_RUNTIME_USER: itemba_z_worker_runtime
+          ITEMBA_RUNTIME_PASSWORD: ci-only-worker-runtime-password
+          ITEMBA_RUNTIME_CAPABILITY: worker
+        run: go run ./cmd/devdbrole
+      - name: Install safe development fixtures
+        working-directory: services/core-api
+        run: go run ./cmd/devseed
+      - name: Start live core API
+        working-directory: services/core-api
+        run: |
+          go build -o "$RUNNER_TEMP/itemba-api" ./cmd/api
+          DATABASE_URL="$API_RUNTIME_DATABASE_URL" "$RUNNER_TEMP/itemba-api" > "$RUNNER_TEMP/itemba-api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/itemba-api.pid"
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/readyz > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/itemba-api.log"
+          exit 1
+      - name: Verify live golden-sale HTTP workflow
+        env:
+          ITEMBA_API_BASE_URL: http://127.0.0.1:8080
+        run: node scripts/verify-live-golden-sale.mjs
+      - name: Verify worker-only outbox runtime
+        working-directory: services/core-api
+        run: |
+          go build -o "$RUNNER_TEMP/itemba-worker" ./cmd/worker
+          set +e
+          DATABASE_URL="$WORKER_RUNTIME_DATABASE_URL" ITEMBA_WORKER_ID=ci-smoke-worker \
+            timeout --signal=TERM 5s "$RUNNER_TEMP/itemba-worker" > "$RUNNER_TEMP/itemba-worker.log" 2>&1
+          status=$?
+          set -e
+          if test "$status" -ne 0 && test "$status" -ne 124; then
+            cat "$RUNNER_TEMP/itemba-worker.log"
+            exit "$status"
+          fi
+          grep -q 'published local outbox event' "$RUNNER_TEMP/itemba-worker.log"
+      - name: Print API log on failure
+        if: failure()
+        run: |
+          cat "$RUNNER_TEMP/itemba-api.log"
+          if test -f "$RUNNER_TEMP/itemba-worker.log"; then
+            cat "$RUNNER_TEMP/itemba-worker.log"
+          fi
+      - name: Stop live core API
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/itemba-api.pid"; then
+            kill "$(cat "$RUNNER_TEMP/itemba-api.pid")" || true
+          fi
 
   sales-mobile:
     runs-on: ubuntu-latest
@@ -97,6 +217,8 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      - name: Verify generated Dart API contract is current
+        run: dart run tool/generate_openapi_subset.dart --check
       - run: flutter analyze
       - run: flutter test
       - run: flutter build apk --debug

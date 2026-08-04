@@ -14,5 +14,5 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#0b2b26" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}><body><LanguageProvider><AppShell>{children}</AppShell></LanguageProvider></body></html>;
+  return <html lang="en" data-scroll-behavior="smooth" className={`${GeistSans.variable} ${GeistMono.variable}`}><body><LanguageProvider><AppShell>{children}</AppShell></LanguageProvider></body></html>;
 }

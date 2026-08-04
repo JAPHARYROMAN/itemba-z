@@ -5,16 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
 
 var ErrUnauthenticated = errors.New("request authentication is missing or invalid")
-var internalUUIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type Principal struct {
 	ActorID string
@@ -30,6 +29,21 @@ func (p Principal) Validate() error {
 		return ErrUnauthenticated
 	}
 	return nil
+}
+
+func (p Principal) canonicalized() (Principal, error) {
+	values := []*string{&p.ActorID, &p.Scope.TenantID, &p.Scope.CompanyID, &p.Scope.BranchID, &p.Scope.WarehouseID}
+	for _, target := range values {
+		canonical, err := identity.CanonicalUUID(*target)
+		if err != nil {
+			return Principal{}, ErrUnauthenticated
+		}
+		*target = canonical
+	}
+	if err := p.Validate(); err != nil {
+		return Principal{}, ErrUnauthenticated
+	}
+	return p, nil
 }
 
 type Authenticator interface {
@@ -48,10 +62,7 @@ func (DevelopmentHeaderAuthenticator) Authenticate(_ context.Context, request *h
 			BranchID: strings.TrimSpace(request.Header.Get("X-Branch-ID")), WarehouseID: strings.TrimSpace(request.Header.Get("X-Warehouse-ID")),
 		},
 	}
-	if err := principal.Validate(); err != nil {
-		return Principal{}, err
-	}
-	return principal, nil
+	return principal.canonicalized()
 }
 
 type OIDCAuthenticator struct{ verifier *oidc.IDTokenVerifier }
@@ -96,16 +107,11 @@ func (a *OIDCAuthenticator) Authenticate(ctx context.Context, request *http.Requ
 }
 
 func principalFromOIDCClaims(claims oidcClaims) (Principal, error) {
-	if strings.TrimSpace(claims.Subject) == "" || !internalUUIDPattern.MatchString(claims.UserID) ||
-		!internalUUIDPattern.MatchString(claims.TenantID) || !internalUUIDPattern.MatchString(claims.CompanyID) ||
-		!internalUUIDPattern.MatchString(claims.BranchID) || !internalUUIDPattern.MatchString(claims.WarehouseID) {
+	if strings.TrimSpace(claims.Subject) == "" {
 		return Principal{}, ErrUnauthenticated
 	}
 	principal := Principal{ActorID: claims.UserID, Subject: claims.Subject, Scope: tenancy.Scope{
 		TenantID: claims.TenantID, CompanyID: claims.CompanyID, BranchID: claims.BranchID, WarehouseID: claims.WarehouseID,
 	}}
-	if err := principal.Validate(); err != nil {
-		return Principal{}, err
-	}
-	return principal, nil
+	return principal.canonicalized()
 }

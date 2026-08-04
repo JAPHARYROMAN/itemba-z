@@ -6,6 +6,7 @@ import "time"
 
 type Account struct {
 	ID               string
+	Code             string
 	TenantID         string
 	CompanyID        string
 	Name             string

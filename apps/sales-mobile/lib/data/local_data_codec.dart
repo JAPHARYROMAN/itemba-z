@@ -27,7 +27,7 @@ class LocalDataCodec {
               'limit': customer.credit!.limit,
               'currentExposure': customer.credit!.currentExposure,
               'overdueAmount': customer.credit!.overdueAmount,
-              'dueDate': customer.credit!.dueDate.millisecondsSinceEpoch,
+              'dueDate': customer.credit!.dueDate?.millisecondsSinceEpoch,
             },
   };
 
@@ -55,9 +55,12 @@ class LocalDataCodec {
                   creditMap['overdueAmount'],
                   'credit.overdueAmount',
                 ),
-                dueDate: DateTime.fromMillisecondsSinceEpoch(
-                  creditMap['dueDate']! as int,
-                ),
+                dueDate:
+                    creditMap['dueDate'] == null
+                        ? null
+                        : DateTime.fromMillisecondsSinceEpoch(
+                          creditMap['dueDate']! as int,
+                        ),
               ),
     );
   }
@@ -78,6 +81,9 @@ class LocalDataCodec {
     'unit': product.unit,
     'sellingPrice': product.sellingPrice,
     'availableQuantity': product.availableQuantity,
+    'taxBasisPoints': product.taxBasisPoints,
+    'masterDataVersion': product.masterDataVersion,
+    'priceVersion': product.priceVersion,
   };
 
   static Product productFromMap(Map<String, Object?> map) => Product(
@@ -93,6 +99,12 @@ class LocalDataCodec {
       map['availableQuantity'],
       'product.availableQuantity',
     ),
+    taxBasisPoints:
+        map['taxBasisPoints'] == null
+            ? null
+            : _exactInt(map['taxBasisPoints'], 'product.taxBasisPoints'),
+    masterDataVersion: _versionInt(map['masterDataVersion']),
+    priceVersion: _versionInt(map['priceVersion']),
   );
 
   static String encodeDevice(DeviceContext device) =>
@@ -104,6 +116,7 @@ class LocalDataCodec {
   static Map<String, Object?> deviceToMap(DeviceContext device) => {
     'deviceId': device.deviceId,
     'userId': device.userId,
+    'tenantId': device.tenantId,
     'attendantName': device.attendantName,
     'companyId': device.companyId,
     'companyName': device.companyName,
@@ -120,6 +133,7 @@ class LocalDataCodec {
   static DeviceContext deviceFromMap(Map<String, Object?> map) => DeviceContext(
     deviceId: map['deviceId']! as String,
     userId: map['userId']! as String,
+    tenantId: map['tenantId'] as String? ?? 'legacy-tenant',
     attendantName: map['attendantName']! as String,
     companyId: map['companyId']! as String,
     companyName: map['companyName']! as String,
@@ -128,14 +142,14 @@ class LocalDataCodec {
     warehouseId: map['warehouseId']! as String,
     warehouseName: map['warehouseName']! as String,
     appVersion: map['appVersion']! as String,
-    masterDataVersion: map['masterDataVersion']! as String,
-    priceVersion: map['priceVersion']! as String,
+    masterDataVersion: _versionInt(map['masterDataVersion']),
+    priceVersion: _versionInt(map['priceVersion']),
     approved: map['approved']! as bool,
   );
 
   static String encodeSale(CompletedSale sale) => jsonEncode({
     'serverSaleId': sale.serverSaleId,
-    'receiptNumber': sale.receiptNumber,
+    'receiptReference': sale.receiptReference,
     'clientTransactionId': sale.clientTransactionId,
     'deviceId': sale.deviceId,
     'customer': customerToMap(sale.customer),
@@ -148,6 +162,9 @@ class LocalDataCodec {
                 'product': productToMap(line.product),
                 'quantity': line.quantity,
                 'unitPrice': line.unitPrice,
+                'authoritativeSubtotalMinor': line.authoritativeSubtotalMinor,
+                'authoritativeTaxMinor': line.authoritativeTaxMinor,
+                'authoritativeTotalMinor': line.authoritativeTotalMinor,
               },
             )
             .toList(),
@@ -155,6 +172,11 @@ class LocalDataCodec {
     'createdAt': sale.createdAt.millisecondsSinceEpoch,
     'paymentStatus': sale.paymentStatus,
     'syncStatus': sale.syncStatus.name,
+    'subtotalMinor': sale.subtotalMinor,
+    'taxMinor': sale.taxMinor,
+    'cogsMinor': sale.cogsMinor,
+    'fiscalStatus': sale.fiscalStatus.name,
+    'createdOffline': sale.createdOffline,
     'syncMessage': sale.syncMessage,
   });
 
@@ -175,15 +197,43 @@ class LocalDataCodec {
             unit: storedProduct.unit,
             sellingPrice: storedPrice,
             availableQuantity: storedProduct.availableQuantity,
+            taxBasisPoints: storedProduct.taxBasisPoints,
+            masterDataVersion: storedProduct.masterDataVersion,
+            priceVersion: storedProduct.priceVersion,
           );
           return CartLine(
             product: product,
             quantity: _exactInt(lineMap['quantity'], 'line.quantity'),
+            unitPrice: storedPrice,
+            authoritativeSubtotalMinor:
+                lineMap['authoritativeSubtotalMinor'] == null
+                    ? null
+                    : _exactInt(
+                      lineMap['authoritativeSubtotalMinor'],
+                      'line.authoritativeSubtotalMinor',
+                    ),
+            authoritativeTaxMinor:
+                lineMap['authoritativeTaxMinor'] == null
+                    ? null
+                    : _exactInt(
+                      lineMap['authoritativeTaxMinor'],
+                      'line.authoritativeTaxMinor',
+                    ),
+            authoritativeTotalMinor:
+                lineMap['authoritativeTotalMinor'] == null
+                    ? null
+                    : _exactInt(
+                      lineMap['authoritativeTotalMinor'],
+                      'line.authoritativeTotalMinor',
+                    ),
           );
         }).toList();
     return CompletedSale(
       serverSaleId: map['serverSaleId']! as String,
-      receiptNumber: map['receiptNumber']! as String,
+      receiptReference:
+          map['receiptReference'] as String? ??
+          map['receiptNumber'] as String? ??
+          '',
       clientTransactionId: map['clientTransactionId']! as String,
       deviceId: map['deviceId']! as String,
       customer: customerFromMap(_asMap(map['customer'])),
@@ -196,6 +246,22 @@ class LocalDataCodec {
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']! as int),
       paymentStatus: map['paymentStatus']! as String,
       syncStatus: SyncStatus.values.byName(map['syncStatus']! as String),
+      subtotalMinor:
+          map['subtotalMinor'] == null
+              ? null
+              : _exactInt(map['subtotalMinor'], 'sale.subtotalMinor'),
+      taxMinor:
+          map['taxMinor'] == null
+              ? null
+              : _exactInt(map['taxMinor'], 'sale.taxMinor'),
+      cogsMinor:
+          map['cogsMinor'] == null
+              ? null
+              : _exactInt(map['cogsMinor'], 'sale.cogsMinor'),
+      fiscalStatus: FiscalStatus.values.byName(
+        map['fiscalStatus'] as String? ?? FiscalStatus.notConfigured.name,
+      ),
+      createdOffline: map['createdOffline'] as bool? ?? false,
       syncMessage: map['syncMessage'] as String?,
     );
   }
@@ -228,8 +294,8 @@ class LocalDataCodec {
       branchId: map['branchId']! as String,
       warehouseId: map['warehouseId']! as String,
       appVersion: map['appVersion']! as String,
-      masterDataVersion: map['masterDataVersion']! as String,
-      priceVersion: map['priceVersion']! as String,
+      masterDataVersion: _versionInt(map['masterDataVersion']),
+      priceVersion: _versionInt(map['priceVersion']),
       syncAttemptNumber: map['syncAttemptNumber']! as int,
       sale: decodeSale(jsonEncode(map['sale'])),
     );
@@ -256,5 +322,11 @@ class LocalDataCodec {
       return value.toInt();
     }
     throw FormatException('$field must be an exact integer');
+  }
+
+  static int _versionInt(Object? value) {
+    if (value is int && value > 0) return value;
+    if (value is String) return int.tryParse(value) ?? 1;
+    return 1;
   }
 }

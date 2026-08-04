@@ -302,7 +302,7 @@ export const dashboard: DashboardData = {
   ],
   approvals: [
     { id: "PO-2026-00412", type: text("Purchase order", "Oda ya manunuzi"), subject: "Mwanza Packaging Works", requester: "Godfrey Mushi", amount: "TZS 14.8m", age: text("32 min", "Dakika 32"), tone: "warning", href: "/purchases/PO-2026-00412" },
-    { id: "SO-2026-01421", type: text("Credit exception", "Tofauti ya mkopo"), subject: "Mlimani Mini Mart", requester: "Yusuf Hamisi", amount: "TZS 3.92m", age: text("2 hours", "Saa 2"), tone: "danger", href: "/sales/SO-2026-01421" },
+    { id: "SALES-LIVE", type: text("Live credit controls", "Udhibiti hai wa mkopo"), subject: "Open authenticated sales workspace", requester: "Live ERP", amount: "—", age: text("Open live", "Fungua hai"), tone: "info", href: "/sales" },
     { id: "JV-2026-00858", type: text("Journal review", "Ukaguzi wa jarida"), subject: "Bank charges · July sweep", requester: "Kelvin Maro", amount: "TZS 482k", age: text("Yesterday", "Jana"), tone: "info", href: "/finance/JV-2026-00858" },
   ],
   alerts: [

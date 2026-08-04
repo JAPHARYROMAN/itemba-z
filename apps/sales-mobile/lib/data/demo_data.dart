@@ -3,6 +3,7 @@ import '../domain/models.dart';
 const demoDevice = DeviceContext(
   deviceId: 'ITZ-DAR-0017',
   userId: 'usr-0024',
+  tenantId: 'tenant-itemba-group',
   attendantName: 'Asha Mushi',
   companyId: 'company-itemba-trading',
   companyName: 'Itemba Trading Co. Ltd',
@@ -11,8 +12,8 @@ const demoDevice = DeviceContext(
   warehouseId: 'warehouse-dar-main',
   warehouseName: 'Dar Main Store',
   appVersion: '1.0.0',
-  masterDataVersion: '2026.08.04.2',
-  priceVersion: 'TZS-2026.08.01',
+  masterDataVersion: 1,
+  priceVersion: 1,
   approved: true,
 );
 
@@ -36,8 +37,8 @@ final demoCustomers = <Customer>[
     creditEnabled: true,
     inAttendantScope: true,
     credit: CreditSnapshot(
-      limit: 5000000,
-      currentExposure: 1840000,
+      limit: 500000000,
+      currentExposure: 184000000,
       overdueAmount: 0,
       dueDate: DateTime(2026, 8, 25),
     ),
@@ -52,9 +53,9 @@ final demoCustomers = <Customer>[
     creditEnabled: true,
     inAttendantScope: true,
     credit: CreditSnapshot(
-      limit: 2200000,
-      currentExposure: 2075000,
-      overdueAmount: 175000,
+      limit: 220000000,
+      currentExposure: 207500000,
+      overdueAmount: 17500000,
       dueDate: DateTime(2026, 8, 18),
     ),
   ),
@@ -88,8 +89,9 @@ const demoProducts = <Product>[
     brand: 'Twiga',
     category: 'Cement',
     unit: 'Bag',
-    sellingPrice: 18500,
+    sellingPrice: 1850000,
     availableQuantity: 148,
+    taxBasisPoints: 0,
   ),
   Product(
     id: 'product-roofing',
@@ -99,8 +101,9 @@ const demoProducts = <Product>[
     brand: 'ALAF',
     category: 'Roofing',
     unit: 'Sheet',
-    sellingPrice: 42000,
+    sellingPrice: 4200000,
     availableQuantity: 38,
+    taxBasisPoints: 0,
   ),
   Product(
     id: 'product-paint',
@@ -110,8 +113,9 @@ const demoProducts = <Product>[
     brand: 'Coral',
     category: 'Paint',
     unit: 'Bucket',
-    sellingPrice: 96500,
+    sellingPrice: 9650000,
     availableQuantity: 24,
+    taxBasisPoints: 0,
   ),
   Product(
     id: 'product-pipe',
@@ -121,8 +125,9 @@ const demoProducts = <Product>[
     brand: 'Simba',
     category: 'Plumbing',
     unit: 'Length',
-    sellingPrice: 32500,
+    sellingPrice: 3250000,
     availableQuantity: 52,
+    taxBasisPoints: 0,
   ),
   Product(
     id: 'product-rebar',
@@ -132,15 +137,17 @@ const demoProducts = <Product>[
     brand: 'Kamal',
     category: 'Steel',
     unit: 'Bar',
-    sellingPrice: 28500,
+    sellingPrice: 2850000,
     availableQuantity: 94,
+    taxBasisPoints: 0,
   ),
 ];
 
-const demoOfflinePolicy = OfflineSalesPolicy(
+final demoOfflinePolicy = OfflineSalesPolicy(
   enabled: true,
-  transactionValueLimit: 500000,
-  remainingDailyValue: 1200000,
+  transactionValueLimit: 50000000,
+  remainingDailyValue: 120000000,
+  offlineSalesValidUntil: DateTime.utc(2100),
   productAllocations: {
     'product-cement': 20,
     'product-roofing': 8,

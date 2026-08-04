@@ -62,6 +62,8 @@ class AppStrings {
           'Cash sales may use General Customer or a registered customer.',
       'creditCustomerHelp':
           'Only active, registered, credit-enabled customers are shown.',
+      'creditPolicyUnavailable':
+          'Credit is blocked until the server supplies authoritative overdue-policy data.',
       'creditOnlineOnly': 'Credit sales require a live server check.',
       'noEligibleCustomers': 'No eligible customers found.',
       'products': 'Products',
@@ -74,6 +76,8 @@ class AppStrings {
       'cartEmptyHelp': 'Add at least one product to continue.',
       'unitPrice': 'Locked unit price',
       'total': 'Total',
+      'subtotal': 'Subtotal',
+      'tax': 'Tax',
       'payment': 'Payment',
       'paymentMethod': 'Payment method',
       'mobileMoney': 'Mobile money',
@@ -91,13 +95,13 @@ class AppStrings {
       'dueDate': 'Due date',
       'allowed': 'Allowed',
       'blocked': 'Blocked',
-      'receipt': 'Receipt',
+      'receipt': 'Sale confirmation',
       'saleComplete': 'Sale completed',
       'queuedOffline': 'Saved securely and queued for sync',
       'postedOnline': 'Posted once to ITEMBA-Z',
-      'receiptNumber': 'Receipt number',
+      'receiptNumber': 'Internal receipt reference',
       'done': 'Done',
-      'reprint': 'Reprint receipt',
+      'reprint': 'View confirmation',
       'requestCorrection': 'Request correction',
       'ownSalesOnly': 'Only sales authorized for {name}',
       'all': 'All',
@@ -132,6 +136,21 @@ class AppStrings {
       'connectionDemo': 'Connection simulator',
       'connectionDemoHelp':
           'Use this switch to verify controlled offline behaviour.',
+      'connectionStatus': 'Server connection',
+      'refreshMasterData': 'Refresh customers and products',
+      'connection_ready': 'Connected and current',
+      'connection_offlineCache': 'Offline · encrypted cache in use',
+      'connection_refreshing': 'Refreshing master data…',
+      'connection_error': 'Connection requires attention',
+      'connection_authenticationRequired': 'Sign-in required',
+      'connection_suspended': 'Device suspended',
+      'connection_notConfigured': 'Not configured',
+      'connection_enrolling': 'Enrolling device…',
+      'fiscalStatus': 'Fiscal status',
+      'fiscal_notConfigured': 'Not configured · non-fiscal reference',
+      'fiscal_pending': 'Fiscalization pending',
+      'fiscal_fiscalized': 'TRA fiscalized',
+      'fiscal_failed': 'Fiscalization failed',
       'language': 'Language',
       'english': 'English',
       'swahili': 'Swahili',
@@ -154,9 +173,21 @@ class AppStrings {
       'rule_creditRequiresOnline':
           'Connect to ITEMBA-Z before completing a credit sale.',
       'rule_emptyCart': 'Add at least one product.',
+      'rule_amountOutsideApiRange':
+          'This sale amount is too large to process safely.',
+      'rule_staleDraftContext':
+          'This draft was opened before the app or catalog changed. Start a new sale.',
+      'rule_staleProductVersion':
+          'A product or price changed. Refresh the cart before completing this sale.',
       'rule_stockUnavailable': 'Requested stock is unavailable.',
       'rule_offlineCashDisabled':
           'Offline cash sales are disabled for this device.',
+      'rule_offlinePhysicalCashRequired':
+          'Offline sales require physical cash payment.',
+      'rule_offlineTaxUnsupported':
+          'Offline sales are limited to products with an authoritative zero tax rate.',
+      'rule_offlineAuthorizationExpired':
+          'Reconnect to ITEMBA-Z to renew offline sales authorization.',
       'rule_offlineValueLimit':
           'This sale exceeds the device offline transaction limit.',
       'rule_offlineDailyLimit':
@@ -205,6 +236,8 @@ class AppStrings {
           'Mauzo ya taslimu yanaweza kutumia Mteja wa Jumla au mteja aliyesajiliwa.',
       'creditCustomerHelp':
           'Wateja hai, waliosajiliwa na kuruhusiwa mkopo pekee ndio wanaoonyeshwa.',
+      'creditPolicyUnavailable':
+          'Mkopo umezuiwa hadi seva itoe data rasmi ya sera ya madeni yaliyochelewa.',
       'creditOnlineOnly':
           'Mauzo ya mkopo yanahitaji uhakiki wa moja kwa moja wa seva.',
       'noEligibleCustomers': 'Hakuna wateja wanaokidhi vigezo.',
@@ -218,6 +251,8 @@ class AppStrings {
       'cartEmptyHelp': 'Ongeza angalau bidhaa moja ili kuendelea.',
       'unitPrice': 'Bei iliyofungwa',
       'total': 'Jumla',
+      'subtotal': 'Jumla ndogo',
+      'tax': 'Kodi',
       'payment': 'Malipo',
       'paymentMethod': 'Njia ya malipo',
       'mobileMoney': 'Pesa ya simu',
@@ -235,13 +270,13 @@ class AppStrings {
       'dueDate': 'Tarehe ya mwisho',
       'allowed': 'Imeruhusiwa',
       'blocked': 'Imezuiwa',
-      'receipt': 'Risiti',
+      'receipt': 'Uthibitisho wa mauzo',
       'saleComplete': 'Mauzo yamekamilika',
       'queuedOffline': 'Yamehifadhiwa salama na yanasubiri usawazishaji',
       'postedOnline': 'Yamewasilishwa mara moja ITEMBA-Z',
-      'receiptNumber': 'Namba ya risiti',
+      'receiptNumber': 'Rejea ya risiti ya ndani',
       'done': 'Imekamilika',
-      'reprint': 'Chapisha risiti tena',
+      'reprint': 'Angalia uthibitisho',
       'requestCorrection': 'Omba marekebisho',
       'ownSalesOnly': 'Mauzo yaliyoidhinishwa kwa {name} pekee',
       'all': 'Yote',
@@ -276,6 +311,21 @@ class AppStrings {
       'connectionDemo': 'Kiigaji cha muunganisho',
       'connectionDemoHelp':
           'Tumia swichi hii kuhakiki tabia salama nje ya mtandao.',
+      'connectionStatus': 'Muunganisho wa seva',
+      'refreshMasterData': 'Sasisha wateja na bidhaa',
+      'connection_ready': 'Imeunganishwa na imesasishwa',
+      'connection_offlineCache': 'Nje ya mtandao · hifadhi salama inatumika',
+      'connection_refreshing': 'Inasasisha data kuu…',
+      'connection_error': 'Muunganisho unahitaji ukaguzi',
+      'connection_authenticationRequired': 'Kuingia kunahitajika',
+      'connection_suspended': 'Kifaa kimesimamishwa',
+      'connection_notConfigured': 'Haijasanidiwa',
+      'connection_enrolling': 'Inasajili kifaa…',
+      'fiscalStatus': 'Hali ya fiskali',
+      'fiscal_notConfigured': 'Haijasanidiwa · rejea si ya fiskali',
+      'fiscal_pending': 'Ufiskalishaji unasubiri',
+      'fiscal_fiscalized': 'Imefiskalishwa na TRA',
+      'fiscal_failed': 'Ufiskalishaji umeshindwa',
       'language': 'Lugha',
       'english': 'Kiingereza',
       'swahili': 'Kiswahili',
@@ -298,9 +348,21 @@ class AppStrings {
       'rule_creditRequiresOnline':
           'Unganisha ITEMBA-Z kabla ya kukamilisha mauzo ya mkopo.',
       'rule_emptyCart': 'Ongeza angalau bidhaa moja.',
+      'rule_amountOutsideApiRange':
+          'Kiasi cha mauzo haya ni kikubwa mno kuchakatwa kwa usalama.',
+      'rule_staleDraftContext':
+          'Rasimu hii ilifunguliwa kabla programu au katalogi kubadilika. Anza mauzo mapya.',
+      'rule_staleProductVersion':
+          'Bidhaa au bei imebadilika. Onyesha upya kikapu kabla ya kukamilisha mauzo.',
       'rule_stockUnavailable': 'Kiasi hiki cha bidhaa hakipatikani.',
       'rule_offlineCashDisabled':
           'Mauzo ya taslimu nje ya mtandao yamezuiwa kwa kifaa hiki.',
+      'rule_offlinePhysicalCashRequired':
+          'Mauzo nje ya mtandao yanahitaji malipo ya fedha taslimu.',
+      'rule_offlineTaxUnsupported':
+          'Mauzo nje ya mtandao yanaruhusiwa kwa bidhaa zenye kiwango halali cha kodi sifuri pekee.',
+      'rule_offlineAuthorizationExpired':
+          'Unganisha ITEMBA-Z ili kuhuisha ruhusa ya mauzo nje ya mtandao.',
       'rule_offlineValueLimit':
           'Mauzo haya yamezidi kikomo cha muamala wa kifaa.',
       'rule_offlineDailyLimit': 'Mauzo haya yamezidi kikomo kilichobaki leo.',

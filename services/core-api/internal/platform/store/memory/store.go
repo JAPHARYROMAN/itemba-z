@@ -13,9 +13,11 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/catalog"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
@@ -57,6 +59,10 @@ type state struct {
 	audits        []audit.Event
 	outbox        []outbox.Event
 	idempotencies map[string]idempotency
+	contexts      map[string]readmodel.WorkingContext
+	devices       map[string]devices.Device
+	offlineLeases []devices.OfflineLease
+	allocations   map[string]int64
 }
 
 func newState() *state {
@@ -65,6 +71,8 @@ func newState() *state {
 		customers:   make(map[string]customers.Account), products: make(map[string]catalog.Product),
 		posting: make(map[string]finance.SalesPostingConfig), sales: make(map[string]sales.Sale),
 		idempotencies: make(map[string]idempotency),
+		contexts:      make(map[string]readmodel.WorkingContext), devices: make(map[string]devices.Device),
+		allocations: make(map[string]int64),
 	}
 }
 
@@ -142,25 +150,54 @@ func (s *Store) SeedStock(value inventory.Movement) {
 	s.state.movements = append(s.state.movements, value)
 }
 
+func (s *Store) SeedContext(scope tenancy.Scope, value readmodel.WorkingContext) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value.TenantID, value.CompanyID = scope.TenantID, scope.CompanyID
+	value.BranchID, value.WarehouseID = scope.BranchID, scope.WarehouseID
+	s.state.contexts[scopeKey(scope)] = value
+}
+
+func (s *Store) SeedDevice(value devices.Device) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.devices[deviceKey(value.Scope.TenantID, value.ID)] = value
+	if value.OfflineSalesValidUntil.After(value.OfflineSalesValidFrom) {
+		appendOfflineLease(s.state, devices.OfflineLease{
+			Scope: value.Scope, DeviceID: value.ID, AppVersion: value.AppVersion,
+			MasterDataVersion: value.MasterDataVersion, PriceVersion: value.PriceVersion,
+			ValidFrom: value.OfflineSalesValidFrom, ValidUntil: value.OfflineSalesValidUntil,
+		})
+	}
+}
+
+func (s *Store) SeedOfflineAllocation(scope tenancy.Scope, deviceID, productID string, quantity int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.allocations[allocationKey(scope, deviceID, productID)] = quantity
+}
+
 type Snapshot struct {
-	Sales     []sales.Sale
-	Movements []inventory.Movement
-	Ledger    []customers.LedgerEntry
-	Payments  []sales.Payment
-	Journals  []finance.Journal
-	Audits    []audit.Event
-	Outbox    []outbox.Event
+	Sales         []sales.Sale
+	Movements     []inventory.Movement
+	Ledger        []customers.LedgerEntry
+	Payments      []sales.Payment
+	Journals      []finance.Journal
+	Audits        []audit.Event
+	Outbox        []outbox.Event
+	OfflineLeases []devices.OfflineLease
 }
 
 func (s *Store) Snapshot() Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	result := Snapshot{
-		Movements: append([]inventory.Movement(nil), s.state.movements...),
-		Ledger:    append([]customers.LedgerEntry(nil), s.state.ledger...),
-		Payments:  append([]sales.Payment(nil), s.state.payments...),
-		Audits:    append([]audit.Event(nil), s.state.audits...),
-		Outbox:    append([]outbox.Event(nil), s.state.outbox...),
+		Movements:     append([]inventory.Movement(nil), s.state.movements...),
+		Ledger:        append([]customers.LedgerEntry(nil), s.state.ledger...),
+		Payments:      append([]sales.Payment(nil), s.state.payments...),
+		Audits:        append([]audit.Event(nil), s.state.audits...),
+		Outbox:        append([]outbox.Event(nil), s.state.outbox...),
+		OfflineLeases: append([]devices.OfflineLease(nil), s.state.offlineLeases...),
 	}
 	for _, sale := range s.state.sales {
 		result.Sales = append(result.Sales, cloneSale(sale))
@@ -209,6 +246,14 @@ func (t *transaction) Customer(_ context.Context, scope tenancy.Scope, customerI
 		return customers.Account{}, sales.ErrNotFound
 	}
 	return value, nil
+}
+
+func (t *transaction) LockCustomerCredit(_ context.Context, scope tenancy.Scope, customerID string) error {
+	value, ok := t.state.customers[companyEntityKey(scope.TenantID, scope.CompanyID, customerID)]
+	if !ok || value.TenantID != scope.TenantID || value.CompanyID != scope.CompanyID {
+		return sales.ErrNotFound
+	}
+	return nil
 }
 
 func (t *transaction) Product(_ context.Context, scope tenancy.Scope, productID string) (catalog.Product, error) {
@@ -276,7 +321,7 @@ func (t *transaction) SalesPostingConfig(_ context.Context, scope tenancy.Scope)
 
 func (t *transaction) Sale(_ context.Context, scope tenancy.Scope, saleID string) (sales.Sale, error) {
 	value, ok := t.state.sales[companyEntityKey(scope.TenantID, scope.CompanyID, saleID)]
-	if !ok {
+	if !ok || value.Scope != scope {
 		return sales.Sale{}, sales.ErrNotFound
 	}
 	return cloneSale(value), nil
@@ -294,7 +339,7 @@ func (t *transaction) CreateSale(_ context.Context, value sales.Sale) error {
 func (t *transaction) MarkSaleReversed(_ context.Context, scope tenancy.Scope, saleID string, at time.Time) error {
 	key := companyEntityKey(scope.TenantID, scope.CompanyID, saleID)
 	value, ok := t.state.sales[key]
-	if !ok {
+	if !ok || value.Scope != scope {
 		return sales.ErrNotFound
 	}
 	if value.Status == sales.StatusReversed {
@@ -316,9 +361,12 @@ func (t *transaction) AppendStockMovement(_ context.Context, value inventory.Mov
 }
 
 func (t *transaction) StockMovementsBySource(_ context.Context, scope tenancy.Scope, sourceType, sourceID string) ([]inventory.Movement, error) {
+	if !t.saleSourceInScope(scope, sourceType, sourceID) {
+		return nil, sales.ErrNotFound
+	}
 	var result []inventory.Movement
 	for _, value := range t.state.movements {
-		if value.TenantID == scope.TenantID && value.CompanyID == scope.CompanyID && value.SourceType == sourceType && value.SourceID == sourceID {
+		if value.TenantID == scope.TenantID && value.CompanyID == scope.CompanyID && value.BranchID == scope.BranchID && value.WarehouseID == scope.WarehouseID && value.SourceType == sourceType && value.SourceID == sourceID {
 			result = append(result, value)
 		}
 	}
@@ -336,6 +384,9 @@ func (t *transaction) AppendCustomerLedgerEntry(_ context.Context, value custome
 }
 
 func (t *transaction) CustomerLedgerBySource(_ context.Context, scope tenancy.Scope, sourceType, sourceID string) ([]customers.LedgerEntry, error) {
+	if !t.saleSourceInScope(scope, sourceType, sourceID) {
+		return nil, sales.ErrNotFound
+	}
 	var result []customers.LedgerEntry
 	for _, value := range t.state.ledger {
 		if value.TenantID == scope.TenantID && value.CompanyID == scope.CompanyID && value.SourceType == sourceType && value.SourceID == sourceID {
@@ -356,6 +407,9 @@ func (t *transaction) CreatePayment(_ context.Context, value sales.Payment) erro
 }
 
 func (t *transaction) PaymentsBySale(_ context.Context, scope tenancy.Scope, saleID string) ([]sales.Payment, error) {
+	if !t.saleSourceInScope(scope, string(sales.RecordSale), saleID) {
+		return nil, sales.ErrNotFound
+	}
 	var result []sales.Payment
 	for _, value := range t.state.payments {
 		if value.TenantID == scope.TenantID && value.CompanyID == scope.CompanyID && value.SaleID == saleID {
@@ -379,12 +433,23 @@ func (t *transaction) CreateJournal(_ context.Context, value finance.Journal) er
 }
 
 func (t *transaction) JournalBySource(_ context.Context, scope tenancy.Scope, sourceType, sourceID string) (finance.Journal, error) {
+	if !t.saleSourceInScope(scope, sourceType, sourceID) {
+		return finance.Journal{}, sales.ErrNotFound
+	}
 	for _, value := range t.state.journals {
 		if value.TenantID == scope.TenantID && value.CompanyID == scope.CompanyID && value.SourceType == sourceType && value.SourceID == sourceID {
 			return cloneJournal(value), nil
 		}
 	}
 	return finance.Journal{}, sales.ErrNotFound
+}
+
+func (t *transaction) saleSourceInScope(scope tenancy.Scope, sourceType, sourceID string) bool {
+	if sourceType != string(sales.RecordSale) {
+		return false
+	}
+	value, ok := t.state.sales[companyEntityKey(scope.TenantID, scope.CompanyID, sourceID)]
+	return ok && value.RecordType == sales.RecordSale && value.Scope == scope
 }
 
 func (t *transaction) AppendAuditEvent(_ context.Context, value audit.Event) error {
@@ -417,6 +482,13 @@ func idempotencyKey(scope tenancy.Scope, operation, key string) string {
 func permissionKey(scope tenancy.Scope, actorID, permission string) string {
 	return companyEntityKey(scope.TenantID, scope.CompanyID, actorID) + "\x00" + scope.BranchID + "\x00" + scope.WarehouseID + "\x00" + permission
 }
+func scopeKey(scope tenancy.Scope) string {
+	return companyEntityKey(scope.TenantID, scope.CompanyID, scope.BranchID) + "\x00" + scope.WarehouseID
+}
+func deviceKey(tenantID, deviceID string) string { return tenantID + "\x00" + deviceID }
+func allocationKey(scope tenancy.Scope, deviceID, productID string) string {
+	return scopeKey(scope) + "\x00" + deviceID + "\x00" + productID
+}
 
 func cloneState(source *state) *state {
 	result := newState()
@@ -448,6 +520,17 @@ func cloneState(source *state) *state {
 	result.outbox = append([]outbox.Event(nil), source.outbox...)
 	for key, value := range source.idempotencies {
 		result.idempotencies[key] = value
+	}
+	for key, value := range source.contexts {
+		value.Permissions = append([]string(nil), value.Permissions...)
+		result.contexts[key] = value
+	}
+	for key, value := range source.devices {
+		result.devices[key] = value
+	}
+	result.offlineLeases = append([]devices.OfflineLease(nil), source.offlineLeases...)
+	for key, value := range source.allocations {
+		result.allocations[key] = value
 	}
 	return result
 }

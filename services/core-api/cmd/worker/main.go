@@ -29,13 +29,13 @@ func main() {
 		logger.Error("DATABASE_URL is required")
 		os.Exit(1)
 	}
-	if os.Getenv("ITEMBA_ENV") == "production" {
-		logger.Error("production outbox publisher is not configured; logging publisher is development-only")
+	if !loggingPublisherAllowed(os.Getenv("ITEMBA_ENV")) {
+		logger.Error("external outbox publisher is not configured; logging publisher is allowed only in development or test")
 		os.Exit(1)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	store, err := postgres.Open(ctx, os.Getenv("DATABASE_URL"))
+	store, err := postgres.OpenWorker(ctx, os.Getenv("DATABASE_URL"))
 	if err != nil {
 		logger.Error("initialize PostgreSQL", "error", err)
 		os.Exit(1)
@@ -55,6 +55,10 @@ func main() {
 		case <-ticker.C:
 		}
 	}
+}
+
+func loggingPublisherAllowed(environment string) bool {
+	return environment == "development" || environment == "test"
 }
 
 func workerID() string {

@@ -66,6 +66,116 @@ services:
       retries: 3
     restart: unless-stopped
 
+  migrate:
+    profiles: [application]
+    build:
+      context: ../../services/core-api
+    entrypoint: ["/app/migrate"]
+    environment:
+      ITEMBA_ENV: development
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      ITEMBA_MIGRATIONS_DIR: /app/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  dev-seed:
+    profiles: [application]
+    build:
+      context: ../../services/core-api
+    entrypoint: ["/app/devseed"]
+    environment:
+      ITEMBA_ENV: development
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  provision-api-runtime:
+    profiles: [application]
+    build:
+      context: ../../services/core-api
+    entrypoint: ["/app/devdbrole"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      ITEMBA_RUNTIME_USER: ${POSTGRES_API_RUNTIME_USER:?Copy .env.example to .env}
+      ITEMBA_RUNTIME_PASSWORD: ${POSTGRES_API_RUNTIME_PASSWORD:?Copy .env.example to .env}
+      ITEMBA_RUNTIME_CAPABILITY: api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  provision-worker-runtime:
+    profiles: [application]
+    build:
+      context: ../../services/core-api
+    entrypoint: ["/app/devdbrole"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      ITEMBA_RUNTIME_USER: ${POSTGRES_WORKER_RUNTIME_USER:?Copy .env.example to .env}
+      ITEMBA_RUNTIME_PASSWORD: ${POSTGRES_WORKER_RUNTIME_PASSWORD:?Copy .env.example to .env}
+      ITEMBA_RUNTIME_CAPABILITY: worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  core-api:
+    profiles: [application]
+    build:
+      context: ../../services/core-api
+    environment:
+      ITEMBA_ENV: development
+      ITEMBA_HTTP_ADDRESS: :8080
+      DATABASE_URL: postgres://${POSTGRES_API_RUNTIME_USER}:${POSTGRES_API_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      dev-seed:
+        condition: service_completed_successfully
+      provision-api-runtime:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  outbox-worker:
+    profiles: [application]
+    build:
+      context: ../../services/core-api
+    entrypoint: ["/app/worker"]
+    environment:
+      ITEMBA_ENV: development
+      ITEMBA_WORKER_ID: local-compose-worker
+      DATABASE_URL: postgres://${POSTGRES_WORKER_RUNTIME_USER}:${POSTGRES_WORKER_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      dev-seed:
+        condition: service_completed_successfully
+      provision-worker-runtime:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  control-center:
+    profiles: [application]
+    build:
+      context: ../../apps/control-center
+    environment:
+      ITEMBA_ENV: development
+      ITEMBA_API_BASE_URL: http://core-api:8080
+      ITEMBA_CONTROL_CENTER_ORIGIN: http://localhost:3000
+      ITEMBA_DEV_IDENTITY_ENABLED: "true"
+      ITEMBA_DEV_TENANT_ID: ${ITEMBA_DEV_TENANT_ID:-00000000-0000-4000-8000-000000000001}
+      ITEMBA_DEV_COMPANY_ID: ${ITEMBA_DEV_COMPANY_ID:-00000000-0000-4000-8000-000000000002}
+      ITEMBA_DEV_BRANCH_ID: ${ITEMBA_DEV_BRANCH_ID:-00000000-0000-4000-8000-000000000003}
+      ITEMBA_DEV_WAREHOUSE_ID: ${ITEMBA_DEV_WAREHOUSE_ID:-00000000-0000-4000-8000-000000000004}
+      ITEMBA_DEV_ACTOR_ID: ${ITEMBA_DEV_ACTOR_ID:-00000000-0000-4000-8000-000000000005}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - core-api
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   redis-data:
