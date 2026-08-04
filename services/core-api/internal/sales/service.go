@@ -59,6 +59,10 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 		return Sale{}, err
 	}
 	now := s.clock.Now().UTC()
+	documentAt := now
+	if command.Offline {
+		documentAt = command.ClientTimestamp.UTC()
+	}
 	var result Sale
 	err = s.repository.WithTransaction(ctx, func(tx Transaction) error {
 		authorized, err := tx.Authorize(ctx, command.Scope, command.ActorID, "sales.complete")
@@ -96,6 +100,31 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 			result, err = tx.Sale(ctx, command.Scope, resultID)
 			result.IdempotentReplay = err == nil
 			return err
+		}
+		if command.Offline {
+			policy, err := tx.OfflinePostingPolicy(ctx, command.Scope, now)
+			if err != nil {
+				return err
+			}
+			if policy.AccountingTimeBasis != AccountingTimeServerReceipt ||
+				policy.MaximumFutureSkewSeconds < 0 || policy.MaximumFutureSkewSeconds > 86400 ||
+				!policy.RequireSameFiscalPeriod {
+				return ErrPostingConfig
+			}
+			if documentAt.After(now.Add(time.Duration(policy.MaximumFutureSkewSeconds) * time.Second)) {
+				return ErrOfflineClockReconciliation
+			}
+			documentPeriod, err := tx.FiscalPeriod(ctx, command.Scope, documentAt)
+			if err != nil {
+				return err
+			}
+			accountingPeriod, err := tx.FiscalPeriod(ctx, command.Scope, now)
+			if err != nil {
+				return err
+			}
+			if !accountingPeriod.Open || documentPeriod.ID == "" || documentPeriod.ID != accountingPeriod.ID {
+				return ErrOfflinePeriodReconciliation
+			}
 		}
 		if command.DeviceID != "" {
 			if command.Offline {
@@ -175,7 +204,8 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 			Kind: command.Kind, Status: StatusPosted, CustomerID: customer.ID,
 			PaymentMethod: command.PaymentMethod, DeviceID: command.DeviceID,
 			ClientTransactionID: command.ClientTransactionID, Offline: command.Offline,
-			CreatedBy: command.ActorID, CreatedAt: now,
+			CreatedBy: command.ActorID, DocumentAt: documentAt, ReceivedAt: now,
+			AccountingAt: now, AccountingTimeBasis: AccountingTimeServerReceipt, CreatedAt: now,
 		}
 		if command.DeviceID != "" {
 			clientTimestamp := command.ClientTimestamp.UTC()
@@ -465,7 +495,9 @@ func (s *Service) Reverse(ctx context.Context, command ReverseCommand) (Sale, er
 			SubtotalMinor: original.SubtotalMinor, TaxMinor: original.TaxMinor,
 			TotalMinor: original.TotalMinor, COGSMinor: original.COGSMinor,
 			PaymentMethod: original.PaymentMethod, ReversalOf: original.ID,
-			ReversalReason: strings.TrimSpace(command.Reason), CreatedBy: command.ActorID, CreatedAt: now,
+			ReversalReason: strings.TrimSpace(command.Reason), CreatedBy: command.ActorID,
+			DocumentAt: now, ReceivedAt: now, AccountingAt: now,
+			AccountingTimeBasis: AccountingTimeServerReceipt, CreatedAt: now,
 		}
 		reversal.ReceiptReference = reversal.ID
 		reversal.FiscalStatus = FiscalNotConfigured

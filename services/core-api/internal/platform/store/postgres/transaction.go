@@ -253,6 +253,42 @@ func (t *transaction) FiscalPeriodOpen(ctx context.Context, scope tenancy.Scope,
 	return open, normalizeError(err)
 }
 
+func (t *transaction) FiscalPeriod(ctx context.Context, scope tenancy.Scope, at time.Time) (sales.FiscalPeriod, error) {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return sales.FiscalPeriod{}, err
+	}
+	var value sales.FiscalPeriod
+	err := t.tx.QueryRow(ctx, `
+		SELECT id, starts_at, ends_at, is_open FROM fiscal_periods
+		WHERE tenant_id = $1 AND company_id = $2 AND starts_at <= $3 AND ends_at > $3
+		ORDER BY starts_at DESC LIMIT 1`, scope.TenantID, scope.CompanyID, at).Scan(&value.ID, &value.StartsAt, &value.EndsAt, &value.Open)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return sales.FiscalPeriod{}, nil
+	}
+	return value, normalizeError(err)
+}
+
+func (t *transaction) OfflinePostingPolicy(ctx context.Context, scope tenancy.Scope, at time.Time) (sales.OfflinePostingPolicy, error) {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return sales.OfflinePostingPolicy{}, err
+	}
+	var value sales.OfflinePostingPolicy
+	err := t.tx.QueryRow(ctx, `
+		SELECT tenant_id, company_id, accounting_time_basis, maximum_future_skew_seconds,
+		       require_same_fiscal_period, effective_from, effective_to
+		FROM offline_posting_policies
+		WHERE tenant_id = $1 AND company_id = $2 AND effective_from <= $3
+		  AND (effective_to IS NULL OR effective_to > $3)
+		ORDER BY effective_from DESC LIMIT 1`, scope.TenantID, scope.CompanyID, at).Scan(
+		&value.TenantID, &value.CompanyID, &value.AccountingTimeBasis,
+		&value.MaximumFutureSkewSeconds, &value.RequireSameFiscalPeriod,
+		&value.EffectiveFrom, &value.EffectiveTo)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return sales.OfflinePostingPolicy{}, sales.ErrPostingConfig
+	}
+	return value, normalizeError(err)
+}
+
 func (t *transaction) SalesPostingConfig(ctx context.Context, scope tenancy.Scope) (finance.SalesPostingConfig, error) {
 	if err := t.ensureScope(ctx, scope); err != nil {
 		return finance.SalesPostingConfig{}, err
@@ -289,7 +325,8 @@ func (t *transaction) Sale(ctx context.Context, scope tenancy.Scope, saleID stri
 		       customer_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor,
 		       payment_method, reversal_of, reversal_reason, device_id, client_transaction_id,
 		       client_timestamp, client_app_version, client_master_data_version, client_price_version, client_catalog_snapshot_token, offline,
-		       receipt_reference, fiscal_status, created_by, correlation_id, created_at, reversed_at
+		       receipt_reference, fiscal_status, created_by, correlation_id,
+		       document_at, received_at, accounting_at, accounting_time_basis, created_at, reversed_at
 		FROM sales WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3 AND warehouse_id = $4 AND id = $5 FOR UPDATE`,
 		scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, saleID).Scan(
 		&value.ID, &value.Scope.TenantID, &value.Scope.CompanyID, &value.Scope.BranchID, &value.Scope.WarehouseID,
@@ -297,7 +334,8 @@ func (t *transaction) Sale(ctx context.Context, scope tenancy.Scope, saleID stri
 		&value.SubtotalMinor, &value.TaxMinor, &value.TotalMinor, &value.COGSMinor,
 		&paymentMethod, &reversalOf, &reversalReason, &deviceID, &clientTransactionID,
 		&clientTimestamp, &clientAppVersion, &clientMasterDataVersion, &clientPriceVersion, &catalogSnapshotToken, &value.Offline,
-		&value.ReceiptReference, &value.FiscalStatus, &value.CreatedBy, &value.CorrelationID, &value.CreatedAt, &reversedAt)
+		&value.ReceiptReference, &value.FiscalStatus, &value.CreatedBy, &value.CorrelationID,
+		&value.DocumentAt, &value.ReceivedAt, &value.AccountingAt, &value.AccountingTimeBasis, &value.CreatedAt, &reversedAt)
 	if err != nil {
 		return sales.Sale{}, normalizeError(err)
 	}
@@ -389,15 +427,17 @@ func (t *transaction) CreateSale(ctx context.Context, value sales.Sale) error {
 			customer_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor,
 			payment_method, reversal_of, reversal_reason, device_id, client_transaction_id,
 			client_timestamp, client_app_version, client_master_data_version, client_price_version, client_catalog_snapshot_token, offline,
-			receipt_reference, fiscal_status, created_by, correlation_id, created_at, reversed_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)`,
+			receipt_reference, fiscal_status, created_by, correlation_id,
+			document_at, received_at, accounting_at, accounting_time_basis, created_at, reversed_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`,
 		value.ID, value.Scope.TenantID, value.Scope.CompanyID, value.Scope.BranchID, value.Scope.WarehouseID,
 		value.RecordType, value.Kind, value.Status, value.CustomerID, value.Currency,
 		value.SubtotalMinor, value.TaxMinor, value.TotalMinor, value.COGSMinor,
 		nullableText(value.PaymentMethod), nullableText(value.ReversalOf), nullableText(value.ReversalReason),
 		nullableText(value.DeviceID), nullableText(value.ClientTransactionID), nullableTime(value.ClientTimestamp),
 		nullableText(value.AppVersion), nullablePositiveInt64(value.MasterDataVersion), nullablePositiveInt64(value.PriceVersion),
-		nullableText(value.CatalogSnapshotToken), value.Offline, value.ReceiptReference, value.FiscalStatus, value.CreatedBy, value.CorrelationID, value.CreatedAt, value.ReversedAt)
+		nullableText(value.CatalogSnapshotToken), value.Offline, value.ReceiptReference, value.FiscalStatus, value.CreatedBy, value.CorrelationID,
+		value.DocumentAt, value.ReceivedAt, value.AccountingAt, value.AccountingTimeBasis, value.CreatedAt, value.ReversedAt)
 	if err != nil {
 		return normalizeError(err)
 	}

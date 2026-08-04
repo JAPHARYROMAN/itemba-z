@@ -653,7 +653,7 @@ components:
     Sale:
       type: object
       additionalProperties: false
-      required: [id, scope, record_type, kind, status, customer_id, currency, subtotal_minor, tax_minor, total_minor, receipt_reference, fiscal_status, created_by, correlation_id, created_at, lines]
+      required: [id, scope, record_type, kind, status, customer_id, currency, subtotal_minor, tax_minor, total_minor, receipt_reference, fiscal_status, created_by, correlation_id, document_at, received_at, accounting_at, accounting_time_basis, created_at, lines]
       properties:
         id: { type: string, format: uuid }
         scope: { $ref: '#/components/schemas/Scope' }
@@ -687,6 +687,21 @@ components:
         reversal_reason: { type: string }
         created_by: { type: string, format: uuid }
         correlation_id: { type: string, format: uuid }
+        document_at:
+          type: string
+          format: date-time
+          description: Device document time for controlled offline sales; otherwise the server receipt time.
+        received_at:
+          type: string
+          format: date-time
+          description: Authoritative server receipt time.
+        accounting_at:
+          type: string
+          format: date-time
+          description: Governed posting time used by stock and financial ledgers.
+        accounting_time_basis:
+          type: string
+          enum: [SERVER_RECEIPT]
         created_at: { type: string, format: date-time }
         reversed_at: { type: string, format: date-time }
         lines: { type: array, items: { $ref: '#/components/schemas/SaleLine' } }

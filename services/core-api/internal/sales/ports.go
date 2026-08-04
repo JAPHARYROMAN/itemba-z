@@ -37,6 +37,8 @@ type Transaction interface {
 	AvailableStock(ctx context.Context, scope tenancy.Scope, productID string) (int64, error)
 	CreditExposure(ctx context.Context, scope tenancy.Scope, customerID string) (int64, error)
 	FiscalPeriodOpen(ctx context.Context, scope tenancy.Scope, at time.Time) (bool, error)
+	FiscalPeriod(ctx context.Context, scope tenancy.Scope, at time.Time) (FiscalPeriod, error)
+	OfflinePostingPolicy(ctx context.Context, scope tenancy.Scope, at time.Time) (OfflinePostingPolicy, error)
 	SalesPostingConfig(ctx context.Context, scope tenancy.Scope) (finance.SalesPostingConfig, error)
 	MobileDevice(ctx context.Context, scope tenancy.Scope, actorID, deviceID string) (devices.Device, error)
 	OfflineLeaseValid(ctx context.Context, lease devices.OfflineLease, clientTimestamp time.Time) (bool, error)

@@ -426,6 +426,23 @@ export interface components {
             created_by: string;
             /** Format: uuid */
             correlation_id: string;
+            /**
+             * Format: date-time
+             * @description Device document time for controlled offline sales; otherwise the server receipt time.
+             */
+            document_at: string;
+            /**
+             * Format: date-time
+             * @description Authoritative server receipt time.
+             */
+            received_at: string;
+            /**
+             * Format: date-time
+             * @description Governed posting time used by stock and financial ledgers.
+             */
+            accounting_at: string;
+            /** @enum {string} */
+            accounting_time_basis: "SERVER_RECEIPT";
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */

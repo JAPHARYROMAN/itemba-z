@@ -14,23 +14,24 @@ import (
 )
 
 const (
-	tenantID       = "00000000-0000-4000-8000-000000000001"
-	companyID      = "00000000-0000-4000-8000-000000000002"
-	branchID       = "00000000-0000-4000-8000-000000000003"
-	warehouseID    = "00000000-0000-4000-8000-000000000004"
-	operatorID     = "00000000-0000-4000-8000-000000000005"
-	roleID         = "00000000-0000-4000-8000-000000000006"
-	generalID      = "00000000-0000-4000-8000-000000000007"
-	creditID       = "00000000-0000-4000-8000-000000000008"
-	productOneID   = "00000000-0000-4000-8000-000000000009"
-	productTwoID   = "00000000-0000-4000-8000-000000000010"
-	deviceID       = "00000000-0000-4000-8000-000000000011"
-	roleScopeID    = "00000000-0000-4000-8000-000000000012"
-	taxRuleID      = "00000000-0000-4000-8000-000000000013"
-	fiscalPeriodID = "00000000-0000-4000-8000-000000000014"
-	stockOneID     = "00000000-0000-4000-8000-000000000015"
-	stockTwoID     = "00000000-0000-4000-8000-000000000016"
-	seedSourceID   = "00000000-0000-4000-8000-000000000017"
+	tenantID               = "00000000-0000-4000-8000-000000000001"
+	companyID              = "00000000-0000-4000-8000-000000000002"
+	branchID               = "00000000-0000-4000-8000-000000000003"
+	warehouseID            = "00000000-0000-4000-8000-000000000004"
+	operatorID             = "00000000-0000-4000-8000-000000000005"
+	roleID                 = "00000000-0000-4000-8000-000000000006"
+	generalID              = "00000000-0000-4000-8000-000000000007"
+	creditID               = "00000000-0000-4000-8000-000000000008"
+	productOneID           = "00000000-0000-4000-8000-000000000009"
+	productTwoID           = "00000000-0000-4000-8000-000000000010"
+	deviceID               = "00000000-0000-4000-8000-000000000011"
+	roleScopeID            = "00000000-0000-4000-8000-000000000012"
+	taxRuleID              = "00000000-0000-4000-8000-000000000013"
+	fiscalPeriodID         = "00000000-0000-4000-8000-000000000014"
+	offlinePostingPolicyID = "00000000-0000-4000-8000-000000000018"
+	stockOneID             = "00000000-0000-4000-8000-000000000015"
+	stockTwoID             = "00000000-0000-4000-8000-000000000016"
+	seedSourceID           = "00000000-0000-4000-8000-000000000017"
 
 	offlineTransactionLimitMinor int64 = 20_000_000
 	offlineDailyLimitMinor       int64 = 50_000_000
@@ -113,6 +114,7 @@ func seed(ctx context.Context, tx pgx.Tx) error {
 		{"product one offline allocation", `INSERT INTO mobile_device_stock_allocations(tenant_id,company_id,branch_id,warehouse_id,device_id,product_id,allocated_quantity) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(tenant_id,device_id,product_id) DO UPDATE SET company_id=EXCLUDED.company_id,branch_id=EXCLUDED.branch_id,warehouse_id=EXCLUDED.warehouse_id,allocated_quantity=EXCLUDED.allocated_quantity,updated_at=now()`, []any{tenantID, companyID, branchID, warehouseID, deviceID, productOneID, offlineProductAllocation}},
 		{"product two offline allocation", `INSERT INTO mobile_device_stock_allocations(tenant_id,company_id,branch_id,warehouse_id,device_id,product_id,allocated_quantity) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(tenant_id,device_id,product_id) DO UPDATE SET company_id=EXCLUDED.company_id,branch_id=EXCLUDED.branch_id,warehouse_id=EXCLUDED.warehouse_id,allocated_quantity=EXCLUDED.allocated_quantity,updated_at=now()`, []any{tenantID, companyID, branchID, warehouseID, deviceID, productTwoID, offlineProductAllocation}},
 		{"period", `INSERT INTO fiscal_periods(id,tenant_id,company_id,starts_at,ends_at,is_open) VALUES($1,$2,$3,'2020-01-01T00:00:00Z','2100-01-01T00:00:00Z',true) ON CONFLICT(tenant_id,company_id,starts_at) DO UPDATE SET ends_at=EXCLUDED.ends_at,is_open=true`, []any{fiscalPeriodID, tenantID, companyID}},
+		{"offline posting policy", `INSERT INTO offline_posting_policies(id,tenant_id,company_id,accounting_time_basis,maximum_future_skew_seconds,require_same_fiscal_period,effective_from,created_by,created_at) VALUES($1,$2,$3,'SERVER_RECEIPT',300,true,'2020-01-01T00:00:00Z',$4,'2020-01-01T00:00:00Z') ON CONFLICT(tenant_id,company_id,effective_from) DO NOTHING`, []any{offlinePostingPolicyID, tenantID, companyID, operatorID}},
 		{"posting", `INSERT INTO sales_posting_config(tenant_id,company_id,receivable_account_id,tax_payable_account_id,cash_accounts) VALUES($1,$2,'receivable','tax-payable','{"CASH":"cash-on-hand","MOBILE_MONEY":"mobile-money-clearing","BANK_CARD":"bank-card-clearing","BANK_TRANSFER":"bank-current"}'::jsonb) ON CONFLICT(tenant_id,company_id) DO UPDATE SET receivable_account_id=EXCLUDED.receivable_account_id,tax_payable_account_id=EXCLUDED.tax_payable_account_id,cash_accounts=EXCLUDED.cash_accounts`, []any{tenantID, companyID}},
 		{"stock one", `INSERT INTO inventory_stock_ledger(id,tenant_id,company_id,branch_id,warehouse_id,product_id,source_type,source_id,quantity,occurred_at) VALUES($1,$2,$3,$4,$5,$6,'DEV_SEED',$7,100,'2020-01-01T00:00:00Z') ON CONFLICT(id) DO NOTHING`, []any{stockOneID, tenantID, companyID, branchID, warehouseID, productOneID, seedSourceID}},
 		{"stock two", `INSERT INTO inventory_stock_ledger(id,tenant_id,company_id,branch_id,warehouse_id,product_id,source_type,source_id,quantity,occurred_at) VALUES($1,$2,$3,$4,$5,$6,'DEV_SEED',$7,100,'2020-01-01T00:00:00Z') ON CONFLICT(id) DO NOTHING`, []any{stockTwoID, tenantID, companyID, branchID, warehouseID, productTwoID, seedSourceID}},

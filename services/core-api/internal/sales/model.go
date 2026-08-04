@@ -37,6 +37,29 @@ const (
 
 type FiscalStatus string
 
+type AccountingTimeBasis string
+
+const (
+	AccountingTimeServerReceipt AccountingTimeBasis = "SERVER_RECEIPT"
+)
+
+type OfflinePostingPolicy struct {
+	TenantID                 string
+	CompanyID                string
+	AccountingTimeBasis      AccountingTimeBasis
+	MaximumFutureSkewSeconds int64
+	RequireSameFiscalPeriod  bool
+	EffectiveFrom            time.Time
+	EffectiveTo              *time.Time
+}
+
+type FiscalPeriod struct {
+	ID       string
+	StartsAt time.Time
+	EndsAt   time.Time
+	Open     bool
+}
+
 const (
 	FiscalNotConfigured FiscalStatus = "NOT_CONFIGURED"
 	FiscalPending       FiscalStatus = "PENDING"
@@ -61,36 +84,40 @@ func IsCanonicalPaymentMethod(value string) bool {
 }
 
 type Sale struct {
-	ID                   string        `json:"id"`
-	Scope                tenancy.Scope `json:"scope"`
-	RecordType           RecordType    `json:"record_type"`
-	Kind                 Kind          `json:"kind"`
-	Status               Status        `json:"status"`
-	CustomerID           string        `json:"customer_id"`
-	Currency             string        `json:"currency"`
-	SubtotalMinor        int64         `json:"subtotal_minor"`
-	TaxMinor             int64         `json:"tax_minor"`
-	TotalMinor           int64         `json:"total_minor"`
-	COGSMinor            int64         `json:"cogs_minor"`
-	PaymentMethod        string        `json:"payment_method,omitempty"`
-	DeviceID             string        `json:"device_id,omitempty"`
-	ClientTransactionID  string        `json:"client_transaction_id,omitempty"`
-	ClientTimestamp      *time.Time    `json:"client_timestamp,omitempty"`
-	AppVersion           string        `json:"app_version,omitempty"`
-	MasterDataVersion    int64         `json:"master_data_version,omitempty"`
-	PriceVersion         int64         `json:"price_version,omitempty"`
-	CatalogSnapshotToken string        `json:"catalog_snapshot_token,omitempty"`
-	Offline              bool          `json:"offline,omitempty"`
-	ReceiptReference     string        `json:"receipt_reference"`
-	FiscalStatus         FiscalStatus  `json:"fiscal_status"`
-	ReversalOf           string        `json:"reversal_of,omitempty"`
-	ReversalReason       string        `json:"reversal_reason,omitempty"`
-	CreatedBy            string        `json:"created_by"`
-	CorrelationID        string        `json:"correlation_id"`
-	CreatedAt            time.Time     `json:"created_at"`
-	ReversedAt           *time.Time    `json:"reversed_at,omitempty"`
-	Lines                []Line        `json:"lines"`
-	IdempotentReplay     bool          `json:"-"`
+	ID                   string              `json:"id"`
+	Scope                tenancy.Scope       `json:"scope"`
+	RecordType           RecordType          `json:"record_type"`
+	Kind                 Kind                `json:"kind"`
+	Status               Status              `json:"status"`
+	CustomerID           string              `json:"customer_id"`
+	Currency             string              `json:"currency"`
+	SubtotalMinor        int64               `json:"subtotal_minor"`
+	TaxMinor             int64               `json:"tax_minor"`
+	TotalMinor           int64               `json:"total_minor"`
+	COGSMinor            int64               `json:"cogs_minor"`
+	PaymentMethod        string              `json:"payment_method,omitempty"`
+	DeviceID             string              `json:"device_id,omitempty"`
+	ClientTransactionID  string              `json:"client_transaction_id,omitempty"`
+	ClientTimestamp      *time.Time          `json:"client_timestamp,omitempty"`
+	AppVersion           string              `json:"app_version,omitempty"`
+	MasterDataVersion    int64               `json:"master_data_version,omitempty"`
+	PriceVersion         int64               `json:"price_version,omitempty"`
+	CatalogSnapshotToken string              `json:"catalog_snapshot_token,omitempty"`
+	Offline              bool                `json:"offline,omitempty"`
+	ReceiptReference     string              `json:"receipt_reference"`
+	FiscalStatus         FiscalStatus        `json:"fiscal_status"`
+	ReversalOf           string              `json:"reversal_of,omitempty"`
+	ReversalReason       string              `json:"reversal_reason,omitempty"`
+	CreatedBy            string              `json:"created_by"`
+	CorrelationID        string              `json:"correlation_id"`
+	DocumentAt           time.Time           `json:"document_at"`
+	ReceivedAt           time.Time           `json:"received_at"`
+	AccountingAt         time.Time           `json:"accounting_at"`
+	AccountingTimeBasis  AccountingTimeBasis `json:"accounting_time_basis"`
+	CreatedAt            time.Time           `json:"created_at"`
+	ReversedAt           *time.Time          `json:"reversed_at,omitempty"`
+	Lines                []Line              `json:"lines"`
+	IdempotentReplay     bool                `json:"-"`
 }
 
 type Line struct {
@@ -218,28 +245,30 @@ func (c ReverseCommand) Validate() error {
 }
 
 var (
-	ErrInvalidCommand         = errors.New("sale command is incomplete")
-	ErrInvalidLine            = errors.New("sale line requires a product and positive quantity")
-	ErrDuplicateProductLine   = errors.New("a product may appear only once in a sale")
-	ErrInvalidSaleKind        = errors.New("sale kind must be CASH or CREDIT")
-	ErrPaymentMethodRequired  = errors.New("cash sale requires a payment method")
-	ErrUnsupportedPayment     = errors.New("cash payment method is unsupported or not configured")
-	ErrNotFound               = errors.New("resource not found in the requested scope")
-	ErrCustomerInactive       = errors.New("customer account is inactive")
-	ErrGeneralCustomerCredit  = errors.New("General Customer cannot buy on credit")
-	ErrCustomerCreditDisabled = errors.New("customer is not enabled for credit")
-	ErrCreditLimitExceeded    = errors.New("customer credit limit would be exceeded")
-	ErrProductInactive        = errors.New("product is inactive")
-	ErrInsufficientStock      = errors.New("insufficient available stock")
-	ErrFiscalPeriodClosed     = errors.New("fiscal period is closed")
-	ErrPostingConfig          = errors.New("sales accounting configuration is incomplete")
-	ErrIdempotencyConflict    = errors.New("idempotency key was already used for a different request")
-	ErrAlreadyReversed        = errors.New("sale has already been reversed")
-	ErrMoneyOverflow          = errors.New("calculated money amount exceeds supported range")
-	ErrForbidden              = errors.New("actor is not authorized for this operation and scope")
-	ErrOfflineCredit          = errors.New("offline sales must be cash sales")
-	ErrOfflinePaymentMethod   = errors.New("offline sales require the physical CASH payment method")
-	ErrOfflineTaxUnsupported  = errors.New("offline sales currently support only zero-rated products")
-	ErrOfflineReconciliation  = errors.New("offline catalog publication evidence is unavailable; retain the exact command for governed reconciliation")
-	ErrUnsafeWireInteger      = wire.ErrUnsafeInteger
+	ErrInvalidCommand              = errors.New("sale command is incomplete")
+	ErrInvalidLine                 = errors.New("sale line requires a product and positive quantity")
+	ErrDuplicateProductLine        = errors.New("a product may appear only once in a sale")
+	ErrInvalidSaleKind             = errors.New("sale kind must be CASH or CREDIT")
+	ErrPaymentMethodRequired       = errors.New("cash sale requires a payment method")
+	ErrUnsupportedPayment          = errors.New("cash payment method is unsupported or not configured")
+	ErrNotFound                    = errors.New("resource not found in the requested scope")
+	ErrCustomerInactive            = errors.New("customer account is inactive")
+	ErrGeneralCustomerCredit       = errors.New("General Customer cannot buy on credit")
+	ErrCustomerCreditDisabled      = errors.New("customer is not enabled for credit")
+	ErrCreditLimitExceeded         = errors.New("customer credit limit would be exceeded")
+	ErrProductInactive             = errors.New("product is inactive")
+	ErrInsufficientStock           = errors.New("insufficient available stock")
+	ErrFiscalPeriodClosed          = errors.New("fiscal period is closed")
+	ErrPostingConfig               = errors.New("sales accounting configuration is incomplete")
+	ErrIdempotencyConflict         = errors.New("idempotency key was already used for a different request")
+	ErrAlreadyReversed             = errors.New("sale has already been reversed")
+	ErrMoneyOverflow               = errors.New("calculated money amount exceeds supported range")
+	ErrForbidden                   = errors.New("actor is not authorized for this operation and scope")
+	ErrOfflineCredit               = errors.New("offline sales must be cash sales")
+	ErrOfflinePaymentMethod        = errors.New("offline sales require the physical CASH payment method")
+	ErrOfflineTaxUnsupported       = errors.New("offline sales currently support only zero-rated products")
+	ErrOfflineReconciliation       = errors.New("offline catalog publication evidence is unavailable; retain the exact command for governed reconciliation")
+	ErrOfflinePeriodReconciliation = errors.New("offline document and accounting receipt fall in different fiscal periods; governed reconciliation is required")
+	ErrOfflineClockReconciliation  = errors.New("offline device time exceeds the configured future clock skew; governed reconciliation is required")
+	ErrUnsafeWireInteger           = wire.ErrUnsafeInteger
 )

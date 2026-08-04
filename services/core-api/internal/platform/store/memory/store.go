@@ -35,6 +35,7 @@ type TaxRate struct {
 }
 
 type FiscalPeriod struct {
+	ID        string
 	TenantID  string
 	CompanyID string
 	StartsAt  time.Time
@@ -59,6 +60,7 @@ type state struct {
 	products                  map[string]catalog.Product
 	taxRates                  []TaxRate
 	periods                   []FiscalPeriod
+	offlinePostingPolicies    []sales.OfflinePostingPolicy
 	posting                   map[string]finance.SalesPostingConfig
 	sales                     map[string]sales.Sale
 	movements                 []inventory.Movement
@@ -144,7 +146,22 @@ func (s *Store) SeedTaxRate(value TaxRate) {
 func (s *Store) SeedFiscalPeriod(value FiscalPeriod) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if value.ID == "" {
+		value.ID = fmt.Sprintf("%s:%s:%s", value.TenantID, value.CompanyID, value.StartsAt.UTC().Format(time.RFC3339Nano))
+	}
 	s.state.periods = append(s.state.periods, value)
+}
+
+func (s *Store) SeedOfflinePostingPolicy(value sales.OfflinePostingPolicy) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.offlinePostingPolicies = append(s.state.offlinePostingPolicies, value)
+}
+
+func (s *Store) ReplaceOfflinePostingPolicies(values ...sales.OfflinePostingPolicy) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.offlinePostingPolicies = append([]sales.OfflinePostingPolicy(nil), values...)
 }
 
 func (s *Store) ReplaceFiscalPeriods(values ...FiscalPeriod) {
@@ -381,6 +398,32 @@ func (t *transaction) FiscalPeriodOpen(_ context.Context, scope tenancy.Scope, a
 	return false, nil
 }
 
+func (t *transaction) FiscalPeriod(_ context.Context, scope tenancy.Scope, at time.Time) (sales.FiscalPeriod, error) {
+	for _, value := range t.state.periods {
+		if value.TenantID == scope.TenantID && value.CompanyID == scope.CompanyID && !at.Before(value.StartsAt) && at.Before(value.EndsAt) {
+			return sales.FiscalPeriod{ID: value.ID, StartsAt: value.StartsAt, EndsAt: value.EndsAt, Open: value.Open}, nil
+		}
+	}
+	return sales.FiscalPeriod{}, nil
+}
+
+func (t *transaction) OfflinePostingPolicy(_ context.Context, scope tenancy.Scope, at time.Time) (sales.OfflinePostingPolicy, error) {
+	var selected sales.OfflinePostingPolicy
+	found := false
+	for _, value := range t.state.offlinePostingPolicies {
+		if value.TenantID != scope.TenantID || value.CompanyID != scope.CompanyID || at.Before(value.EffectiveFrom) || (value.EffectiveTo != nil && !at.Before(*value.EffectiveTo)) {
+			continue
+		}
+		if !found || value.EffectiveFrom.After(selected.EffectiveFrom) {
+			selected, found = value, true
+		}
+	}
+	if !found {
+		return sales.OfflinePostingPolicy{}, sales.ErrPostingConfig
+	}
+	return selected, nil
+}
+
 func (t *transaction) SalesPostingConfig(_ context.Context, scope tenancy.Scope) (finance.SalesPostingConfig, error) {
 	value, ok := t.state.posting[companyKey(scope.TenantID, scope.CompanyID)]
 	if !ok {
@@ -604,6 +647,7 @@ func cloneState(source *state) *state {
 	}
 	result.taxRates = append([]TaxRate(nil), source.taxRates...)
 	result.periods = append([]FiscalPeriod(nil), source.periods...)
+	result.offlinePostingPolicies = append([]sales.OfflinePostingPolicy(nil), source.offlinePostingPolicies...)
 	for key, value := range source.posting {
 		value.CashAccounts = cloneStringMap(value.CashAccounts)
 		result.posting[key] = value

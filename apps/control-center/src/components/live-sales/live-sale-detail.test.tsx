@@ -53,6 +53,10 @@ const workspace: SaleDetailWorkspace = {
     fiscal_status: "NOT_CONFIGURED",
     created_by: "00000000-0000-4000-8000-000000000005",
     correlation_id: "00000000-0000-4000-8000-000000000006",
+    document_at: "2026-08-04T08:00:00Z",
+    received_at: "2026-08-04T08:00:00Z",
+    accounting_at: "2026-08-04T08:00:00Z",
+    accounting_time_basis: "SERVER_RECEIPT",
     created_at: "2026-08-04T08:00:00Z",
     lines: [{
       id: "00000000-0000-4000-8000-000000000040",

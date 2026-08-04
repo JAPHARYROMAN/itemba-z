@@ -59,6 +59,12 @@ func fixture(t *testing.T, at time.Time) (*memory.Store, *mobile.Service) {
 	})
 	store.SeedTaxRate(memory.TaxRate{TenantID: tenantID, CompanyID: companyID, Code: "VAT", BasisPoints: 1800, EffectiveFrom: at.AddDate(-1, 0, 0)})
 	store.SeedFiscalPeriod(memory.FiscalPeriod{TenantID: tenantID, CompanyID: companyID, StartsAt: at.AddDate(-1, 0, 0), EndsAt: at.AddDate(1, 0, 0), Open: true})
+	store.SeedOfflinePostingPolicy(sales.OfflinePostingPolicy{
+		TenantID: tenantID, CompanyID: companyID,
+		AccountingTimeBasis:      sales.AccountingTimeServerReceipt,
+		MaximumFutureSkewSeconds: int64((4 * time.Hour) / time.Second),
+		RequireSameFiscalPeriod:  true, EffectiveFrom: at.AddDate(-1, 0, 0),
+	})
 	store.SeedPostingConfig(tenantID, companyID, finance.SalesPostingConfig{ReceivableAccountID: "receivable", TaxPayableAccountID: "tax", CashAccounts: map[string]string{"CASH": "cash"}})
 	store.SeedStock(inventory.Movement{ID: "opening", TenantID: tenantID, CompanyID: companyID, BranchID: branchID, WarehouseID: warehouseID, ProductID: productID, SourceType: "OPENING", SourceID: "opening", Quantity: 100, OccurredAt: at.Add(-time.Hour)})
 	salesService, err := sales.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: at})
@@ -477,6 +483,108 @@ func TestOfflineLeaseNeverExceedsFourHours(t *testing.T) {
 	})
 	if err != nil || !enrolled.OfflineSalesValidUntil.Equal(at.Add(devices.OfflineSalesLeaseDuration)) {
 		t.Fatalf("bounded lease=%+v err=%v", enrolled, err)
+	}
+}
+
+func TestOfflineSaleRecordsDocumentReceiptAndAccountingTimes(t *testing.T) {
+	at := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
+	documentAt := at.Add(-30 * time.Minute)
+	store, service := fixture(t, at)
+	store.SeedTaxRate(memory.TaxRate{TenantID: tenantID, CompanyID: companyID, Code: "VAT", BasisPoints: 0, EffectiveFrom: at.Add(-time.Hour)})
+	store.SeedDevice(offlineDevice(documentAt))
+	store.SeedOfflineAllocation(testScope, deviceID, productID, 10)
+	command := mobile.SyncCommand{
+		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash,
+		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
+		ClientTransactionID: "20000000-0000-4000-8000-000000000040", ClientTimestamp: documentAt,
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1,
+		CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: true,
+	}
+	result, err := service.SyncSale(context.Background(), testScope, actorID, "", command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Sale.DocumentAt.Equal(documentAt) || !result.Sale.ReceivedAt.Equal(at) ||
+		!result.Sale.AccountingAt.Equal(at) || result.Sale.AccountingTimeBasis != sales.AccountingTimeServerReceipt {
+		t.Fatalf("governed sale times=%+v", result.Sale)
+	}
+	snapshot := store.Snapshot()
+	if len(snapshot.Journals) != 1 || !snapshot.Journals[0].OccurredAt.Equal(at) ||
+		len(snapshot.Payments) != 1 || !snapshot.Payments[0].OccurredAt.Equal(at) {
+		t.Fatalf("posting effects did not use accounting time: %+v", snapshot)
+	}
+	store.ReplaceFiscalPeriods(memory.FiscalPeriod{
+		ID: "later-period", TenantID: tenantID, CompanyID: companyID,
+		StartsAt: at.Add(time.Minute), EndsAt: at.AddDate(0, 1, 0), Open: true,
+	})
+	command.SyncAttempt = 2
+	replay, err := service.SyncSale(context.Background(), testScope, actorID, "", command)
+	if err != nil || !replay.IdempotentReplay || replay.Sale.ID != result.Sale.ID {
+		t.Fatalf("committed result must replay after period changes: %+v err=%v", replay, err)
+	}
+}
+
+func TestOfflineClockSkewRoutesExactCommandToReconciliation(t *testing.T) {
+	at := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
+	store, service := fixture(t, at)
+	store.ReplaceOfflinePostingPolicies(sales.OfflinePostingPolicy{
+		TenantID: tenantID, CompanyID: companyID, AccountingTimeBasis: sales.AccountingTimeServerReceipt,
+		MaximumFutureSkewSeconds: 60, RequireSameFiscalPeriod: true, EffectiveFrom: at.Add(-time.Hour),
+	})
+	store.SeedTaxRate(memory.TaxRate{TenantID: tenantID, CompanyID: companyID, Code: "VAT", BasisPoints: 0, EffectiveFrom: at.Add(-time.Hour)})
+	store.SeedDevice(offlineDevice(at))
+	store.SeedOfflineAllocation(testScope, deviceID, productID, 10)
+	command := mobile.SyncCommand{
+		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash,
+		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
+		ClientTransactionID: "20000000-0000-4000-8000-000000000041", ClientTimestamp: at.Add(2 * time.Minute),
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1,
+		CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: true,
+	}
+	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", command); !errors.Is(err, sales.ErrOfflineClockReconciliation) {
+		t.Fatalf("clock skew error=%v", err)
+	}
+	assertNoMobileSaleEffects(t, store)
+	cases := store.Snapshot().ReconciliationCases
+	if len(cases) != 1 || cases[0].FailureCode != "offline_clock_reconciliation_required" ||
+		cases[0].ClientTransactionID != command.ClientTransactionID {
+		t.Fatalf("clock reconciliation evidence=%+v", cases)
+	}
+}
+
+func TestOfflineCrossPeriodDocumentRoutesToReconciliation(t *testing.T) {
+	documentAt := time.Date(2026, 8, 31, 23, 30, 0, 0, time.UTC)
+	receivedAt := documentAt.Add(time.Hour)
+	store, _ := fixture(t, receivedAt)
+	store.ReplaceFiscalPeriods(
+		memory.FiscalPeriod{ID: "august", TenantID: tenantID, CompanyID: companyID, StartsAt: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), EndsAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), Open: true},
+		memory.FiscalPeriod{ID: "september", TenantID: tenantID, CompanyID: companyID, StartsAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), EndsAt: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Open: true},
+	)
+	store.SeedTaxRate(memory.TaxRate{TenantID: tenantID, CompanyID: companyID, Code: "VAT", BasisPoints: 0, EffectiveFrom: documentAt.Add(-time.Hour)})
+	store.SeedDevice(offlineDevice(documentAt))
+	store.SeedOfflineAllocation(testScope, deviceID, productID, 10)
+	salesService, err := sales.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: receivedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := mobile.NewService(store, salesService, identity.UUIDGenerator{}, clock.Fixed{Time: receivedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := mobile.SyncCommand{
+		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash,
+		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
+		ClientTransactionID: "20000000-0000-4000-8000-000000000042", ClientTimestamp: documentAt,
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1,
+		CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: true,
+	}
+	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", command); !errors.Is(err, sales.ErrOfflinePeriodReconciliation) {
+		t.Fatalf("cross-period error=%v", err)
+	}
+	assertNoMobileSaleEffects(t, store)
+	cases := store.Snapshot().ReconciliationCases
+	if len(cases) != 1 || cases[0].FailureCode != "offline_fiscal_period_reconciliation_required" {
+		t.Fatalf("period reconciliation evidence=%+v", cases)
 	}
 }
 

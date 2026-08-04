@@ -164,8 +164,9 @@ func (s *Service) SyncSale(ctx context.Context, scope tenancy.Scope, actorID, co
 	}
 	created, err := s.sales.Complete(ctx, sales.CompleteCommand{Scope: scope, CustomerID: command.CustomerID, Kind: command.Kind, PaymentMethod: command.PaymentMethod, Lines: command.Lines, ActorID: actorID, CorrelationID: correlationID, IdempotencyKey: command.DeviceID + "::" + command.ClientTransactionID, DeviceID: command.DeviceID, ClientTransactionID: command.ClientTransactionID, ClientTimestamp: command.ClientTimestamp, AppVersion: command.AppVersion, MasterDataVersion: command.MasterDataVersion, PriceVersion: command.PriceVersion, CatalogSnapshotToken: command.CatalogSnapshotToken, SyncAttempt: command.SyncAttempt, Offline: command.Offline})
 	if err != nil {
-		if command.Offline && errors.Is(err, sales.ErrOfflineReconciliation) {
-			if recordErr := s.recordReconciliationCase(ctx, scope, actorID, correlationID, command); recordErr != nil {
+		failureCode := reconciliationFailureCode(err)
+		if command.Offline && failureCode != "" {
+			if recordErr := s.recordReconciliationCase(ctx, scope, actorID, correlationID, command, failureCode); recordErr != nil {
 				return SyncResult{}, recordErr
 			}
 		}
@@ -174,7 +175,7 @@ func (s *Service) SyncSale(ctx context.Context, scope tenancy.Scope, actorID, co
 	return SyncResult{ClientTransactionID: command.ClientTransactionID, State: "synced", ReceiptReference: created.ReceiptReference, FiscalStatus: created.FiscalStatus, IdempotentReplay: created.IdempotentReplay, Sale: created}, nil
 }
 
-func (s *Service) recordReconciliationCase(ctx context.Context, scope tenancy.Scope, actorID, correlationID string, command SyncCommand) error {
+func (s *Service) recordReconciliationCase(ctx context.Context, scope tenancy.Scope, actorID, correlationID string, command SyncCommand, failureCode string) error {
 	stable := command
 	stable.SyncAttempt = 0
 	canonical, err := json.Marshal(stable)
@@ -207,7 +208,7 @@ func (s *Service) recordReconciliationCase(ctx context.Context, scope tenancy.Sc
 		ClientTransactionID: command.ClientTransactionID, ClientTimestamp: command.ClientTimestamp.UTC(),
 		AppVersion: command.AppVersion, MasterDataVersion: command.MasterDataVersion,
 		PriceVersion: command.PriceVersion, CatalogSnapshotToken: command.CatalogSnapshotToken,
-		FailureCode: "offline_reconciliation_required", Command: evidence,
+		FailureCode: failureCode, Command: evidence,
 		CommandHash: hex.EncodeToString(hash[:]), CreatedBy: actorID,
 		CorrelationID: correlationID, CreatedAt: now,
 	}
@@ -219,4 +220,17 @@ func (s *Service) recordReconciliationCase(ctx context.Context, scope tenancy.Sc
 		audit.Event{ID: auditID, TenantID: scope.TenantID, CompanyID: scope.CompanyID, ActorID: actorID, Action: "mobile.reconciliation.opened", EntityType: "mobile_reconciliation_case", EntityID: caseID, CorrelationID: correlationID, CausationID: command.ClientTransactionID, Data: payload, OccurredAt: now},
 		outbox.Event{ID: eventID, TenantID: scope.TenantID, CompanyID: scope.CompanyID, AggregateType: "mobile_reconciliation_case", AggregateID: caseID, EventType: "mobile.reconciliation.opened", Version: 1, CorrelationID: correlationID, CausationID: command.ClientTransactionID, Payload: payload, OccurredAt: now})
 	return err
+}
+
+func reconciliationFailureCode(err error) string {
+	switch {
+	case errors.Is(err, sales.ErrOfflineReconciliation):
+		return "offline_reconciliation_required"
+	case errors.Is(err, sales.ErrOfflinePeriodReconciliation):
+		return "offline_fiscal_period_reconciliation_required"
+	case errors.Is(err, sales.ErrOfflineClockReconciliation):
+		return "offline_clock_reconciliation_required"
+	default:
+		return ""
+	}
 }

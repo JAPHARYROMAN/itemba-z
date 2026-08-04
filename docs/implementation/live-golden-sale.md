@@ -65,6 +65,9 @@ effects while preserving the original transaction and its audit history.
 | Cache acknowledgement | Installed and available token/version triples are distinct; stale acknowledgements fail, while retry after a lost response is idempotent. |
 | Offline cache lease | A successful acknowledgement issues an exact app/token/master/price lease for no more than four hours and never across a known tax transition; historical lease and catalog-publication rows preserve both authorization and posting facts after renewal. |
 | Missing publication evidence | The API returns `offline_reconciliation_required` with no business effects, registers one append-only scoped case with the exact command, and emits audit/outbox evidence. The POS retains the command as Reconciliation Required across restart and does not automatically retry it. |
+| Offline accounting time | The retained client timestamp is `document_at`; authoritative server receipt is both `received_at` and `accounting_at` under the effective company policy. Stock, payment, customer, and journal effects use accounting time. |
+| Device clock skew | A document beyond the configured future-skew ceiling registers `offline_clock_reconciliation_required` with the exact command and no business effects. |
+| Fiscal-period crossing | Document and receipt must belong to the same fiscal period. A boundary crossing or unavailable current period registers `offline_fiscal_period_reconciliation_required` and does not backdate or post implicitly. |
 | Reconciliation resolution | A separately authorized operator appends exactly one idempotent `CASH_REFUNDED`, `POSTED_EXTERNALLY`, or `DUPLICATE_CONFIRMED` disposition. Resolution creates audit/outbox evidence but never stock, cash, sale, or journal effects. |
 | Late tax scheduling | Tax-rule mutations that overlap an outstanding lease are rejected under the same serialization lock used by acknowledgement. |
 | Queued business day | Offline daily limits are charged to the lease-validated client creation day in the legal-company timezone, even when synchronization occurs after midnight. |
@@ -88,15 +91,14 @@ Offline nonzero-tax sale completion remains fail-closed pending professional
 validation of document-time tax and fiscalization policy. Posting now owns the
 effective tax rules in each immutable publication, but the current release
 slice deliberately accepts only zero-rated offline lines. The server now
-registers and resolves missing-publication cases through a permission-separated,
-exact-scope API. A Control Center evidence screen and business approval
-assignments remain to be implemented; the mobile client continues to preserve
-and pause the exact command without authority to alter or repost it.
-Release 1 also needs a governed distinction between offline document time and
-server posting time, including clock-skew limits, fiscal-period policy, and a
-reconciliation path for sales synchronized after a period boundary. The
-current slice evaluates fiscal-period openness and records posting time when
-the server accepts the command, so it makes no historical-period posting claim.
+registers and resolves offline exceptions through a permission-separated,
+exact-scope API and bilingual Control Center evidence screen. Business approval
+assignment remains to be implemented; the mobile client continues to preserve
+and pause the exact command without authority to alter or repost it. Offline
+document time is retained as evidence while server receipt time governs
+accounting. The effective-dated company policy rejects excess future skew and
+routes fiscal-period crossings to reconciliation, so the system makes no
+implicit historical-period posting claim.
 
 This boundary follows the modular, event-driven, observable, secure, and
 testable engineering doctrine in NEXT Constitution sections 3, 5, and 6 while
