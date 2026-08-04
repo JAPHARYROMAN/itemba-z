@@ -3,14 +3,21 @@ import '../domain/connection_models.dart';
 
 class InstalledMasterDataVersions {
   const InstalledMasterDataVersions({
+    required this.catalogSnapshotToken,
     required this.masterDataVersion,
     required this.priceVersion,
   });
 
+  final String catalogSnapshotToken;
   final int masterDataVersion;
   final int priceVersion;
 
-  bool matches({required int masterDataVersion, required int priceVersion}) =>
+  bool matches({
+    required String catalogSnapshotToken,
+    required int masterDataVersion,
+    required int priceVersion,
+  }) =>
+      this.catalogSnapshotToken == catalogSnapshotToken &&
       this.masterDataVersion == masterDataVersion &&
       this.priceVersion == priceVersion;
 }
@@ -47,6 +54,7 @@ abstract interface class EncryptedLocalStore {
     required List<Product> products,
     required int masterDataVersion,
     required int priceVersion,
+    required String catalogSnapshotToken,
     DeviceEnrollment? enrollment,
   });
 
@@ -98,6 +106,7 @@ class InMemoryEncryptedLocalStore implements EncryptedLocalStore {
   int? _customerMasterDataVersion;
   int? _productMasterDataVersion;
   int? _productPriceVersion;
+  String? _catalogSnapshotToken;
   final Map<String, SaleDraft> _drafts = {};
   final Map<String, CompletedSale> _sales = {};
   final Map<String, SyncCommand> _syncQueue = {};
@@ -181,10 +190,12 @@ class InMemoryEncryptedLocalStore implements EncryptedLocalStore {
     if (customerVersion == null ||
         productVersion == null ||
         priceVersion == null ||
+        _catalogSnapshotToken == null ||
         customerVersion != productVersion) {
       return null;
     }
     return InstalledMasterDataVersions(
+      catalogSnapshotToken: _catalogSnapshotToken!,
       masterDataVersion: customerVersion,
       priceVersion: priceVersion,
     );
@@ -196,6 +207,7 @@ class InMemoryEncryptedLocalStore implements EncryptedLocalStore {
     required List<Product> products,
     required int masterDataVersion,
     required int priceVersion,
+    required String catalogSnapshotToken,
     DeviceEnrollment? enrollment,
   }) async {
     _customers
@@ -209,6 +221,7 @@ class InMemoryEncryptedLocalStore implements EncryptedLocalStore {
     _customerMasterDataVersion = masterDataVersion;
     _productMasterDataVersion = masterDataVersion;
     _productPriceVersion = priceVersion;
+    _catalogSnapshotToken = catalogSnapshotToken;
     if (enrollment != null) _enrollment = enrollment;
   }
 
@@ -325,6 +338,7 @@ class InMemoryEncryptedLocalStore implements EncryptedLocalStore {
     _customerMasterDataVersion = null;
     _productMasterDataVersion = null;
     _productPriceVersion = null;
+    _catalogSnapshotToken = null;
     _drafts.clear();
     _sales.clear();
     _syncQueue.clear();

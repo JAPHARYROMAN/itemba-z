@@ -158,6 +158,7 @@ class SalesController extends ChangeNotifier {
     required List<Product> products,
     required int masterDataVersion,
     required int priceVersion,
+    required String catalogSnapshotToken,
     DeviceEnrollment? enrollmentToInstall,
   }) async {
     if (!customers.any((customer) => customer.isGeneral && customer.isActive)) {
@@ -172,7 +173,8 @@ class SalesController extends ChangeNotifier {
       throw StateError('Product cache versions do not match the snapshot.');
     }
     if (enrollmentToInstall != null &&
-        (enrollmentToInstall.masterDataVersion != masterDataVersion ||
+        (enrollmentToInstall.catalogSnapshotToken != catalogSnapshotToken ||
+            enrollmentToInstall.masterDataVersion != masterDataVersion ||
             enrollmentToInstall.priceVersion != priceVersion)) {
       throw StateError('Enrollment and cache versions do not match.');
     }
@@ -181,6 +183,7 @@ class SalesController extends ChangeNotifier {
       products: products,
       masterDataVersion: masterDataVersion,
       priceVersion: priceVersion,
+      catalogSnapshotToken: catalogSnapshotToken,
       enrollment: enrollmentToInstall,
     );
     _customers = List.of(customers);
@@ -189,12 +192,14 @@ class SalesController extends ChangeNotifier {
       enrollment = enrollmentToInstall;
       device = device.copyWithAcknowledgedRuntime(
         appVersion: enrollmentToInstall.appVersion,
+        catalogSnapshotToken: catalogSnapshotToken,
         masterDataVersion: masterDataVersion,
         priceVersion: priceVersion,
         approved: enrollmentToInstall.isActive,
       );
     } else {
       device = device.copyWithVersions(
+        catalogSnapshotToken: catalogSnapshotToken,
         masterDataVersion: masterDataVersion,
         priceVersion: priceVersion,
       );
@@ -206,6 +211,7 @@ class SalesController extends ChangeNotifier {
     enrollment = value;
     device = device.copyWithAcknowledgedRuntime(
       appVersion: value.appVersion,
+      catalogSnapshotToken: value.catalogSnapshotToken,
       masterDataVersion: value.masterDataVersion,
       priceVersion: value.priceVersion,
       approved: value.isActive,
@@ -495,6 +501,7 @@ class SalesController extends ChangeNotifier {
       branchId: device.branchId,
       warehouseId: device.warehouseId,
       appVersion: device.appVersion,
+      catalogSnapshotToken: device.catalogSnapshotToken,
       masterDataVersion: device.masterDataVersion,
       priceVersion: device.priceVersion,
       syncAttemptNumber: attempt,

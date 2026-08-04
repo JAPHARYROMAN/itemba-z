@@ -28,9 +28,10 @@ func (s *Store) EnrollDevice(_ context.Context, value devices.Device, acknowledg
 	}
 	value.AvailableMasterDataVersion = workingContext.MasterDataVersion
 	value.AvailablePriceVersion = workingContext.PriceVersion
+	value.AvailableCatalogSnapshotToken = workingContext.CatalogSnapshotToken
 	value.TimeZone = workingContext.TimeZone
 	leaseUntil := offlineLeaseUntil(s.state, value.Scope, value.LastSeenAt)
-	if acknowledgement != nil && (acknowledgement.MasterDataVersion != workingContext.MasterDataVersion || acknowledgement.PriceVersion != workingContext.PriceVersion) {
+	if acknowledgement != nil && (acknowledgement.MasterDataVersion != workingContext.MasterDataVersion || acknowledgement.PriceVersion != workingContext.PriceVersion || acknowledgement.CatalogSnapshotToken != workingContext.CatalogSnapshotToken) {
 		return devices.Device{}, devices.ErrStaleMasterData
 	}
 	if err := devices.ValidateWireSafe(value); err != nil {
@@ -44,11 +45,13 @@ func (s *Store) EnrollDevice(_ context.Context, value devices.Device, acknowledg
 			sameInstallation := existing.AppVersion == value.AppVersion &&
 				existing.MasterDataVersion == acknowledgement.MasterDataVersion &&
 				existing.PriceVersion == acknowledgement.PriceVersion
+			sameInstallation = sameInstallation && existing.CatalogSnapshotToken == acknowledgement.CatalogSnapshotToken
 			liveAuthorization := !existing.OfflineEnabled ||
 				(!existing.OfflineSalesValidFrom.After(value.LastSeenAt) && existing.OfflineSalesValidUntil.After(value.LastSeenAt))
 			if sameInstallation && liveAuthorization {
 				existing.AvailableMasterDataVersion = workingContext.MasterDataVersion
 				existing.AvailablePriceVersion = workingContext.PriceVersion
+				existing.AvailableCatalogSnapshotToken = workingContext.CatalogSnapshotToken
 				existing.TimeZone = workingContext.TimeZone
 				result := withAllocations(s.state, existing)
 				if err := devices.ValidateWireSafe(result); err != nil {
@@ -64,6 +67,7 @@ func (s *Store) EnrollDevice(_ context.Context, value devices.Device, acknowledg
 			existing.AppVersion = value.AppVersion
 			existing.MasterDataVersion = acknowledgement.MasterDataVersion
 			existing.PriceVersion = acknowledgement.PriceVersion
+			existing.CatalogSnapshotToken = acknowledgement.CatalogSnapshotToken
 			existing.OfflineSalesValidFrom = value.LastSeenAt
 			existing.OfflineSalesValidUntil = value.LastSeenAt
 			if existing.OfflineEnabled {
@@ -71,7 +75,8 @@ func (s *Store) EnrollDevice(_ context.Context, value devices.Device, acknowledg
 				appendOfflineLease(s.state, devices.OfflineLease{
 					Scope: existing.Scope, DeviceID: existing.ID, AppVersion: existing.AppVersion,
 					MasterDataVersion: existing.MasterDataVersion, PriceVersion: existing.PriceVersion,
-					ValidFrom: existing.OfflineSalesValidFrom, ValidUntil: existing.OfflineSalesValidUntil,
+					CatalogSnapshotToken: existing.CatalogSnapshotToken,
+					ValidFrom:            existing.OfflineSalesValidFrom, ValidUntil: existing.OfflineSalesValidUntil,
 				})
 			}
 		} else {
@@ -82,6 +87,7 @@ func (s *Store) EnrollDevice(_ context.Context, value devices.Device, acknowledg
 		}
 		existing.AvailableMasterDataVersion = workingContext.MasterDataVersion
 		existing.AvailablePriceVersion = workingContext.PriceVersion
+		existing.AvailableCatalogSnapshotToken = workingContext.CatalogSnapshotToken
 		existing.TimeZone = workingContext.TimeZone
 		result := withAllocations(s.state, existing)
 		if err := devices.ValidateWireSafe(result); err != nil {
@@ -105,6 +111,7 @@ func (s *Store) EnrollDevice(_ context.Context, value devices.Device, acknowledg
 	if acknowledgement != nil {
 		value.MasterDataVersion = acknowledgement.MasterDataVersion
 		value.PriceVersion = acknowledgement.PriceVersion
+		value.CatalogSnapshotToken = acknowledgement.CatalogSnapshotToken
 		value.OfflineSalesValidFrom = value.LastSeenAt
 		value.OfflineSalesValidUntil = value.LastSeenAt
 		if value.OfflineEnabled {
@@ -112,7 +119,8 @@ func (s *Store) EnrollDevice(_ context.Context, value devices.Device, acknowledg
 			appendOfflineLease(s.state, devices.OfflineLease{
 				Scope: value.Scope, DeviceID: value.ID, AppVersion: value.AppVersion,
 				MasterDataVersion: value.MasterDataVersion, PriceVersion: value.PriceVersion,
-				ValidFrom: value.OfflineSalesValidFrom, ValidUntil: value.OfflineSalesValidUntil,
+				CatalogSnapshotToken: value.CatalogSnapshotToken,
+				ValidFrom:            value.OfflineSalesValidFrom, ValidUntil: value.OfflineSalesValidUntil,
 			})
 		}
 	} else {
@@ -139,7 +147,7 @@ func appendOfflineLease(current *state, lease devices.OfflineLease) {
 	for _, existing := range current.offlineLeases {
 		if existing.Scope == lease.Scope && existing.DeviceID == lease.DeviceID &&
 			existing.AppVersion == lease.AppVersion && existing.MasterDataVersion == lease.MasterDataVersion &&
-			existing.PriceVersion == lease.PriceVersion && existing.ValidFrom.Equal(lease.ValidFrom) &&
+			existing.PriceVersion == lease.PriceVersion && existing.CatalogSnapshotToken == lease.CatalogSnapshotToken && existing.ValidFrom.Equal(lease.ValidFrom) &&
 			existing.ValidUntil.Equal(lease.ValidUntil) {
 			return
 		}
@@ -178,11 +186,19 @@ func (s *Store) WorkingContext(_ context.Context, scope tenancy.Scope, actorID s
 	return value, nil
 }
 
-func (s *Store) ListCustomers(_ context.Context, scope tenancy.Scope, actorID string, options readmodel.ListOptions) ([]readmodel.CustomerSummary, error) {
+func (s *Store) ListCustomers(_ context.Context, scope tenancy.Scope, actorID string, options readmodel.ListOptions) (readmodel.CatalogSnapshot, []readmodel.CustomerSummary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.state.permissions[permissionKey(scope, actorID, "customers.read")] {
-		return nil, sales.ErrForbidden
+		return readmodel.CatalogSnapshot{}, nil, sales.ErrForbidden
+	}
+	workingContext, ok := s.state.contexts[scopeKey(scope)]
+	if !ok {
+		return readmodel.CatalogSnapshot{}, nil, sales.ErrNotFound
+	}
+	snapshot := readmodel.CatalogSnapshot{Token: workingContext.CatalogSnapshotToken, MasterDataVersion: workingContext.MasterDataVersion, PriceVersion: workingContext.PriceVersion}
+	if options.CatalogSnapshotToken != "" && options.CatalogSnapshotToken != snapshot.Token {
+		return readmodel.CatalogSnapshot{}, nil, devices.ErrStaleMasterData
 	}
 	query := strings.ToLower(options.Query)
 	items := make([]readmodel.CustomerSummary, 0)
@@ -215,14 +231,22 @@ func (s *Store) ListCustomers(_ context.Context, scope tenancy.Scope, actorID st
 		})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-	return capCustomers(items, options.Limit+1), nil
+	return snapshot, capCustomers(items, options.Limit+1), nil
 }
 
-func (s *Store) ListProducts(_ context.Context, scope tenancy.Scope, actorID string, options readmodel.ListOptions) ([]readmodel.ProductSummary, error) {
+func (s *Store) ListProducts(_ context.Context, scope tenancy.Scope, actorID string, options readmodel.ListOptions) (readmodel.CatalogSnapshot, []readmodel.ProductSummary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.state.permissions[permissionKey(scope, actorID, "products.read")] {
-		return nil, sales.ErrForbidden
+		return readmodel.CatalogSnapshot{}, nil, sales.ErrForbidden
+	}
+	workingContext, ok := s.state.contexts[scopeKey(scope)]
+	if !ok {
+		return readmodel.CatalogSnapshot{}, nil, sales.ErrNotFound
+	}
+	snapshot := readmodel.CatalogSnapshot{Token: workingContext.CatalogSnapshotToken, MasterDataVersion: workingContext.MasterDataVersion, PriceVersion: workingContext.PriceVersion}
+	if options.CatalogSnapshotToken != "" && options.CatalogSnapshotToken != snapshot.Token {
+		return readmodel.CatalogSnapshot{}, nil, devices.ErrStaleMasterData
 	}
 	query := strings.ToLower(options.Query)
 	items := make([]readmodel.ProductSummary, 0)
@@ -249,7 +273,7 @@ func (s *Store) ListProducts(_ context.Context, scope tenancy.Scope, actorID str
 		}
 		taxBasisPoints, found := effectiveTaxBasisPoints(s.state, scope, product.TaxCode, time.Now().UTC())
 		if !found || taxBasisPoints < 0 || taxBasisPoints > 10_000 {
-			return nil, sales.ErrPostingConfig
+			return readmodel.CatalogSnapshot{}, nil, sales.ErrPostingConfig
 		}
 		items = append(items, readmodel.ProductSummary{
 			ID: product.ID, Code: product.SKU, Name: product.Name, Unit: unit,
@@ -259,7 +283,7 @@ func (s *Store) ListProducts(_ context.Context, scope tenancy.Scope, actorID str
 		})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-	return capProducts(items, options.Limit+1), nil
+	return snapshot, capProducts(items, options.Limit+1), nil
 }
 
 func effectiveTaxBasisPoints(current *state, scope tenancy.Scope, code string, at time.Time) (int64, bool) {
@@ -307,6 +331,7 @@ func (t *transaction) MobileDevice(_ context.Context, scope tenancy.Scope, actor
 	if workingContext, ok := t.state.contexts[scopeKey(scope)]; ok {
 		value.AvailableMasterDataVersion = workingContext.MasterDataVersion
 		value.AvailablePriceVersion = workingContext.PriceVersion
+		value.AvailableCatalogSnapshotToken = workingContext.CatalogSnapshotToken
 		value.TimeZone = workingContext.TimeZone
 	}
 	value = withAllocations(t.state, value)
@@ -320,7 +345,7 @@ func (t *transaction) OfflineLeaseValid(_ context.Context, lease devices.Offline
 	for _, existing := range t.state.offlineLeases {
 		if existing.Scope == lease.Scope && existing.DeviceID == lease.DeviceID &&
 			existing.AppVersion == lease.AppVersion && existing.MasterDataVersion == lease.MasterDataVersion &&
-			existing.PriceVersion == lease.PriceVersion && !clientTimestamp.Before(existing.ValidFrom) &&
+			existing.PriceVersion == lease.PriceVersion && existing.CatalogSnapshotToken == lease.CatalogSnapshotToken && !clientTimestamp.Before(existing.ValidFrom) &&
 			clientTimestamp.Before(existing.ValidUntil) {
 			return true, nil
 		}

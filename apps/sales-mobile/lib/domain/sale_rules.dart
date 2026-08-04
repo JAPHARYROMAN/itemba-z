@@ -1,3 +1,5 @@
+import '../core/uuid.dart';
+import 'connection_models.dart';
 import 'models.dart';
 
 enum SaleRuleCode {
@@ -96,6 +98,11 @@ class SaleRules {
         draft.device.branchId != authoritativeDevice.branchId ||
         draft.device.warehouseId != authoritativeDevice.warehouseId ||
         draft.device.appVersion != authoritativeDevice.appVersion ||
+        draft.device.catalogSnapshotToken !=
+            authoritativeDevice.catalogSnapshotToken ||
+        authoritativeDevice.catalogSnapshotToken ==
+            unacknowledgedCatalogSnapshotToken ||
+        !UuidGenerator.isValid(authoritativeDevice.catalogSnapshotToken) ||
         draft.device.masterDataVersion !=
             authoritativeDevice.masterDataVersion ||
         draft.device.priceVersion != authoritativeDevice.priceVersion) {

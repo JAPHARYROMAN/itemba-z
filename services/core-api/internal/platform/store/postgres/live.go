@@ -34,7 +34,7 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 		}
 		var nextTaxTransition *time.Time
 		if err := tx.tx.QueryRow(ctx, `
-			SELECT company.master_data_version, company.price_version, company.business_timezone,
+			SELECT company.master_data_version, company.price_version, company.catalog_snapshot_token, company.business_timezone,
 			       (SELECT min(transition_at) FROM (
 			            SELECT effective_from AS transition_at FROM tax_rules
 			            WHERE tenant_id=$1 AND company_id=$2 AND effective_from > $3
@@ -44,7 +44,7 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 			        ) transitions)
 			FROM legal_companies company WHERE company.tenant_id = $1 AND company.id = $2`,
 			value.Scope.TenantID, value.Scope.CompanyID, value.LastSeenAt).Scan(
-			&value.AvailableMasterDataVersion, &value.AvailablePriceVersion, &value.TimeZone, &nextTaxTransition); err != nil {
+			&value.AvailableMasterDataVersion, &value.AvailablePriceVersion, &value.AvailableCatalogSnapshotToken, &value.TimeZone, &nextTaxTransition); err != nil {
 			return normalizeError(err)
 		}
 		leaseUntil := value.LastSeenAt.Add(devices.OfflineSalesLeaseDuration)
@@ -54,12 +54,13 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 		if err := devices.ValidateWireSafe(value); err != nil {
 			return err
 		}
-		if acknowledgement != nil && (acknowledgement.MasterDataVersion != value.AvailableMasterDataVersion || acknowledgement.PriceVersion != value.AvailablePriceVersion) {
+		if acknowledgement != nil && (acknowledgement.MasterDataVersion != value.AvailableMasterDataVersion || acknowledgement.PriceVersion != value.AvailablePriceVersion || acknowledgement.CatalogSnapshotToken != value.AvailableCatalogSnapshotToken) {
 			return devices.ErrStaleMasterData
 		}
 		existing, err := tx.MobileDevice(ctx, value.Scope, value.ActorID, value.ID)
 		if err == nil {
 			existing.AvailableMasterDataVersion, existing.AvailablePriceVersion = value.AvailableMasterDataVersion, value.AvailablePriceVersion
+			existing.AvailableCatalogSnapshotToken = value.AvailableCatalogSnapshotToken
 			existing.TimeZone = value.TimeZone
 			if acknowledgement == nil {
 				err = tx.tx.QueryRow(ctx, `
@@ -78,6 +79,7 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 			sameInstallation := existing.AppVersion == value.AppVersion &&
 				existing.MasterDataVersion == acknowledgement.MasterDataVersion &&
 				existing.PriceVersion == acknowledgement.PriceVersion
+			sameInstallation = sameInstallation && existing.CatalogSnapshotToken == acknowledgement.CatalogSnapshotToken
 			liveAuthorization := !existing.OfflineEnabled ||
 				(!existing.OfflineSalesValidFrom.After(value.LastSeenAt) && existing.OfflineSalesValidUntil.After(value.LastSeenAt))
 			if sameInstallation && liveAuthorization {
@@ -89,6 +91,7 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 			existing.AppVersion = value.AppVersion
 			existing.MasterDataVersion = acknowledgement.MasterDataVersion
 			existing.PriceVersion = acknowledgement.PriceVersion
+			existing.CatalogSnapshotToken = acknowledgement.CatalogSnapshotToken
 			existing.OfflineSalesValidFrom = value.LastSeenAt
 			existing.OfflineSalesValidUntil = value.LastSeenAt
 			if existing.OfflineEnabled {
@@ -97,11 +100,11 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 			err = tx.tx.QueryRow(ctx, `
 				UPDATE mobile_devices
 				SET device_name = $3, app_version = $4, last_seen_at = GREATEST(last_seen_at, $5),
-				    master_data_version = $6, price_version = $7,
-				    offline_sales_valid_from = $8, offline_sales_valid_until = $9
+				    master_data_version = $6, price_version = $7, catalog_snapshot_token = $8,
+				    offline_sales_valid_from = $9, offline_sales_valid_until = $10
 				WHERE tenant_id = $1 AND id = $2
 				RETURNING last_seen_at`, value.Scope.TenantID, value.ID, existing.Name, existing.AppVersion,
-				value.LastSeenAt, existing.MasterDataVersion, existing.PriceVersion,
+				value.LastSeenAt, existing.MasterDataVersion, existing.PriceVersion, existing.CatalogSnapshotToken,
 				existing.OfflineSalesValidFrom, existing.OfflineSalesValidUntil).Scan(&existing.LastSeenAt)
 			if err != nil {
 				return normalizeError(err)
@@ -124,7 +127,8 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 				if err := tx.appendOfflineLease(ctx, devices.OfflineLease{
 					Scope: existing.Scope, DeviceID: existing.ID, AppVersion: existing.AppVersion,
 					MasterDataVersion: existing.MasterDataVersion, PriceVersion: existing.PriceVersion,
-					ValidFrom: existing.OfflineSalesValidFrom, ValidUntil: existing.OfflineSalesValidUntil,
+					CatalogSnapshotToken: existing.CatalogSnapshotToken,
+					ValidFrom:            existing.OfflineSalesValidFrom, ValidUntil: existing.OfflineSalesValidUntil,
 				}); err != nil {
 					return err
 				}
@@ -138,6 +142,7 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 		if acknowledgement != nil {
 			value.MasterDataVersion = acknowledgement.MasterDataVersion
 			value.PriceVersion = acknowledgement.PriceVersion
+			value.CatalogSnapshotToken = acknowledgement.CatalogSnapshotToken
 			value.OfflineSalesValidFrom = value.LastSeenAt
 			value.OfflineSalesValidUntil = value.LastSeenAt
 			if value.OfflineEnabled {
@@ -158,12 +163,12 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 		_, err = tx.tx.Exec(ctx, `
 			INSERT INTO mobile_devices (
 				id, tenant_id, company_id, branch_id, warehouse_id, actor_id, status,
-				device_name, app_version, master_data_version, price_version, offline_enabled,
+				device_name, app_version, master_data_version, price_version, catalog_snapshot_token, offline_enabled,
 				offline_transaction_limit_minor, offline_daily_limit_minor,
 				offline_sales_valid_from, offline_sales_valid_until, enrolled_at, last_seen_at
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
 			value.ID, value.Scope.TenantID, value.Scope.CompanyID, value.Scope.BranchID, value.Scope.WarehouseID,
-			value.ActorID, value.Status, value.Name, value.AppVersion, value.MasterDataVersion, value.PriceVersion,
+			value.ActorID, value.Status, value.Name, value.AppVersion, value.MasterDataVersion, value.PriceVersion, value.CatalogSnapshotToken,
 			value.OfflineEnabled, value.OfflineTransactionLimitMinor, value.OfflineDailyLimitMinor,
 			value.OfflineSalesValidFrom, value.OfflineSalesValidUntil, value.EnrolledAt, value.LastSeenAt)
 		if err != nil {
@@ -173,7 +178,8 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 			if err := tx.appendOfflineLease(ctx, devices.OfflineLease{
 				Scope: value.Scope, DeviceID: value.ID, AppVersion: value.AppVersion,
 				MasterDataVersion: value.MasterDataVersion, PriceVersion: value.PriceVersion,
-				ValidFrom: value.OfflineSalesValidFrom, ValidUntil: value.OfflineSalesValidUntil,
+				CatalogSnapshotToken: value.CatalogSnapshotToken,
+				ValidFrom:            value.OfflineSalesValidFrom, ValidUntil: value.OfflineSalesValidUntil,
 			}); err != nil {
 				return err
 			}
@@ -194,11 +200,11 @@ func (t *transaction) appendOfflineLease(ctx context.Context, lease devices.Offl
 	_, err := t.tx.Exec(ctx, `
 		INSERT INTO mobile_device_offline_leases (
 			tenant_id, company_id, branch_id, warehouse_id, device_id, app_version,
-			master_data_version, price_version, valid_from, valid_until
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+			master_data_version, price_version, catalog_snapshot_token, valid_from, valid_until
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		ON CONFLICT DO NOTHING`, lease.Scope.TenantID, lease.Scope.CompanyID, lease.Scope.BranchID,
 		lease.Scope.WarehouseID, lease.DeviceID, lease.AppVersion, lease.MasterDataVersion,
-		lease.PriceVersion, lease.ValidFrom, lease.ValidUntil)
+		lease.PriceVersion, lease.CatalogSnapshotToken, lease.ValidFrom, lease.ValidUntil)
 	return normalizeError(err)
 }
 
@@ -211,7 +217,7 @@ func (s *Store) WorkingContext(ctx context.Context, scope tenancy.Scope, actorID
 		}
 		var permissions []string
 		err := tx.tx.QueryRow(ctx, `
-			SELECT c.name, c.base_currency, c.master_data_version, c.price_version, c.business_timezone,
+			SELECT c.name, c.base_currency, c.master_data_version, c.price_version, c.catalog_snapshot_token, c.business_timezone,
 			       b.name, w.name,
 			       COALESCE(array_agg(DISTINCT rp.permission_code ORDER BY rp.permission_code)
 			           FILTER (WHERE rp.permission_code IS NOT NULL), ARRAY[]::text[])
@@ -224,9 +230,9 @@ func (s *Store) WorkingContext(ctx context.Context, scope tenancy.Scope, actorID
 			LEFT JOIN role_permissions rp ON rp.tenant_id = urs.tenant_id AND rp.role_id = urs.role_id
 			WHERE u.tenant_id = $1 AND u.id = $2 AND u.active
 			  AND urs.company_id = $3 AND urs.branch_id = $4 AND urs.warehouse_id = $5
-			GROUP BY c.name, c.base_currency, c.master_data_version, c.price_version, c.business_timezone, b.name, w.name`,
+			GROUP BY c.name, c.base_currency, c.master_data_version, c.price_version, c.catalog_snapshot_token, c.business_timezone, b.name, w.name`,
 			scope.TenantID, actorID, scope.CompanyID, scope.BranchID, scope.WarehouseID).Scan(
-			&result.CompanyName, &result.Currency, &result.MasterDataVersion, &result.PriceVersion, &result.TimeZone,
+			&result.CompanyName, &result.Currency, &result.MasterDataVersion, &result.PriceVersion, &result.CatalogSnapshotToken, &result.TimeZone,
 			&result.BranchName, &result.WarehouseName, &permissions)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -242,7 +248,8 @@ func (s *Store) WorkingContext(ctx context.Context, scope tenancy.Scope, actorID
 	return result, err
 }
 
-func (s *Store) ListCustomers(ctx context.Context, scope tenancy.Scope, actorID string, options readmodel.ListOptions) ([]readmodel.CustomerSummary, error) {
+func (s *Store) ListCustomers(ctx context.Context, scope tenancy.Scope, actorID string, options readmodel.ListOptions) (readmodel.CatalogSnapshot, []readmodel.CustomerSummary, error) {
+	var snapshot readmodel.CatalogSnapshot
 	result := make([]readmodel.CustomerSummary, 0)
 	err := s.WithTransaction(ctx, func(contract sales.Transaction) error {
 		tx := contract.(*transaction)
@@ -252,6 +259,10 @@ func (s *Store) ListCustomers(ctx context.Context, scope tenancy.Scope, actorID 
 		}
 		if !authorized {
 			return sales.ErrForbidden
+		}
+		snapshot, err = tx.catalogSnapshot(ctx, scope, options.CatalogSnapshotToken)
+		if err != nil {
+			return err
 		}
 		rows, err := tx.tx.Query(ctx, `
 			SELECT c.id, c.code, c.name, CASE WHEN c.active THEN 'active' ELSE 'inactive' END,
@@ -286,10 +297,11 @@ func (s *Store) ListCustomers(ctx context.Context, scope tenancy.Scope, actorID 
 		}
 		return normalizeError(rows.Err())
 	})
-	return result, err
+	return snapshot, result, err
 }
 
-func (s *Store) ListProducts(ctx context.Context, scope tenancy.Scope, actorID string, options readmodel.ListOptions) ([]readmodel.ProductSummary, error) {
+func (s *Store) ListProducts(ctx context.Context, scope tenancy.Scope, actorID string, options readmodel.ListOptions) (readmodel.CatalogSnapshot, []readmodel.ProductSummary, error) {
+	var snapshot readmodel.CatalogSnapshot
 	result := make([]readmodel.ProductSummary, 0)
 	err := s.WithTransaction(ctx, func(contract sales.Transaction) error {
 		tx := contract.(*transaction)
@@ -299,6 +311,10 @@ func (s *Store) ListProducts(ctx context.Context, scope tenancy.Scope, actorID s
 		}
 		if !authorized {
 			return sales.ErrForbidden
+		}
+		snapshot, err = tx.catalogSnapshot(ctx, scope, options.CatalogSnapshotToken)
+		if err != nil {
+			return err
 		}
 		rows, err := tx.tx.Query(ctx, `
 			SELECT p.id, p.sku, p.name, p.base_unit_code, p.currency, p.list_price_minor,
@@ -339,7 +355,27 @@ func (s *Store) ListProducts(ctx context.Context, scope tenancy.Scope, actorID s
 		}
 		return normalizeError(rows.Err())
 	})
-	return result, err
+	return snapshot, result, err
+}
+
+func (t *transaction) catalogSnapshot(ctx context.Context, scope tenancy.Scope, expectedToken string) (readmodel.CatalogSnapshot, error) {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return readmodel.CatalogSnapshot{}, err
+	}
+	lockKey := "master-data-version:" + scope.TenantID + ":" + scope.CompanyID
+	if _, err := t.tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))`, lockKey); err != nil {
+		return readmodel.CatalogSnapshot{}, normalizeError(err)
+	}
+	var value readmodel.CatalogSnapshot
+	if err := t.tx.QueryRow(ctx, `SELECT catalog_snapshot_token, master_data_version, price_version
+		FROM legal_companies WHERE tenant_id=$1 AND id=$2`, scope.TenantID, scope.CompanyID).Scan(
+		&value.Token, &value.MasterDataVersion, &value.PriceVersion); err != nil {
+		return readmodel.CatalogSnapshot{}, normalizeError(err)
+	}
+	if expectedToken != "" && expectedToken != value.Token {
+		return readmodel.CatalogSnapshot{}, devices.ErrStaleMasterData
+	}
+	return value, nil
 }
 
 func (s *Store) ListSales(ctx context.Context, scope tenancy.Scope, actorID string, options readmodel.ListOptions) ([]sales.Sale, error) {
@@ -395,7 +431,7 @@ func (t *transaction) MobileDevice(ctx context.Context, scope tenancy.Scope, act
 	var value devices.Device
 	err := t.tx.QueryRow(ctx, `
 		SELECT d.id, d.status, d.actor_id, d.tenant_id, d.company_id, d.branch_id, d.warehouse_id,
-		       d.device_name, d.app_version, d.master_data_version, d.price_version, d.offline_enabled,
+		       d.device_name, d.app_version, d.master_data_version, d.price_version, d.catalog_snapshot_token, d.offline_enabled,
 		       d.offline_transaction_limit_minor, d.offline_daily_limit_minor,
 		       d.offline_sales_valid_from, d.offline_sales_valid_until, d.enrolled_at, d.last_seen_at,
 		       c.business_timezone
@@ -404,7 +440,7 @@ func (t *transaction) MobileDevice(ctx context.Context, scope tenancy.Scope, act
 		WHERE d.tenant_id = $1 AND d.id = $2 FOR UPDATE OF d`, scope.TenantID, deviceID).Scan(
 		&value.ID, &value.Status, &value.ActorID, &value.Scope.TenantID, &value.Scope.CompanyID,
 		&value.Scope.BranchID, &value.Scope.WarehouseID, &value.Name, &value.AppVersion,
-		&value.MasterDataVersion, &value.PriceVersion, &value.OfflineEnabled,
+		&value.MasterDataVersion, &value.PriceVersion, &value.CatalogSnapshotToken, &value.OfflineEnabled,
 		&value.OfflineTransactionLimitMinor, &value.OfflineDailyLimitMinor,
 		&value.OfflineSalesValidFrom, &value.OfflineSalesValidUntil,
 		&value.EnrolledAt, &value.LastSeenAt, &value.TimeZone)
@@ -418,9 +454,9 @@ func (t *transaction) MobileDevice(ctx context.Context, scope tenancy.Scope, act
 		return devices.Device{}, devices.ErrScopeMismatch
 	}
 	if err := t.tx.QueryRow(ctx, `
-		SELECT master_data_version, price_version FROM legal_companies
+		SELECT master_data_version, price_version, catalog_snapshot_token FROM legal_companies
 		WHERE tenant_id=$1 AND id=$2`, scope.TenantID, scope.CompanyID).Scan(
-		&value.AvailableMasterDataVersion, &value.AvailablePriceVersion); err != nil {
+		&value.AvailableMasterDataVersion, &value.AvailablePriceVersion, &value.AvailableCatalogSnapshotToken); err != nil {
 		return devices.Device{}, normalizeError(err)
 	}
 	value.StockAllocations = make([]devices.StockAllocation, 0)
@@ -487,9 +523,9 @@ func (t *transaction) OfflineLeaseValid(ctx context.Context, lease devices.Offli
 			SELECT 1 FROM mobile_device_offline_leases
 			WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4
 			  AND device_id=$5 AND app_version=$6 AND master_data_version=$7 AND price_version=$8
-			  AND valid_from <= $9 AND $9 < valid_until
+			  AND catalog_snapshot_token=$9 AND valid_from <= $10 AND $10 < valid_until
 		)`, lease.Scope.TenantID, lease.Scope.CompanyID, lease.Scope.BranchID, lease.Scope.WarehouseID,
-		lease.DeviceID, lease.AppVersion, lease.MasterDataVersion, lease.PriceVersion, clientTimestamp).Scan(&valid)
+		lease.DeviceID, lease.AppVersion, lease.MasterDataVersion, lease.PriceVersion, lease.CatalogSnapshotToken, clientTimestamp).Scan(&valid)
 	return valid, normalizeError(err)
 }
 

@@ -120,6 +120,7 @@ paths:
           schema: { type: boolean }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/CatalogSnapshotToken'
       responses:
         '200':
           description: Customers visible in the caller's scope.
@@ -145,6 +146,7 @@ paths:
           schema: { type: string, maxLength: 120 }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/CatalogSnapshotToken'
       responses:
         '200':
           description: Authorized products, prices, and available quantities.
@@ -372,6 +374,15 @@ components:
       name: page_size
       in: query
       schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    CatalogSnapshotToken:
+      name: snapshot_token
+      in: query
+      required: false
+      description: >-
+        Immutable token returned by the first catalog page. Supplying it on
+        every subsequent customer and product page makes governed-data drift
+        fail closed instead of mixing two publications.
+      schema: { type: string, format: uuid }
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -429,7 +440,7 @@ components:
     WorkingContext:
       type: object
       additionalProperties: false
-      required: [actor_id, tenant_id, company_id, company_name, branch_id, branch_name, warehouse_id, warehouse_name, currency, locale, timezone, permissions, master_data_version, price_version]
+      required: [actor_id, tenant_id, company_id, company_name, branch_id, branch_name, warehouse_id, warehouse_name, currency, locale, timezone, permissions, master_data_version, price_version, catalog_snapshot_token]
       properties:
         actor_id: { type: string, format: uuid }
         tenant_id: { type: string, format: uuid }
@@ -447,6 +458,7 @@ components:
           items: { type: string }
         master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
         price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        catalog_snapshot_token: { type: string, format: uuid }
     Money:
       type: object
       additionalProperties: false
@@ -471,10 +483,13 @@ components:
     CustomerPage:
       type: object
       additionalProperties: false
-      required: [items, next_cursor]
+      required: [items, next_cursor, catalog_snapshot_token, master_data_version, price_version]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/CustomerSummary' } }
         next_cursor: { type: [string, 'null'] }
+        catalog_snapshot_token: { type: string, format: uuid }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
     ProductSummary:
       type: object
       additionalProperties: false
@@ -498,10 +513,13 @@ components:
     ProductPage:
       type: object
       additionalProperties: false
-      required: [items, next_cursor]
+      required: [items, next_cursor, catalog_snapshot_token, master_data_version, price_version]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/ProductSummary' } }
         next_cursor: { type: [string, 'null'] }
+        catalog_snapshot_token: { type: string, format: uuid }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
     Scope:
       type: object
       additionalProperties: false
@@ -580,6 +598,10 @@ components:
         app_version: { type: string, minLength: 1, maxLength: 64 }
         master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
         price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        catalog_snapshot_token:
+          type: string
+          format: uuid
+          description: Immutable governed catalog publication used by a mobile sale.
         offline:
           type: boolean
           description: True only for controlled physical-CASH, zero-rated mobile sales in this milestone.
@@ -625,6 +647,10 @@ components:
         installed_price_version:
           allOf: [{ $ref: '#/components/schemas/SafePositiveInteger' }]
           description: Optional durable-cache acknowledgement; must be supplied with installed_master_data_version and equal the current available version to advance server state.
+        installed_catalog_snapshot_token:
+          type: string
+          format: uuid
+          description: Optional immutable publication acknowledgement; required with both installed versions and must equal the current available token.
     MobileStockAllocation:
       type: object
       additionalProperties: false
@@ -636,7 +662,7 @@ components:
     MobileDeviceEnrollment:
       type: object
       additionalProperties: false
-      required: [device_id, status, actor_id, scope, device_name, app_version, master_data_version, price_version, available_master_data_version, available_price_version, timezone, offline_enabled, transaction_value_limit_minor, daily_value_limit_minor, remaining_daily_value_minor, offline_sales_valid_until, enrolled_at, last_seen_at, stock_allocations]
+      required: [device_id, status, actor_id, scope, device_name, app_version, master_data_version, price_version, catalog_snapshot_token, available_master_data_version, available_price_version, available_catalog_snapshot_token, timezone, offline_enabled, transaction_value_limit_minor, daily_value_limit_minor, remaining_daily_value_minor, offline_sales_valid_until, enrolled_at, last_seen_at, stock_allocations]
       properties:
         device_id: { type: string, format: uuid }
         status: { type: string, enum: [ACTIVE, SUSPENDED, REVOKED] }
@@ -654,12 +680,20 @@ components:
         price_version:
           allOf: [{ $ref: '#/components/schemas/SafeNonNegativeInteger' }]
           description: Price version durably installed and explicitly acknowledged by this device; zero means unacknowledged.
+        catalog_snapshot_token:
+          type: string
+          format: uuid
+          description: Snapshot durably installed by this device; the all-zero UUID means unacknowledged.
         available_master_data_version:
           allOf: [{ $ref: '#/components/schemas/SafePositiveInteger' }]
           description: Current legal-company master-data version available for download.
         available_price_version:
           allOf: [{ $ref: '#/components/schemas/SafePositiveInteger' }]
           description: Current legal-company price version available for download.
+        available_catalog_snapshot_token:
+          type: string
+          format: uuid
+          description: Current immutable legal-company catalog publication available for download.
         timezone: { type: string, example: Africa/Dar_es_Salaam }
         offline_enabled: { type: boolean }
         transaction_value_limit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
@@ -677,7 +711,7 @@ components:
     MobileSaleSyncCommand:
       type: object
       additionalProperties: false
-      required: [customer_id, kind, lines, device_id, client_transaction_id, client_timestamp, app_version, master_data_version, price_version, sync_attempt]
+      required: [customer_id, kind, lines, device_id, client_transaction_id, client_timestamp, app_version, master_data_version, price_version, catalog_snapshot_token, sync_attempt]
       properties:
         customer_id: { type: string, format: uuid }
         kind: { $ref: '#/components/schemas/SaleKind' }
@@ -692,11 +726,12 @@ components:
         app_version: { type: string, minLength: 1, maxLength: 64 }
         master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
         price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        catalog_snapshot_token: { type: string, format: uuid }
         sync_attempt: { type: integer, minimum: 1, maximum: 9007199254740991 }
         offline:
           type: boolean
           default: false
-          description: Controlled offline mode accepts only physical CASH and zero-rated product lines. The client timestamp must fall inside a persisted server-issued lease bound to this exact device, app, master-data version, and price version; nonzero effective tax or a changed product price version is rejected with 422.
+          description: Controlled offline mode accepts only physical CASH and zero-rated product lines. The client timestamp must fall inside a persisted server-issued lease bound to this exact device, app, master-data version, price version, and catalog snapshot token; nonzero effective tax or a changed governed product publication is rejected with 422.
     MobileSyncResult:
       type: object
       additionalProperties: false

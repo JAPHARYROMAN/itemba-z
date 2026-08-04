@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../domain/connection_models.dart';
 import '../domain/models.dart';
 
 class LocalDataCodec {
@@ -125,6 +126,7 @@ class LocalDataCodec {
     'warehouseId': device.warehouseId,
     'warehouseName': device.warehouseName,
     'appVersion': device.appVersion,
+    'catalogSnapshotToken': device.catalogSnapshotToken,
     'masterDataVersion': device.masterDataVersion,
     'priceVersion': device.priceVersion,
     'approved': device.approved,
@@ -142,6 +144,9 @@ class LocalDataCodec {
     warehouseId: map['warehouseId']! as String,
     warehouseName: map['warehouseName']! as String,
     appVersion: map['appVersion']! as String,
+    catalogSnapshotToken:
+        map['catalogSnapshotToken'] as String? ??
+        unacknowledgedCatalogSnapshotToken,
     masterDataVersion: _versionInt(map['masterDataVersion']),
     priceVersion: _versionInt(map['priceVersion']),
     approved: map['approved']! as bool,
@@ -275,6 +280,7 @@ class LocalDataCodec {
     'branchId': command.branchId,
     'warehouseId': command.warehouseId,
     'appVersion': command.appVersion,
+    'catalogSnapshotToken': command.catalogSnapshotToken,
     'masterDataVersion': command.masterDataVersion,
     'priceVersion': command.priceVersion,
     'syncAttemptNumber': command.syncAttemptNumber,
@@ -294,6 +300,9 @@ class LocalDataCodec {
       branchId: map['branchId']! as String,
       warehouseId: map['warehouseId']! as String,
       appVersion: map['appVersion']! as String,
+      catalogSnapshotToken:
+          map['catalogSnapshotToken'] as String? ??
+          unacknowledgedCatalogSnapshotToken,
       masterDataVersion: _versionInt(map['masterDataVersion']),
       priceVersion: _versionInt(map['priceVersion']),
       syncAttemptNumber: map['syncAttemptNumber']! as int,

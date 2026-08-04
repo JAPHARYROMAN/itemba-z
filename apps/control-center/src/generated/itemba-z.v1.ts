@@ -230,6 +230,8 @@ export interface components {
             permissions: string[];
             master_data_version: components["schemas"]["SafePositiveInteger"];
             price_version: components["schemas"]["SafePositiveInteger"];
+            /** Format: uuid */
+            catalog_snapshot_token: string;
         };
         Money: {
             amount: string;
@@ -251,6 +253,10 @@ export interface components {
         CustomerPage: {
             items: components["schemas"]["CustomerSummary"][];
             next_cursor: string | null;
+            /** Format: uuid */
+            catalog_snapshot_token: string;
+            master_data_version: components["schemas"]["SafePositiveInteger"];
+            price_version: components["schemas"]["SafePositiveInteger"];
         };
         ProductSummary: {
             /** Format: uuid */
@@ -272,6 +278,10 @@ export interface components {
         ProductPage: {
             items: components["schemas"]["ProductSummary"][];
             next_cursor: string | null;
+            /** Format: uuid */
+            catalog_snapshot_token: string;
+            master_data_version: components["schemas"]["SafePositiveInteger"];
+            price_version: components["schemas"]["SafePositiveInteger"];
         };
         Scope: {
             /** Format: uuid */
@@ -342,6 +352,11 @@ export interface components {
             app_version?: string;
             master_data_version?: components["schemas"]["SafePositiveInteger"];
             price_version?: components["schemas"]["SafePositiveInteger"];
+            /**
+             * Format: uuid
+             * @description Immutable governed catalog publication used by a mobile sale.
+             */
+            catalog_snapshot_token?: string;
             /** @description True only for controlled physical-CASH, zero-rated mobile sales in this milestone. */
             offline?: boolean;
             /** @description Authoritative non-fiscal receipt reference; never a TRA fiscal receipt number. */
@@ -377,6 +392,11 @@ export interface components {
             installed_master_data_version?: components["schemas"]["SafePositiveInteger"];
             /** @description Optional durable-cache acknowledgement; must be supplied with installed_master_data_version and equal the current available version to advance server state. */
             installed_price_version?: components["schemas"]["SafePositiveInteger"];
+            /**
+             * Format: uuid
+             * @description Optional immutable publication acknowledgement; required with both installed versions and must equal the current available token.
+             */
+            installed_catalog_snapshot_token?: string;
         };
         MobileStockAllocation: {
             /** Format: uuid */
@@ -399,10 +419,20 @@ export interface components {
             master_data_version: components["schemas"]["SafeNonNegativeInteger"];
             /** @description Price version durably installed and explicitly acknowledged by this device; zero means unacknowledged. */
             price_version: components["schemas"]["SafeNonNegativeInteger"];
+            /**
+             * Format: uuid
+             * @description Snapshot durably installed by this device; the all-zero UUID means unacknowledged.
+             */
+            catalog_snapshot_token: string;
             /** @description Current legal-company master-data version available for download. */
             available_master_data_version: components["schemas"]["SafePositiveInteger"];
             /** @description Current legal-company price version available for download. */
             available_price_version: components["schemas"]["SafePositiveInteger"];
+            /**
+             * Format: uuid
+             * @description Current immutable legal-company catalog publication available for download.
+             */
+            available_catalog_snapshot_token: string;
             /** @example Africa/Dar_es_Salaam */
             timezone: string;
             offline_enabled: boolean;
@@ -435,9 +465,11 @@ export interface components {
             app_version: string;
             master_data_version: components["schemas"]["SafePositiveInteger"];
             price_version: components["schemas"]["SafePositiveInteger"];
+            /** Format: uuid */
+            catalog_snapshot_token: string;
             sync_attempt: number;
             /**
-             * @description Controlled offline mode accepts only physical CASH and zero-rated product lines. The client timestamp must fall inside a persisted server-issued lease bound to this exact device, app, master-data version, and price version; nonzero effective tax or a changed product price version is rejected with 422.
+             * @description Controlled offline mode accepts only physical CASH and zero-rated product lines. The client timestamp must fall inside a persisted server-issued lease bound to this exact device, app, master-data version, price version, and catalog snapshot token; nonzero effective tax or a changed governed product publication is rejected with 422.
              * @default false
              */
             offline: boolean;
@@ -572,6 +604,8 @@ export interface components {
         BranchId: string;
         Cursor: string;
         PageSize: number;
+        /** @description Immutable token returned by the first catalog page. Supplying it on every subsequent customer and product page makes governed-data drift fail closed instead of mixing two publications. */
+        CatalogSnapshotToken: string;
         IdempotencyKey: string;
         CorrelationId: string;
         SaleId: string;
@@ -679,6 +713,8 @@ export interface operations {
                 credit_eligible?: boolean;
                 cursor?: components["parameters"]["Cursor"];
                 page_size?: components["parameters"]["PageSize"];
+                /** @description Immutable token returned by the first catalog page. Supplying it on every subsequent customer and product page makes governed-data drift fail closed instead of mixing two publications. */
+                snapshot_token?: components["parameters"]["CatalogSnapshotToken"];
             };
             header?: never;
             path?: never;
@@ -706,6 +742,8 @@ export interface operations {
                 query?: string;
                 cursor?: components["parameters"]["Cursor"];
                 page_size?: components["parameters"]["PageSize"];
+                /** @description Immutable token returned by the first catalog page. Supplying it on every subsequent customer and product page makes governed-data drift fail closed instead of mixing two publications. */
+                snapshot_token?: components["parameters"]["CatalogSnapshotToken"];
             };
             header?: never;
             path?: never;

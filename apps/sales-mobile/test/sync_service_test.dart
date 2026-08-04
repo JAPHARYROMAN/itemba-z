@@ -35,6 +35,7 @@ void main() {
         branchId: demoDevice.branchId,
         warehouseId: demoDevice.warehouseId,
         appVersion: demoDevice.appVersion,
+        catalogSnapshotToken: demoDevice.catalogSnapshotToken,
         masterDataVersion: demoDevice.masterDataVersion,
         priceVersion: demoDevice.priceVersion,
         syncAttemptNumber: 1,

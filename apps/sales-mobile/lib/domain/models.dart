@@ -235,6 +235,7 @@ class DeviceContext {
     required this.warehouseId,
     required this.warehouseName,
     required this.appVersion,
+    required this.catalogSnapshotToken,
     required this.masterDataVersion,
     required this.priceVersion,
     required this.approved,
@@ -251,11 +252,13 @@ class DeviceContext {
   final String warehouseId;
   final String warehouseName;
   final String appVersion;
+  final String catalogSnapshotToken;
   final int masterDataVersion;
   final int priceVersion;
   final bool approved;
 
   DeviceContext copyWithVersions({
+    required String catalogSnapshotToken,
     required int masterDataVersion,
     required int priceVersion,
   }) {
@@ -271,6 +274,7 @@ class DeviceContext {
       warehouseId: warehouseId,
       warehouseName: warehouseName,
       appVersion: appVersion,
+      catalogSnapshotToken: catalogSnapshotToken,
       masterDataVersion: masterDataVersion,
       priceVersion: priceVersion,
       approved: approved,
@@ -279,6 +283,7 @@ class DeviceContext {
 
   DeviceContext copyWithAcknowledgedRuntime({
     required String appVersion,
+    required String catalogSnapshotToken,
     required int masterDataVersion,
     required int priceVersion,
     required bool approved,
@@ -295,6 +300,7 @@ class DeviceContext {
       warehouseId: warehouseId,
       warehouseName: warehouseName,
       appVersion: appVersion,
+      catalogSnapshotToken: catalogSnapshotToken,
       masterDataVersion: masterDataVersion,
       priceVersion: priceVersion,
       approved: approved,
@@ -460,6 +466,7 @@ class SyncCommand {
     required this.branchId,
     required this.warehouseId,
     required this.appVersion,
+    required this.catalogSnapshotToken,
     required this.masterDataVersion,
     required this.priceVersion,
     required this.syncAttemptNumber,
@@ -474,6 +481,7 @@ class SyncCommand {
   final String branchId;
   final String warehouseId;
   final String appVersion;
+  final String catalogSnapshotToken;
   final int masterDataVersion;
   final int priceVersion;
   final int syncAttemptNumber;

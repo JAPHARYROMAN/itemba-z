@@ -168,6 +168,7 @@ void main() {
         products: const [_cachedProduct],
         masterDataVersion: 1,
         priceVersion: 1,
+        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
         enrollment: installed,
       );
       final runtime = MobileRuntimeController(
@@ -236,6 +237,7 @@ void main() {
         products: const [_cachedProduct],
         masterDataVersion: 1,
         priceVersion: 1,
+        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
         enrollment: installed,
       );
       var enrollmentAttempts = 0;
@@ -279,6 +281,7 @@ void main() {
         products: const [_cachedProduct],
         masterDataVersion: 1,
         priceVersion: 1,
+        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
         enrollment: installed,
       );
       Map<String, Object?>? syncedCommand;
@@ -303,7 +306,7 @@ void main() {
                 );
               }
               if (request.uri.path == '/v1/customers') {
-                return _json(200, _customerPage);
+                return _json(200, _customerPageForVersions(2, 2));
               }
               if (request.uri.path == '/v1/products') {
                 return _json(200, _productPageForVersions(2, 2));
@@ -357,6 +360,7 @@ void main() {
         products: const [_cachedProduct],
         masterDataVersion: 1,
         priceVersion: 1,
+        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
         enrollment: installed,
       );
       Map<String, Object?>? syncedCommand;
@@ -436,6 +440,7 @@ void main() {
         products: const [_cachedProduct],
         masterDataVersion: 1,
         priceVersion: 1,
+        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
         enrollment: installed,
       );
       var serverInstalledVersion = 1;
@@ -468,7 +473,7 @@ void main() {
                 );
               }
               if (request.uri.path == '/v1/customers') {
-                return _json(200, _customerPage);
+                return _json(200, _customerPageForVersions(2, 2));
               }
               if (request.uri.path == '/v1/products') {
                 return _json(200, _productPageForVersions(2, 2));
@@ -540,10 +545,12 @@ DeviceEnrollment _enrollment(
     warehouseId: warehouse,
   ),
   appVersion: appVersion,
+  catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
   masterDataVersion: 1,
   priceVersion: 1,
   availableMasterDataVersion: 1,
   availablePriceVersion: 1,
+  availableCatalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
   timezone: 'Africa/Dar_es_Salaam',
   offlineEnabled: true,
   transactionValueLimitMinor: 100000,
@@ -582,10 +589,15 @@ Map<String, Object?> _enrollmentJson(
     'warehouse_id': warehouse,
   },
   'app_version': appVersion,
+  'catalog_snapshot_token':
+      installedMasterDataVersion > 0
+          ? '00000000-0000-4000-8000-000000000010'
+          : unacknowledgedCatalogSnapshotToken,
   'master_data_version': installedMasterDataVersion,
   'price_version': installedPriceVersion,
   'available_master_data_version': availableMasterDataVersion,
   'available_price_version': availablePriceVersion,
+  'available_catalog_snapshot_token': '00000000-0000-4000-8000-000000000010',
   'timezone': 'Africa/Dar_es_Salaam',
   'offline_enabled': true,
   'transaction_value_limit_minor': 100000,
@@ -606,6 +618,9 @@ Map<String, Object?> _enrollmentJson(
 };
 
 Map<String, Object?> get _customerPage => {
+  'catalog_snapshot_token': '00000000-0000-4000-8000-000000000010',
+  'master_data_version': 1,
+  'price_version': 1,
   'items': [
     {
       'id': customerId,
@@ -622,7 +637,16 @@ Map<String, Object?> get _customerPage => {
   'next_cursor': null,
 };
 
+Map<String, Object?> _customerPageForVersions(int master, int price) => {
+  ..._customerPage,
+  'master_data_version': master,
+  'price_version': price,
+};
+
 Map<String, Object?> get _productPage => {
+  'catalog_snapshot_token': '00000000-0000-4000-8000-000000000010',
+  'master_data_version': 1,
+  'price_version': 1,
   'items': [
     {
       'id': productId,
@@ -641,6 +665,9 @@ Map<String, Object?> get _productPage => {
 };
 
 Map<String, Object?> _productPageForVersions(int master, int price) => {
+  'catalog_snapshot_token': '00000000-0000-4000-8000-000000000010',
+  'master_data_version': master,
+  'price_version': price,
   'items': [
     {
       'id': productId,
@@ -763,6 +790,7 @@ SyncCommand _pendingCommand() {
     branchId: branchId,
     warehouseId: warehouseId,
     appVersion: '1.0.0+1',
+    catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
     masterDataVersion: 1,
     priceVersion: 1,
     syncAttemptNumber: 1,

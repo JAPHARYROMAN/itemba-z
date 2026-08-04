@@ -28,7 +28,8 @@ effects while preserving the original transaction and its audit history.
    availability; no client may select a different organizational scope.
 3. Android devices enroll against the authenticated actor and allocated scope.
    A new device remains cache-unacknowledged until it atomically installs the
-   current catalog and price cache and acknowledges both available versions.
+   current catalog and price cache under one immutable snapshot token and
+   acknowledges that token with both available versions.
 4. The client submits product IDs and whole-unit quantities. The API recomputes
    all monetary values and credit eligibility.
 5. Online web sales use `Idempotency-Key`. Mobile sales additionally use the
@@ -60,8 +61,9 @@ effects while preserving the original transaction and its audit history.
 | Duplicate mobile synchronization | Repeating `device_id + client_transaction_id` returns the original server sale and cannot post twice. |
 | Unauthorized device | An unbound, disabled, actor-mismatched, or scope-mismatched device cannot synchronize. |
 | Offline cash sale | The encrypted queue survives restart and synchronizes exactly once when the authoritative product, master, price, and tax facts remain compatible; this milestone accepts physical CASH and authoritative zero-rated lines only, while detected drift fails closed for governed review and reconciliation. |
-| Cache acknowledgement | Installed and available versions are distinct; stale acknowledgements fail, while retry after a lost response is idempotent. |
-| Offline cache lease | A successful acknowledgement issues an exact app/master/price lease for no more than four hours and never across a known tax transition; historical rows preserve the authorization proof after renewal, while later governed-data drift still fails closed. |
+| Catalog snapshot download | Every customer and product page echoes the requested immutable token and identical version metadata; token drift aborts the download before installation. |
+| Cache acknowledgement | Installed and available token/version triples are distinct; stale acknowledgements fail, while retry after a lost response is idempotent. |
+| Offline cache lease | A successful acknowledgement issues an exact app/token/master/price lease for no more than four hours and never across a known tax transition; historical rows preserve the authorization proof after renewal, while later governed-data drift still fails closed. |
 | Late tax scheduling | Tax-rule mutations that overlap an outstanding lease are rejected under the same serialization lock used by acknowledgement. |
 | Queued business day | Offline daily limits are charged to the lease-validated client creation day in the legal-company timezone, even when synchronization occurs after midnight. |
 | Exact integers | TZS minor-unit amounts and whole-unit quantities remain within the JSON safe-integer contract or fail with 422 and no effects. |
@@ -83,15 +85,12 @@ expected post-sale balance. The client must never infer a zero overdue balance.
 Offline nonzero-tax sale completion also remains fail-closed until posting owns
 a governed historical tax/clock snapshot; the live product tax rate is exposed
 for exact review totals but is not sufficient statutory evidence.
-The bounded lease is an operational safety boundary, not that snapshot:
-catalog download and acknowledgement still need an immutable as-of token or
-content fingerprint to eliminate a download/activation race before production
-offline sales can be approved.
 Production continuity across catalog or price changes additionally requires
-versioned historical product/price facts, a consistent paginated snapshot, and
+versioned historical product/price facts and
 an operator workflow that reconciles collected cash when a queued transaction
 fails closed. The current milestone demonstrates conflict detection and durable
-review state; it does not claim unattended recovery across configuration drift.
+review state; the immutable token closes the download/activation race but does
+not claim unattended recovery across later configuration drift.
 Release 1 also needs a governed distinction between offline document time and
 server posting time, including clock-skew limits, fiscal-period policy, and a
 reconciliation path for sales synchronized after a period boundary. The

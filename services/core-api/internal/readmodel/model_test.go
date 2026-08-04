@@ -12,7 +12,7 @@ import (
 
 func TestMalformedButDecodableCursorIsRejected(t *testing.T) {
 	cursor := base64.RawURLEncoding.EncodeToString([]byte("not-a-uuid"))
-	if _, err := listOptions("", cursor, nil, 50); !errors.Is(err, sales.ErrInvalidCommand) {
+	if _, err := listOptions("", cursor, "", nil, 50); !errors.Is(err, sales.ErrInvalidCommand) {
 		t.Fatalf("expected invalid request, got %v", err)
 	}
 }
@@ -20,13 +20,13 @@ func TestMalformedButDecodableCursorIsRejected(t *testing.T) {
 type unsafeReadRepository struct{}
 
 func (unsafeReadRepository) WorkingContext(context.Context, tenancy.Scope, string) (WorkingContext, error) {
-	return WorkingContext{MasterDataVersion: 1, PriceVersion: 1}, nil
+	return WorkingContext{MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: "00000000-0000-4000-8000-000000000001"}, nil
 }
-func (unsafeReadRepository) ListCustomers(context.Context, tenancy.Scope, string, ListOptions) ([]CustomerSummary, error) {
-	return nil, nil
+func (unsafeReadRepository) ListCustomers(context.Context, tenancy.Scope, string, ListOptions) (CatalogSnapshot, []CustomerSummary, error) {
+	return CatalogSnapshot{Token: "00000000-0000-4000-8000-000000000001", MasterDataVersion: 1, PriceVersion: 1}, nil, nil
 }
-func (unsafeReadRepository) ListProducts(context.Context, tenancy.Scope, string, ListOptions) ([]ProductSummary, error) {
-	return []ProductSummary{{ID: "product", UnitPriceMinor: sales.MaxWireSafeInteger + 1, PriceVersion: 1, MasterDataVersion: 1}}, nil
+func (unsafeReadRepository) ListProducts(context.Context, tenancy.Scope, string, ListOptions) (CatalogSnapshot, []ProductSummary, error) {
+	return CatalogSnapshot{Token: "00000000-0000-4000-8000-000000000001", MasterDataVersion: 1, PriceVersion: 1}, []ProductSummary{{ID: "product", UnitPriceMinor: sales.MaxWireSafeInteger + 1, PriceVersion: 1, MasterDataVersion: 1}}, nil
 }
 func (unsafeReadRepository) ListSales(context.Context, tenancy.Scope, string, ListOptions) ([]sales.Sale, error) {
 	return []sales.Sale{{ID: "sale", TotalMinor: sales.MaxWireSafeInteger + 1}}, nil
@@ -38,7 +38,7 @@ func TestPublicReadModelsRejectUnsafeExistingDatabaseIntegers(t *testing.T) {
 		t.Fatal(err)
 	}
 	scope := tenancy.Scope{TenantID: "tenant", CompanyID: "company", BranchID: "branch", WarehouseID: "warehouse"}
-	if _, err := service.Products(context.Background(), scope, "actor", "", "", 50); !errors.Is(err, sales.ErrUnsafeWireInteger) {
+	if _, err := service.Products(context.Background(), scope, "actor", "", "", "", 50); !errors.Is(err, sales.ErrUnsafeWireInteger) {
 		t.Fatalf("unsafe product integer error=%v", err)
 	}
 	if _, err := service.Sales(context.Background(), scope, "actor", "", 50); !errors.Is(err, sales.ErrUnsafeWireInteger) {

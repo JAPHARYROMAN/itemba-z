@@ -68,10 +68,17 @@ assert.equal(context.currency, "TZS");
 assert.equal(context.timezone, "Africa/Dar_es_Salaam");
 assert.ok(context.permissions.includes("sales.complete"));
 
-const customers = await request("/v1/customers?page_size=200");
+const snapshotQuery = `snapshot_token=${encodeURIComponent(context.catalog_snapshot_token)}`;
+const customers = await request(`/v1/customers?page_size=200&${snapshotQuery}`);
+assert.equal(customers.catalog_snapshot_token, context.catalog_snapshot_token);
+assert.equal(customers.master_data_version, context.master_data_version);
+assert.equal(customers.price_version, context.price_version);
 assert.ok(customers.items.some((customer) => customer.id === ids.generalCustomer && customer.is_general_customer));
 assert.ok(customers.items.some((customer) => customer.id === ids.creditCustomer && customer.credit_enabled));
-const products = await request("/v1/products?page_size=200");
+const products = await request(`/v1/products?page_size=200&${snapshotQuery}`);
+assert.equal(products.catalog_snapshot_token, context.catalog_snapshot_token);
+assert.equal(products.master_data_version, context.master_data_version);
+assert.equal(products.price_version, context.price_version);
 const verifierProduct = products.items.find((product) => product.id === ids.product);
 assert.ok(verifierProduct && verifierProduct.available_quantity > 0);
 assert.equal(verifierProduct.tax_basis_points, 0, "offline verifier product must remain explicitly zero-rated");
@@ -93,6 +100,7 @@ assert.equal(enrollment.status, "ACTIVE");
 assert.equal(enrollment.scope.warehouse_id, ids.warehouse);
 assert.equal(enrollment.available_master_data_version, context.master_data_version);
 assert.equal(enrollment.available_price_version, context.price_version);
+assert.equal(enrollment.available_catalog_snapshot_token, context.catalog_snapshot_token);
 const initialLeaseDeadline = Date.parse(enrollment.offline_sales_valid_until);
 assert.ok(Number.isFinite(initialLeaseDeadline), "initial enrollment must return a lease deadline");
 assert.ok(initialLeaseDeadline <= Date.now(), "unacknowledged enrollment must remain offline-expired");
@@ -111,6 +119,7 @@ const staleAcknowledgement = await request("/v1/mobile/devices/enroll", {
     app_version: "smoke-1",
     installed_master_data_version: enrollment.available_master_data_version + 1,
     installed_price_version: enrollment.available_price_version,
+    installed_catalog_snapshot_token: enrollment.available_catalog_snapshot_token,
   },
   expected: 422,
 });
@@ -124,10 +133,12 @@ const acknowledged = await request("/v1/mobile/devices/enroll", {
     app_version: "smoke-1",
     installed_master_data_version: enrollment.available_master_data_version,
     installed_price_version: enrollment.available_price_version,
+    installed_catalog_snapshot_token: enrollment.available_catalog_snapshot_token,
   },
 });
 assert.equal(acknowledged.master_data_version, enrollment.available_master_data_version);
 assert.equal(acknowledged.price_version, enrollment.available_price_version);
+assert.equal(acknowledged.catalog_snapshot_token, enrollment.available_catalog_snapshot_token);
 assert.equal(acknowledged.app_version, "smoke-1");
 const acknowledgedAt = Date.parse(acknowledged.last_seen_at);
 const acknowledgedLeaseDeadline = Date.parse(acknowledged.offline_sales_valid_until);
@@ -157,7 +168,7 @@ assert.equal(unacknowledgedUpgradeReadback.app_version, "smoke-1");
 assert.equal(Date.parse(unacknowledgedUpgradeReadback.offline_sales_valid_until), acknowledgedLeaseDeadline);
 
 const beforeMobileCreditSales = await request("/v1/sales?page_size=200");
-const beforeMobileCreditProducts = await request("/v1/products?page_size=200");
+const beforeMobileCreditProducts = await request(`/v1/products?page_size=200&${snapshotQuery}`);
 const beforeMobileCreditStock = beforeMobileCreditProducts.items.find((product) => product.id === ids.product)?.available_quantity;
 const mobileCredit = await request("/v1/mobile/sync/sales", {
   method: "POST",
@@ -171,6 +182,7 @@ const mobileCredit = await request("/v1/mobile/sync/sales", {
     app_version: "smoke-1",
     master_data_version: context.master_data_version,
     price_version: context.price_version,
+    catalog_snapshot_token: context.catalog_snapshot_token,
     sync_attempt: 1,
     offline: false,
   },
@@ -178,7 +190,7 @@ const mobileCredit = await request("/v1/mobile/sync/sales", {
 });
 assert.equal(mobileCredit.code, "business_rule_violation");
 const afterMobileCreditSales = await request("/v1/sales?page_size=200");
-const afterMobileCreditProducts = await request("/v1/products?page_size=200");
+const afterMobileCreditProducts = await request(`/v1/products?page_size=200&${snapshotQuery}`);
 assert.deepEqual(
   afterMobileCreditSales.items.map((sale) => sale.id),
   beforeMobileCreditSales.items.map((sale) => sale.id),
@@ -199,6 +211,7 @@ const mobileCommand = {
   app_version: "smoke-1",
   master_data_version: context.master_data_version,
   price_version: context.price_version,
+  catalog_snapshot_token: context.catalog_snapshot_token,
   sync_attempt: 1,
   offline: true,
 };
@@ -211,6 +224,7 @@ assert.equal(mobileFirst.sale.client_timestamp, mobileCommand.client_timestamp);
 assert.equal(mobileFirst.sale.app_version, mobileCommand.app_version);
 assert.equal(mobileFirst.sale.master_data_version, mobileCommand.master_data_version);
 assert.equal(mobileFirst.sale.price_version, mobileCommand.price_version);
+assert.equal(mobileFirst.sale.catalog_snapshot_token, mobileCommand.catalog_snapshot_token);
 assert.equal(mobileFirst.sale.fiscal_status, "NOT_CONFIGURED");
 assert.equal(mobileFirst.receipt_reference, mobileFirst.sale.receipt_reference);
 assert.equal("cogs_minor" in mobileFirst.sale, false);

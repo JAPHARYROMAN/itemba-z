@@ -34,6 +34,11 @@ const (
 
 var testScope = tenancy.Scope{TenantID: tenantID, CompanyID: companyID, BranchID: branchID, WarehouseID: warehouseID}
 
+var (
+	catalogSnapshotTokenV1 = "00000000-0000-4000-8000-000000000001"
+	catalogSnapshotTokenV2 = "00000000-0000-4000-8000-000000000002"
+)
+
 func fixture(t *testing.T, at time.Time) (*memory.Store, *mobile.Service) {
 	t.Helper()
 	store := memory.New()
@@ -43,7 +48,7 @@ func fixture(t *testing.T, at time.Time) (*memory.Store, *mobile.Service) {
 	store.SeedContext(testScope, readmodel.WorkingContext{
 		CompanyName: "Company", BranchName: "Branch", WarehouseName: "Warehouse",
 		Currency: "TZS", Locale: "en-TZ", TimeZone: "Africa/Dar_es_Salaam",
-		MasterDataVersion: 1, PriceVersion: 1,
+		MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1,
 	})
 	store.SeedCustomer(customers.Account{ID: customerID, Code: "GENERAL", TenantID: tenantID, CompanyID: companyID, Name: "General Customer", Active: true, General: true})
 	store.SeedProduct(catalog.Product{
@@ -83,7 +88,7 @@ func TestEnrollmentBindingAndMobileIdempotency(t *testing.T) {
 		t.Fatalf("new device was incorrectly treated as having an installed cache: %+v", enrolled)
 	}
 	one := int64(1)
-	if _, err := service.Enroll(context.Background(), mobile.EnrollCommand{Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS renamed", AppVersion: "1.0.1", InstalledMasterDataVersion: &one, InstalledPriceVersion: &one}); err != nil {
+	if _, err := service.Enroll(context.Background(), mobile.EnrollCommand{Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS renamed", AppVersion: "1.0.1", InstalledMasterDataVersion: &one, InstalledPriceVersion: &one, InstalledCatalogSnapshotToken: &catalogSnapshotTokenV1}); err != nil {
 		t.Fatalf("idempotent re-enrollment: %v", err)
 	}
 	if snapshot := store.Snapshot(); len(snapshot.Audits) != 2 || len(snapshot.Outbox) != 2 ||
@@ -95,7 +100,7 @@ func TestEnrollmentBindingAndMobileIdempotency(t *testing.T) {
 		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: "CASH",
 		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
 		ClientTransactionID: "20000000-0000-4000-8000-000000000009", ClientTimestamp: at,
-		AppVersion: "1.0.1", MasterDataVersion: 1, PriceVersion: 1, SyncAttempt: 1,
+		AppVersion: "1.0.1", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1,
 	}
 	first, err := service.SyncSale(context.Background(), testScope, actorID, "", command)
 	if err != nil {
@@ -122,7 +127,7 @@ func TestUnboundAndMismatchedDevicesAreRejected(t *testing.T) {
 		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: "CASH",
 		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
 		ClientTransactionID: "20000000-0000-4000-8000-000000000010", ClientTimestamp: at,
-		AppVersion: "1.0.0", MasterDataVersion: 1, PriceVersion: 1, SyncAttempt: 1,
+		AppVersion: "1.0.0", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1,
 	}
 	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", command); !errors.Is(err, devices.ErrNotEnrolled) {
 		t.Fatalf("unbound error=%v", err)
@@ -144,13 +149,14 @@ func TestReEnrollmentRefreshesVersionsAndOnlineSyncRejectsStaleState(t *testing.
 	if _, err := service.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS 1", AppVersion: "1.0.0",
 		InstalledMasterDataVersion: &one, InstalledPriceVersion: &one,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV1,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	store.SeedContext(testScope, readmodel.WorkingContext{
 		CompanyName: "Company", BranchName: "Branch", WarehouseName: "Warehouse",
 		Currency: "TZS", Locale: "en-TZ", TimeZone: "Africa/Dar_es_Salaam",
-		MasterDataVersion: 2, PriceVersion: 3,
+		MasterDataVersion: 2, PriceVersion: 3, CatalogSnapshotToken: catalogSnapshotTokenV2,
 	})
 	refreshed, err := service.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS 1", AppVersion: "1.1.0",
@@ -162,7 +168,7 @@ func TestReEnrollmentRefreshesVersionsAndOnlineSyncRejectsStaleState(t *testing.
 		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: "CASH",
 		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
 		ClientTransactionID: "20000000-0000-4000-8000-000000000014", ClientTimestamp: at,
-		AppVersion: "1.0.0", MasterDataVersion: 1, PriceVersion: 1, SyncAttempt: 1,
+		AppVersion: "1.0.0", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1,
 	}
 	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", command); !errors.Is(err, devices.ErrStaleMasterData) {
 		t.Fatalf("online stale state error=%v", err)
@@ -170,6 +176,7 @@ func TestReEnrollmentRefreshesVersionsAndOnlineSyncRejectsStaleState(t *testing.
 	if _, err := service.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS 1", AppVersion: "1.1.0",
 		InstalledMasterDataVersion: &one, InstalledPriceVersion: &one,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV1,
 	}); !errors.Is(err, devices.ErrStaleMasterData) {
 		t.Fatalf("stale install acknowledgement error=%v", err)
 	}
@@ -186,6 +193,7 @@ func TestReEnrollmentRefreshesVersionsAndOnlineSyncRejectsStaleState(t *testing.
 	acknowledged, err := service.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS 1", AppVersion: "1.1.0",
 		InstalledMasterDataVersion: &two, InstalledPriceVersion: &three,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV2,
 	})
 	if err != nil || acknowledged.MasterDataVersion != 2 || acknowledged.PriceVersion != 3 || acknowledged.AppVersion != "1.1.0" {
 		t.Fatalf("cache acknowledgement failed: %+v err=%v", acknowledged, err)
@@ -194,6 +202,7 @@ func TestReEnrollmentRefreshesVersionsAndOnlineSyncRejectsStaleState(t *testing.
 	acknowledged, err = service.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS 1", AppVersion: "1.1.0",
 		InstalledMasterDataVersion: &two, InstalledPriceVersion: &three,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV2,
 	})
 	if err != nil || acknowledged.MasterDataVersion != 2 || acknowledged.PriceVersion != 3 {
 		t.Fatalf("lost-response acknowledgement retry failed: %+v err=%v", acknowledged, err)
@@ -202,6 +211,7 @@ func TestReEnrollmentRefreshesVersionsAndOnlineSyncRejectsStaleState(t *testing.
 		t.Fatalf("lost-response acknowledgement retry duplicated evidence: %+v", snapshot)
 	}
 	command.AppVersion, command.MasterDataVersion, command.PriceVersion = "1.1.0", 2, 3
+	command.CatalogSnapshotToken = catalogSnapshotTokenV2
 	created, err := service.SyncSale(context.Background(), testScope, actorID, "", command)
 	if err != nil || created.Sale.ClientTimestamp == nil || created.Sale.AppVersion != "1.1.0" || created.Sale.MasterDataVersion != 2 || created.Sale.PriceVersion != 3 {
 		t.Fatalf("current state sync=%+v err=%v", created, err)
@@ -220,6 +230,7 @@ func TestInstallationAcknowledgementIsAuditedAndIdempotentAcrossLeaseRenewal(t *
 	acknowledged, err := service.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS Acknowledged", AppVersion: "1",
 		InstalledMasterDataVersion: &one, InstalledPriceVersion: &one,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV1,
 	})
 	if err != nil || !acknowledged.OfflineSalesValidUntil.Equal(at.Add(devices.OfflineSalesLeaseDuration)) {
 		t.Fatalf("initial acknowledgement=%+v err=%v", acknowledged, err)
@@ -229,6 +240,7 @@ func TestInstallationAcknowledgementIsAuditedAndIdempotentAcrossLeaseRenewal(t *
 	retried, err := service.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS Retry Rename", AppVersion: "1",
 		InstalledMasterDataVersion: &one, InstalledPriceVersion: &one,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV1,
 	})
 	if err != nil || retried.Name != "POS Acknowledged" || !retried.OfflineSalesValidUntil.Equal(acknowledged.OfflineSalesValidUntil) {
 		t.Fatalf("live acknowledgement retry was not a pure read: %+v err=%v", retried, err)
@@ -256,6 +268,7 @@ func TestInstallationAcknowledgementIsAuditedAndIdempotentAcrossLeaseRenewal(t *
 	renewed, err := renewalService.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS Renewed", AppVersion: "1",
 		InstalledMasterDataVersion: &one, InstalledPriceVersion: &one,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV1,
 	})
 	if err != nil || !renewed.OfflineSalesValidUntil.Equal(renewedAt.Add(devices.OfflineSalesLeaseDuration)) {
 		t.Fatalf("expired acknowledgement renewal=%+v err=%v", renewed, err)
@@ -265,7 +278,7 @@ func TestInstallationAcknowledgementIsAuditedAndIdempotentAcrossLeaseRenewal(t *
 	store.SeedContext(testScope, readmodel.WorkingContext{
 		CompanyName: "Company", BranchName: "Branch", WarehouseName: "Warehouse",
 		Currency: "TZS", Locale: "en-TZ", TimeZone: "Africa/Dar_es_Salaam",
-		MasterDataVersion: 2, PriceVersion: 2,
+		MasterDataVersion: 2, PriceVersion: 2, CatalogSnapshotToken: catalogSnapshotTokenV2,
 	})
 	changedAt := renewedAt.Add(time.Minute)
 	salesService, err = sales.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: changedAt})
@@ -280,6 +293,7 @@ func TestInstallationAcknowledgementIsAuditedAndIdempotentAcrossLeaseRenewal(t *
 	changed, err := changedService.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS Upgraded", AppVersion: "2",
 		InstalledMasterDataVersion: &two, InstalledPriceVersion: &two,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV2,
 	})
 	if err != nil || changed.AppVersion != "2" || changed.MasterDataVersion != 2 || changed.PriceVersion != 2 {
 		t.Fatalf("changed installation acknowledgement=%+v err=%v", changed, err)
@@ -288,6 +302,7 @@ func TestInstallationAcknowledgementIsAuditedAndIdempotentAcrossLeaseRenewal(t *
 	if _, err := changedService.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS Duplicate", AppVersion: "2",
 		InstalledMasterDataVersion: &two, InstalledPriceVersion: &two,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV2,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +344,7 @@ func TestOfflineDailyLimitUsesDarEsSalaamBusinessDay(t *testing.T) {
 		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: "CASH",
 		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
 		ClientTransactionID: "20000000-0000-4000-8000-000000000012", ClientTimestamp: firstTime,
-		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, SyncAttempt: 1, Offline: true,
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: true,
 	}
 	if _, err := firstService.SyncSale(context.Background(), testScope, actorID, "", command); err != nil {
 		t.Fatalf("first local day: %v", err)
@@ -361,7 +376,7 @@ func TestOfflineRejectsNonCashSettlementWithoutEffects(t *testing.T) {
 	store.SeedTaxRate(memory.TaxRate{TenantID: tenantID, CompanyID: companyID, Code: "VAT", BasisPoints: 0, EffectiveFrom: at.Add(-time.Minute)})
 	store.SeedDevice(offlineDevice(at))
 	store.SeedOfflineAllocation(testScope, deviceID, productID, 10)
-	command := mobile.SyncCommand{CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentBankCard, Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID, ClientTransactionID: "20000000-0000-4000-8000-000000000020", ClientTimestamp: at, AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, SyncAttempt: 1, Offline: true}
+	command := mobile.SyncCommand{CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentBankCard, Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID, ClientTransactionID: "20000000-0000-4000-8000-000000000020", ClientTimestamp: at, AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: true}
 	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", command); !errors.Is(err, sales.ErrOfflinePaymentMethod) {
 		t.Fatalf("offline non-cash error=%v", err)
 	}
@@ -378,15 +393,16 @@ func TestOnlineMobileCreditIsRejectedWithoutEffects(t *testing.T) {
 	})
 	store.SeedDevice(devices.Device{
 		ID: deviceID, Status: devices.StatusActive, ActorID: actorID, Scope: testScope,
-		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1,
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1,
 		AvailableMasterDataVersion: 1, AvailablePriceVersion: 1,
-		TimeZone: "Africa/Dar_es_Salaam", EnrolledAt: at, LastSeenAt: at,
+		AvailableCatalogSnapshotToken: catalogSnapshotTokenV1,
+		TimeZone:                      "Africa/Dar_es_Salaam", EnrolledAt: at, LastSeenAt: at,
 	})
 	command := mobile.SyncCommand{
 		CustomerID: creditCustomerID, Kind: sales.KindCredit,
 		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
 		ClientTransactionID: "20000000-0000-4000-8000-000000000031", ClientTimestamp: at,
-		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, SyncAttempt: 1, Offline: false,
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: false,
 	}
 	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", command); !errors.Is(err, devices.ErrMobileCreditUnsupported) {
 		t.Fatalf("online mobile credit error=%v", err)
@@ -403,7 +419,7 @@ func TestOfflineRejectsNonzeroEffectiveTaxWithoutEffects(t *testing.T) {
 	store, service := fixture(t, at)
 	store.SeedDevice(offlineDevice(at))
 	store.SeedOfflineAllocation(testScope, deviceID, productID, 10)
-	command := mobile.SyncCommand{CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash, Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID, ClientTransactionID: "20000000-0000-4000-8000-000000000021", ClientTimestamp: at, AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, SyncAttempt: 1, Offline: true}
+	command := mobile.SyncCommand{CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash, Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID, ClientTransactionID: "20000000-0000-4000-8000-000000000021", ClientTimestamp: at, AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: true}
 	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", command); !errors.Is(err, sales.ErrOfflineTaxUnsupported) {
 		t.Fatalf("offline nonzero-tax error=%v", err)
 	}
@@ -430,6 +446,7 @@ func TestOfflineLeaseIsBoundedByTaxTransitionAndExclusiveAtDeadline(t *testing.T
 	enrolled, err := service.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS 1", AppVersion: "1",
 		InstalledMasterDataVersion: &one, InstalledPriceVersion: &one,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV1,
 	})
 	if err != nil || !enrolled.OfflineSalesValidUntil.Equal(transition) {
 		t.Fatalf("tax-bounded lease=%+v err=%v", enrolled, err)
@@ -438,7 +455,7 @@ func TestOfflineLeaseIsBoundedByTaxTransitionAndExclusiveAtDeadline(t *testing.T
 		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash,
 		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
 		ClientTransactionID: "20000000-0000-4000-8000-000000000022", ClientTimestamp: transition,
-		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, SyncAttempt: 1, Offline: true,
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: true,
 	}
 	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", command); !errors.Is(err, devices.ErrOfflineLeaseExpired) {
 		t.Fatalf("deadline error=%v", err)
@@ -456,6 +473,7 @@ func TestOfflineLeaseNeverExceedsFourHours(t *testing.T) {
 	enrolled, err := service.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS 1", AppVersion: "1",
 		InstalledMasterDataVersion: &one, InstalledPriceVersion: &one,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV1,
 	})
 	if err != nil || !enrolled.OfflineSalesValidUntil.Equal(at.Add(devices.OfflineSalesLeaseDuration)) {
 		t.Fatalf("bounded lease=%+v err=%v", enrolled, err)
@@ -474,13 +492,14 @@ func TestHistoricalLeaseSurvivesRenewalAndRejectsChangedProductPrice(t *testing.
 	if _, err := firstService.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS 1", AppVersion: "1",
 		InstalledMasterDataVersion: &one, InstalledPriceVersion: &one,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV1,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	store.SeedContext(testScope, readmodel.WorkingContext{
 		CompanyName: "Company", BranchName: "Branch", WarehouseName: "Warehouse",
 		Currency: "TZS", Locale: "en-TZ", TimeZone: "Africa/Dar_es_Salaam",
-		MasterDataVersion: 2, PriceVersion: 2,
+		MasterDataVersion: 2, PriceVersion: 2, CatalogSnapshotToken: catalogSnapshotTokenV2,
 	})
 	renewedAt := at.Add(time.Hour)
 	salesService, err := sales.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: renewedAt})
@@ -495,6 +514,7 @@ func TestHistoricalLeaseSurvivesRenewalAndRejectsChangedProductPrice(t *testing.
 	if _, err := renewalService.Enroll(context.Background(), mobile.EnrollCommand{
 		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS 1", AppVersion: "2",
 		InstalledMasterDataVersion: &two, InstalledPriceVersion: &two,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV2,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +522,7 @@ func TestHistoricalLeaseSurvivesRenewalAndRejectsChangedProductPrice(t *testing.
 		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash,
 		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
 		ClientTransactionID: "20000000-0000-4000-8000-000000000023", ClientTimestamp: at.Add(30 * time.Minute),
-		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, SyncAttempt: 1, Offline: true,
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: true,
 	}
 	if _, err := renewalService.SyncSale(context.Background(), testScope, actorID, "", queued); err != nil {
 		t.Fatalf("queued sale under historical lease: %v", err)
@@ -547,7 +567,7 @@ func assertNoMobileSaleEffects(t *testing.T, store *memory.Store) {
 func offlineDevice(at time.Time) devices.Device {
 	return devices.Device{
 		ID: deviceID, Status: devices.StatusActive, ActorID: actorID, Scope: testScope,
-		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, TimeZone: "Africa/Dar_es_Salaam",
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1, TimeZone: "Africa/Dar_es_Salaam",
 		OfflineEnabled: true, OfflineTransactionLimitMinor: 1_000_000, OfflineDailyLimitMinor: 1_000_000,
 		OfflineSalesValidFrom: at.Add(-time.Minute), OfflineSalesValidUntil: at.Add(devices.OfflineSalesLeaseDuration),
 		EnrolledAt: at, LastSeenAt: at,

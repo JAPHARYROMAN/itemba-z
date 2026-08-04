@@ -109,7 +109,8 @@ func (h *Handler) listCustomers(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	result, err := h.read.Customers(request.Context(), principal.Scope, principal.ActorID,
-		request.URL.Query().Get("query"), request.URL.Query().Get("cursor"), eligible, pageSize)
+		request.URL.Query().Get("query"), request.URL.Query().Get("cursor"),
+		request.URL.Query().Get("snapshot_token"), eligible, pageSize)
 	if err != nil {
 		h.writeError(writer, request, err)
 		return
@@ -127,7 +128,8 @@ func (h *Handler) listProducts(writer http.ResponseWriter, request *http.Request
 		return
 	}
 	result, err := h.read.Products(request.Context(), principal.Scope, principal.ActorID,
-		request.URL.Query().Get("query"), request.URL.Query().Get("cursor"), pageSize)
+		request.URL.Query().Get("query"), request.URL.Query().Get("cursor"),
+		request.URL.Query().Get("snapshot_token"), pageSize)
 	if err != nil {
 		h.writeError(writer, request, err)
 		return
@@ -154,11 +156,12 @@ func (h *Handler) listSales(writer http.ResponseWriter, request *http.Request) {
 }
 
 type enrollDeviceRequest struct {
-	DeviceID                   string `json:"device_id"`
-	DeviceName                 string `json:"device_name"`
-	AppVersion                 string `json:"app_version"`
-	InstalledMasterDataVersion *int64 `json:"installed_master_data_version,omitempty"`
-	InstalledPriceVersion      *int64 `json:"installed_price_version,omitempty"`
+	DeviceID                      string  `json:"device_id"`
+	DeviceName                    string  `json:"device_name"`
+	AppVersion                    string  `json:"app_version"`
+	InstalledMasterDataVersion    *int64  `json:"installed_master_data_version,omitempty"`
+	InstalledPriceVersion         *int64  `json:"installed_price_version,omitempty"`
+	InstalledCatalogSnapshotToken *string `json:"installed_catalog_snapshot_token,omitempty"`
 }
 
 func (h *Handler) enrollDevice(writer http.ResponseWriter, request *http.Request) {
@@ -179,7 +182,8 @@ func (h *Handler) enrollDevice(writer http.ResponseWriter, request *http.Request
 		Scope: principal.Scope, ActorID: principal.ActorID, DeviceID: deviceID,
 		DeviceName: body.DeviceName, AppVersion: body.AppVersion,
 		InstalledMasterDataVersion: body.InstalledMasterDataVersion, InstalledPriceVersion: body.InstalledPriceVersion,
-		CorrelationID: correlationID(writer),
+		InstalledCatalogSnapshotToken: body.InstalledCatalogSnapshotToken,
+		CorrelationID:                 correlationID(writer),
 	})
 	if err != nil {
 		h.writeError(writer, request, err)
@@ -349,10 +353,11 @@ func canonicalizeMobileCommand(command *mobile.SyncCommand) bool {
 		return false
 	}
 	clientID, err := identity.CanonicalUUID(command.ClientTransactionID)
-	if err != nil || !canonicalizeSaleClaims(&command.CustomerID, command.Lines) {
+	snapshotToken, snapshotErr := identity.CanonicalUUID(command.CatalogSnapshotToken)
+	if err != nil || snapshotErr != nil || !canonicalizeSaleClaims(&command.CustomerID, command.Lines) {
 		return false
 	}
-	command.DeviceID, command.ClientTransactionID = deviceID, clientID
+	command.DeviceID, command.ClientTransactionID, command.CatalogSnapshotToken = deviceID, clientID, snapshotToken
 	return true
 }
 

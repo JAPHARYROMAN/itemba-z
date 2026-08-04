@@ -5,7 +5,7 @@ import 'package:sqflite_sqlcipher/sqlite_api.dart';
 class LocalDatabaseSchema {
   const LocalDatabaseSchema._();
 
-  static const version = 10;
+  static const version = 11;
 
   static Future<void> configure(Database database) async {
     await database.execute('PRAGMA foreign_keys = ON');
@@ -28,6 +28,7 @@ class LocalDatabaseSchema {
       );
     }
     if (targetVersion >= 8) await _createCandidateDeviceTable(database);
+    if (targetVersion >= 11) await _createCatalogInstallState(database);
   }
 
   /// Sqflite invokes this callback inside the same transaction used to update
@@ -73,6 +74,9 @@ class LocalDatabaseSchema {
     }
     if (oldVersion < 10 && newVersion >= 10) {
       await _upgradeOfflineLeaseV10(database);
+    }
+    if (oldVersion < 11 && newVersion >= 11) {
+      await _upgradeCatalogSnapshotV11(database);
     }
   }
 
@@ -123,6 +127,44 @@ class LocalDatabaseSchema {
         updated_at_epoch INTEGER NOT NULL
       )
     ''');
+  }
+
+  static Future<void> _createCatalogInstallState(Database database) async {
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS catalog_install_state (
+        singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+        catalog_snapshot_token TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+        master_data_version INTEGER NOT NULL CHECK (master_data_version > 0),
+        price_version INTEGER NOT NULL CHECK (price_version > 0),
+        installed_at_epoch INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  static Future<void> _upgradeCatalogSnapshotV11(Database database) async {
+    final columns = await database.rawQuery('PRAGMA table_info(sync_queue)');
+    final names = columns.map((row) => row['name']).whereType<String>().toSet();
+    if (!names.contains('catalog_snapshot_token')) {
+      await database.execute(
+        "ALTER TABLE sync_queue ADD COLUMN catalog_snapshot_token TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'",
+      );
+    }
+    final enrollmentColumns = await database.rawQuery(
+      'PRAGMA table_info(device_enrollment)',
+    );
+    final enrollmentNames =
+        enrollmentColumns.map((row) => row['name']).whereType<String>().toSet();
+    if (!enrollmentNames.contains('catalog_snapshot_token')) {
+      await database.execute(
+        "ALTER TABLE device_enrollment ADD COLUMN catalog_snapshot_token TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'",
+      );
+    }
+    if (!enrollmentNames.contains('available_catalog_snapshot_token')) {
+      await database.execute(
+        "ALTER TABLE device_enrollment ADD COLUMN available_catalog_snapshot_token TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'",
+      );
+    }
+    await _createCatalogInstallState(database);
   }
 
   static Future<void> _createCandidateDeviceTable(Database database) async {
@@ -201,6 +243,7 @@ class LocalDatabaseSchema {
         app_version TEXT NOT NULL,
         master_data_version INTEGER NOT NULL,
         price_version INTEGER NOT NULL,
+        catalog_snapshot_token TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
         sync_attempt_number INTEGER NOT NULL CHECK (sync_attempt_number > 0),
         command_json TEXT NOT NULL,
         queued_at_epoch INTEGER NOT NULL,
@@ -261,10 +304,12 @@ class LocalDatabaseSchema {
         branch_id TEXT NOT NULL,
         warehouse_id TEXT NOT NULL,
         app_version TEXT NOT NULL,
+        catalog_snapshot_token TEXT NOT NULL,
         master_data_version INTEGER NOT NULL,
         price_version INTEGER NOT NULL,
         available_master_data_version INTEGER NOT NULL,
         available_price_version INTEGER NOT NULL,
+        available_catalog_snapshot_token TEXT NOT NULL,
         timezone TEXT NOT NULL,
         offline_enabled INTEGER NOT NULL CHECK (offline_enabled IN (0, 1)),
         transaction_value_limit_minor INTEGER NOT NULL,

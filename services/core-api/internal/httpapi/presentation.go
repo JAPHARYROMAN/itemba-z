@@ -12,33 +12,34 @@ import (
 // Public sale DTOs deliberately exclude internal cost and COGS values. Cost
 // facts remain in the domain object, journals, audit record, and outbox event.
 type saleResponse struct {
-	ID                  string             `json:"id"`
-	Scope               tenancy.Scope      `json:"scope"`
-	RecordType          sales.RecordType   `json:"record_type"`
-	Kind                sales.Kind         `json:"kind"`
-	Status              sales.Status       `json:"status"`
-	CustomerID          string             `json:"customer_id"`
-	Currency            string             `json:"currency"`
-	SubtotalMinor       int64              `json:"subtotal_minor"`
-	TaxMinor            int64              `json:"tax_minor"`
-	TotalMinor          int64              `json:"total_minor"`
-	PaymentMethod       string             `json:"payment_method,omitempty"`
-	DeviceID            string             `json:"device_id,omitempty"`
-	ClientTransactionID string             `json:"client_transaction_id,omitempty"`
-	ClientTimestamp     *time.Time         `json:"client_timestamp,omitempty"`
-	AppVersion          string             `json:"app_version,omitempty"`
-	MasterDataVersion   int64              `json:"master_data_version,omitempty"`
-	PriceVersion        int64              `json:"price_version,omitempty"`
-	Offline             bool               `json:"offline,omitempty"`
-	ReceiptReference    string             `json:"receipt_reference"`
-	FiscalStatus        sales.FiscalStatus `json:"fiscal_status"`
-	ReversalOf          string             `json:"reversal_of,omitempty"`
-	ReversalReason      string             `json:"reversal_reason,omitempty"`
-	CreatedBy           string             `json:"created_by"`
-	CorrelationID       string             `json:"correlation_id"`
-	CreatedAt           time.Time          `json:"created_at"`
-	ReversedAt          *time.Time         `json:"reversed_at,omitempty"`
-	Lines               []saleLineResponse `json:"lines"`
+	ID                   string             `json:"id"`
+	Scope                tenancy.Scope      `json:"scope"`
+	RecordType           sales.RecordType   `json:"record_type"`
+	Kind                 sales.Kind         `json:"kind"`
+	Status               sales.Status       `json:"status"`
+	CustomerID           string             `json:"customer_id"`
+	Currency             string             `json:"currency"`
+	SubtotalMinor        int64              `json:"subtotal_minor"`
+	TaxMinor             int64              `json:"tax_minor"`
+	TotalMinor           int64              `json:"total_minor"`
+	PaymentMethod        string             `json:"payment_method,omitempty"`
+	DeviceID             string             `json:"device_id,omitempty"`
+	ClientTransactionID  string             `json:"client_transaction_id,omitempty"`
+	ClientTimestamp      *time.Time         `json:"client_timestamp,omitempty"`
+	AppVersion           string             `json:"app_version,omitempty"`
+	MasterDataVersion    int64              `json:"master_data_version,omitempty"`
+	PriceVersion         int64              `json:"price_version,omitempty"`
+	CatalogSnapshotToken string             `json:"catalog_snapshot_token,omitempty"`
+	Offline              bool               `json:"offline,omitempty"`
+	ReceiptReference     string             `json:"receipt_reference"`
+	FiscalStatus         sales.FiscalStatus `json:"fiscal_status"`
+	ReversalOf           string             `json:"reversal_of,omitempty"`
+	ReversalReason       string             `json:"reversal_reason,omitempty"`
+	CreatedBy            string             `json:"created_by"`
+	CorrelationID        string             `json:"correlation_id"`
+	CreatedAt            time.Time          `json:"created_at"`
+	ReversedAt           *time.Time         `json:"reversed_at,omitempty"`
+	Lines                []saleLineResponse `json:"lines"`
 }
 
 type saleLineResponse struct {
@@ -80,7 +81,8 @@ func presentSale(value sales.Sale) saleResponse {
 		TaxMinor: value.TaxMinor, TotalMinor: value.TotalMinor, PaymentMethod: value.PaymentMethod,
 		DeviceID: value.DeviceID, ClientTransactionID: value.ClientTransactionID,
 		ClientTimestamp: value.ClientTimestamp, AppVersion: value.AppVersion,
-		MasterDataVersion: value.MasterDataVersion, PriceVersion: value.PriceVersion, Offline: value.Offline,
+		MasterDataVersion: value.MasterDataVersion, PriceVersion: value.PriceVersion,
+		CatalogSnapshotToken: value.CatalogSnapshotToken, Offline: value.Offline,
 		ReceiptReference: value.ReceiptReference, FiscalStatus: value.FiscalStatus,
 		ReversalOf: value.ReversalOf, ReversalReason: value.ReversalReason,
 		CreatedBy: value.CreatedBy, CorrelationID: value.CorrelationID, CreatedAt: value.CreatedAt,

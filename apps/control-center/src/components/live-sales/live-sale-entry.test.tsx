@@ -23,7 +23,8 @@ const bootstrap: SalesBootstrap = {
     timezone: "Africa/Dar_es_Salaam",
     permissions: ["sales.complete"],
     master_data_version: 1,
-    price_version: 1,
+  price_version: 1,
+  catalog_snapshot_token: "00000000-0000-4000-8000-000000000001",
   },
   customers: [
     { id: "00000000-0000-4000-8000-000000000010", code: "GEN", name: "General Customer", status: "active", is_general_customer: true, credit_enabled: false, credit_limit_minor: 0, current_exposure_minor: 0, available_credit_minor: 0 },

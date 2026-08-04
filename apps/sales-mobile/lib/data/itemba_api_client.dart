@@ -49,10 +49,26 @@ class MasterDataSnapshot {
     required this.products,
     required this.masterDataVersion,
     required this.priceVersion,
+    required this.catalogSnapshotToken,
   });
 
   final List<Customer> customers;
   final List<Product> products;
+  final int masterDataVersion;
+  final int priceVersion;
+  final String catalogSnapshotToken;
+}
+
+class _CatalogPages {
+  const _CatalogPages({
+    required this.items,
+    required this.catalogSnapshotToken,
+    required this.masterDataVersion,
+    required this.priceVersion,
+  });
+
+  final List<Map<String, Object?>> items;
+  final String catalogSnapshotToken;
   final int masterDataVersion;
   final int priceVersion;
 }
@@ -83,14 +99,23 @@ class ItembaApiClient {
     required String appVersion,
     int? installedMasterDataVersion,
     int? installedPriceVersion,
+    String? installedCatalogSnapshotToken,
   }) async {
     _requireUuid(deviceId, 'device_id');
     if ((installedMasterDataVersion == null) !=
             (installedPriceVersion == null) ||
+        (installedMasterDataVersion == null) !=
+            (installedCatalogSnapshotToken == null) ||
         (installedMasterDataVersion != null &&
             (installedMasterDataVersion < 1 || installedPriceVersion! < 1))) {
       throw const FormatException(
-        'Installed master-data and price versions must be positive and supplied together.',
+        'Installed catalog token and versions must be valid and supplied together.',
+      );
+    }
+    if (installedCatalogSnapshotToken != null) {
+      _requireCatalogToken(
+        installedCatalogSnapshotToken,
+        'installed_catalog_snapshot_token',
       );
     }
     final response = await _sendJson(
@@ -103,6 +128,7 @@ class ItembaApiClient {
             appVersion: appVersion,
             installedMasterDataVersion: installedMasterDataVersion,
             installedPriceVersion: installedPriceVersion,
+            installedCatalogSnapshotToken: installedCatalogSnapshotToken,
           ).toJson(),
     );
     final scope = _map(response['scope'], 'scope');
@@ -206,8 +232,17 @@ class ItembaApiClient {
         warehouseId: _uuidValue(scope['warehouse_id'], 'scope.warehouse_id'),
       ),
       appVersion: _string(response['app_version'], 'app_version'),
+      catalogSnapshotToken: _catalogToken(
+        response['catalog_snapshot_token'],
+        'catalog_snapshot_token',
+        allowUnacknowledged: true,
+      ),
       masterDataVersion: installedMasterDataVersionValue,
       priceVersion: installedPriceVersionValue,
+      availableCatalogSnapshotToken: _catalogToken(
+        response['available_catalog_snapshot_token'],
+        'available_catalog_snapshot_token',
+      ),
       availableMasterDataVersion: availableMasterDataVersion,
       availablePriceVersion: availablePriceVersion,
       timezone: _string(response['timezone'], 'timezone'),
@@ -225,18 +260,36 @@ class ItembaApiClient {
     );
   }
 
-  Future<MasterDataSnapshot> refreshMasterData() async {
-    final customerMaps = await _allPages(ItembaZV1Paths.customers);
-    final productMaps = await _allPages(ItembaZV1Paths.products);
-    final products = productMaps.map(_product).toList(growable: false);
+  Future<MasterDataSnapshot> refreshMasterData({
+    required String catalogSnapshotToken,
+  }) async {
+    _requireCatalogToken(catalogSnapshotToken, 'catalog_snapshot_token');
+    final customerPages = await _allPages(
+      ItembaZV1Paths.customers,
+      catalogSnapshotToken: catalogSnapshotToken,
+    );
+    final productPages = await _allPages(
+      ItembaZV1Paths.products,
+      catalogSnapshotToken: catalogSnapshotToken,
+    );
+    if (customerPages.catalogSnapshotToken !=
+            productPages.catalogSnapshotToken ||
+        customerPages.masterDataVersion != productPages.masterDataVersion ||
+        customerPages.priceVersion != productPages.priceVersion) {
+      throw const ApiException(
+        kind: ApiFailureKind.invalidResponse,
+        message: 'Customer and product catalog snapshots do not match.',
+      );
+    }
+    final products = productPages.items.map(_product).toList(growable: false);
     if (products.isEmpty) {
       throw const ApiException(
         kind: ApiFailureKind.invalidResponse,
         message: 'The server returned no products.',
       );
     }
-    final masterDataVersion = products.first.masterDataVersion;
-    final priceVersion = products.first.priceVersion;
+    final masterDataVersion = productPages.masterDataVersion;
+    final priceVersion = productPages.priceVersion;
     if (products.any(
       (product) =>
           product.masterDataVersion != masterDataVersion ||
@@ -248,10 +301,11 @@ class ItembaApiClient {
       );
     }
     return MasterDataSnapshot(
-      customers: customerMaps.map(_customer).toList(growable: false),
+      customers: customerPages.items.map(_customer).toList(growable: false),
       products: products,
       masterDataVersion: masterDataVersion,
       priceVersion: priceVersion,
+      catalogSnapshotToken: productPages.catalogSnapshotToken,
     );
   }
 
@@ -283,6 +337,7 @@ class ItembaApiClient {
             appVersion: command.appVersion,
             masterDataVersion: command.masterDataVersion,
             priceVersion: command.priceVersion,
+            catalogSnapshotToken: command.catalogSnapshotToken,
             syncAttempt: attempt,
             offline: command.sale.createdOffline,
           ).toJson(),
@@ -439,16 +494,48 @@ class ItembaApiClient {
     return List.unmodifiable(result);
   }
 
-  Future<List<Map<String, Object?>>> _allPages(String path) async {
+  Future<_CatalogPages> _allPages(
+    String path, {
+    required String catalogSnapshotToken,
+  }) async {
     final items = <Map<String, Object?>>[];
     final seenCursors = <String>{};
+    int? masterDataVersion;
+    int? priceVersion;
     String? cursor;
     for (var page = 0; page < 1000; page += 1) {
       final response = await _sendJson(
         method: 'GET',
         path: path,
-        query: {'page_size': '200', if (cursor != null) 'cursor': cursor},
+        query: {
+          'page_size': '200',
+          'snapshot_token': catalogSnapshotToken,
+          if (cursor != null) 'cursor': cursor,
+        },
       );
+      final responseToken = _catalogToken(
+        response['catalog_snapshot_token'],
+        'catalog_snapshot_token',
+      );
+      final responseMasterDataVersion = _positiveInt(
+        response['master_data_version'],
+        'master_data_version',
+      );
+      final responsePriceVersion = _positiveInt(
+        response['price_version'],
+        'price_version',
+      );
+      if (responseToken != catalogSnapshotToken ||
+          (masterDataVersion != null &&
+              masterDataVersion != responseMasterDataVersion) ||
+          (priceVersion != null && priceVersion != responsePriceVersion)) {
+        throw const ApiException(
+          kind: ApiFailureKind.invalidResponse,
+          message: 'The catalog snapshot changed during download.',
+        );
+      }
+      masterDataVersion = responseMasterDataVersion;
+      priceVersion = responsePriceVersion;
       final pageItems = response['items'];
       if (pageItems is! List<Object?>) {
         throw const ApiException(
@@ -465,7 +552,14 @@ class ItembaApiClient {
         );
       }
       cursor = nextCursor as String?;
-      if (cursor == null || cursor.isEmpty) return items;
+      if (cursor == null || cursor.isEmpty) {
+        return _CatalogPages(
+          items: List.unmodifiable(items),
+          catalogSnapshotToken: responseToken,
+          masterDataVersion: masterDataVersion,
+          priceVersion: priceVersion,
+        );
+      }
       if (!seenCursors.add(cursor)) {
         throw const ApiException(
           kind: ApiFailureKind.invalidResponse,
@@ -804,6 +898,29 @@ class ItembaApiClient {
     final result = _string(value, field);
     _requireUuid(result, field);
     return result.toLowerCase();
+  }
+
+  static String _catalogToken(
+    Object? value,
+    String field, {
+    bool allowUnacknowledged = false,
+  }) {
+    final result = _string(value, field).toLowerCase();
+    if (allowUnacknowledged && result == unacknowledgedCatalogSnapshotToken) {
+      return result;
+    }
+    _requireCatalogToken(result, field);
+    return result;
+  }
+
+  static void _requireCatalogToken(String value, String field) {
+    if (value == unacknowledgedCatalogSnapshotToken ||
+        !UuidGenerator.isValid(value)) {
+      throw ApiException(
+        kind: ApiFailureKind.invalidResponse,
+        message: '$field must be an acknowledged catalog snapshot UUID.',
+      );
+    }
   }
 
   static void _requireUuid(String value, String field) {

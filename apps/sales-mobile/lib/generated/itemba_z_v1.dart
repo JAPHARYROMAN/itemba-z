@@ -5,7 +5,7 @@
 // ignore_for_file: avoid_dynamic_calls
 
 const String itembaZV1SpecificationSha256 =
-    '88f8aa8bfd6519d2741b58419575d180acef29810e661fd0502561cbe829c88d';
+    '28cae991291c74ddf377d152469395b5fbe9618c40a6f3dc7f821bcf9aa9d5c9';
 
 typedef GeneratedJson = Map<String, Object?>;
 
@@ -96,6 +96,7 @@ class GeneratedMobileDeviceEnrollmentCommand {
     required this.appVersion,
     this.installedMasterDataVersion,
     this.installedPriceVersion,
+    this.installedCatalogSnapshotToken,
   });
 
   final String deviceId;
@@ -103,6 +104,7 @@ class GeneratedMobileDeviceEnrollmentCommand {
   final String appVersion;
   final int? installedMasterDataVersion;
   final int? installedPriceVersion;
+  final String? installedCatalogSnapshotToken;
 
   GeneratedJson toJson() => {
     'device_id': deviceId,
@@ -112,6 +114,8 @@ class GeneratedMobileDeviceEnrollmentCommand {
       'installed_master_data_version': installedMasterDataVersion,
     if (installedPriceVersion != null)
       'installed_price_version': installedPriceVersion,
+    if (installedCatalogSnapshotToken != null)
+      'installed_catalog_snapshot_token': installedCatalogSnapshotToken,
   };
 }
 
@@ -125,8 +129,10 @@ class GeneratedMobileDeviceEnrollment {
     required this.appVersion,
     required this.masterDataVersion,
     required this.priceVersion,
+    required this.catalogSnapshotToken,
     required this.availableMasterDataVersion,
     required this.availablePriceVersion,
+    required this.availableCatalogSnapshotToken,
     required this.timezone,
     required this.offlineEnabled,
     required this.transactionValueLimitMinor,
@@ -152,6 +158,10 @@ class GeneratedMobileDeviceEnrollment {
         'master_data_version',
       ),
       priceVersion: _integer(json['price_version'], 'price_version'),
+      catalogSnapshotToken: _string(
+        json['catalog_snapshot_token'],
+        'catalog_snapshot_token',
+      ),
       availableMasterDataVersion: _integer(
         json['available_master_data_version'],
         'available_master_data_version',
@@ -159,6 +169,10 @@ class GeneratedMobileDeviceEnrollment {
       availablePriceVersion: _integer(
         json['available_price_version'],
         'available_price_version',
+      ),
+      availableCatalogSnapshotToken: _string(
+        json['available_catalog_snapshot_token'],
+        'available_catalog_snapshot_token',
       ),
       timezone: _string(json['timezone'], 'timezone'),
       offlineEnabled: _boolean(json['offline_enabled'], 'offline_enabled'),
@@ -195,8 +209,10 @@ class GeneratedMobileDeviceEnrollment {
   final String appVersion;
   final int masterDataVersion;
   final int priceVersion;
+  final String catalogSnapshotToken;
   final int availableMasterDataVersion;
   final int availablePriceVersion;
+  final String availableCatalogSnapshotToken;
   final String timezone;
   final bool offlineEnabled;
   final int transactionValueLimitMinor;
@@ -260,7 +276,13 @@ class GeneratedCustomerSummary {
 }
 
 class GeneratedCustomerPage {
-  const GeneratedCustomerPage({required this.items, this.nextCursor});
+  const GeneratedCustomerPage({
+    required this.items,
+    required this.catalogSnapshotToken,
+    required this.masterDataVersion,
+    required this.priceVersion,
+    this.nextCursor,
+  });
 
   factory GeneratedCustomerPage.fromJson(Object? value) {
     final json = _map(value, 'CustomerPage');
@@ -270,11 +292,23 @@ class GeneratedCustomerPage {
         'items',
       ).map(GeneratedCustomerSummary.fromJson).toList(growable: false),
       nextCursor: json['next_cursor'] as String?,
+      catalogSnapshotToken: _string(
+        json['catalog_snapshot_token'],
+        'catalog_snapshot_token',
+      ),
+      masterDataVersion: _integer(
+        json['master_data_version'],
+        'master_data_version',
+      ),
+      priceVersion: _integer(json['price_version'], 'price_version'),
     );
   }
 
   final List<GeneratedCustomerSummary> items;
   final String? nextCursor;
+  final String catalogSnapshotToken;
+  final int masterDataVersion;
+  final int priceVersion;
 }
 
 class GeneratedProductSummary {
@@ -326,7 +360,13 @@ class GeneratedProductSummary {
 }
 
 class GeneratedProductPage {
-  const GeneratedProductPage({required this.items, this.nextCursor});
+  const GeneratedProductPage({
+    required this.items,
+    required this.catalogSnapshotToken,
+    required this.masterDataVersion,
+    required this.priceVersion,
+    this.nextCursor,
+  });
 
   factory GeneratedProductPage.fromJson(Object? value) {
     final json = _map(value, 'ProductPage');
@@ -336,11 +376,23 @@ class GeneratedProductPage {
         'items',
       ).map(GeneratedProductSummary.fromJson).toList(growable: false),
       nextCursor: json['next_cursor'] as String?,
+      catalogSnapshotToken: _string(
+        json['catalog_snapshot_token'],
+        'catalog_snapshot_token',
+      ),
+      masterDataVersion: _integer(
+        json['master_data_version'],
+        'master_data_version',
+      ),
+      priceVersion: _integer(json['price_version'], 'price_version'),
     );
   }
 
   final List<GeneratedProductSummary> items;
   final String? nextCursor;
+  final String catalogSnapshotToken;
+  final int masterDataVersion;
+  final int priceVersion;
 }
 
 class GeneratedSaleLineCommand {
@@ -365,6 +417,7 @@ class GeneratedMobileSaleSyncCommand {
     required this.appVersion,
     required this.masterDataVersion,
     required this.priceVersion,
+    required this.catalogSnapshotToken,
     required this.syncAttempt,
     required this.offline,
   });
@@ -379,6 +432,7 @@ class GeneratedMobileSaleSyncCommand {
   final String appVersion;
   final int masterDataVersion;
   final int priceVersion;
+  final String catalogSnapshotToken;
   final int syncAttempt;
   final bool offline;
 
@@ -393,6 +447,7 @@ class GeneratedMobileSaleSyncCommand {
     'app_version': appVersion,
     'master_data_version': masterDataVersion,
     'price_version': priceVersion,
+    'catalog_snapshot_token': catalogSnapshotToken,
     'sync_attempt': syncAttempt,
     'offline': offline,
   };

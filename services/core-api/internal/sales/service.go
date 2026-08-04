@@ -104,6 +104,7 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 				valid, err := tx.OfflineLeaseValid(ctx, devices.OfflineLease{
 					Scope: command.Scope, DeviceID: command.DeviceID, AppVersion: strings.TrimSpace(command.AppVersion),
 					MasterDataVersion: command.MasterDataVersion, PriceVersion: command.PriceVersion,
+					CatalogSnapshotToken: command.CatalogSnapshotToken,
 				}, command.ClientTimestamp.UTC())
 				if err != nil {
 					return err
@@ -113,8 +114,10 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 				}
 			} else if strings.TrimSpace(command.AppVersion) != enrolled.AppVersion ||
 				command.MasterDataVersion != enrolled.MasterDataVersion || command.PriceVersion != enrolled.PriceVersion ||
+				command.CatalogSnapshotToken != enrolled.CatalogSnapshotToken ||
 				enrolled.MasterDataVersion != enrolled.AvailableMasterDataVersion ||
-				enrolled.PriceVersion != enrolled.AvailablePriceVersion {
+				enrolled.PriceVersion != enrolled.AvailablePriceVersion ||
+				enrolled.CatalogSnapshotToken != enrolled.AvailableCatalogSnapshotToken {
 				return devices.ErrStaleMasterData
 			}
 		}
@@ -174,6 +177,7 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 			sale.AppVersion = strings.TrimSpace(command.AppVersion)
 			sale.MasterDataVersion = command.MasterDataVersion
 			sale.PriceVersion = command.PriceVersion
+			sale.CatalogSnapshotToken = command.CatalogSnapshotToken
 		}
 		sale.ReceiptReference = sale.ID
 		sale.FiscalStatus = FiscalNotConfigured
@@ -609,6 +613,7 @@ func normalizeCompleteCommand(command CompleteCommand) CompleteCommand {
 	command.IdempotencyKey = strings.TrimSpace(command.IdempotencyKey)
 	command.PaymentMethod = strings.ToUpper(strings.TrimSpace(command.PaymentMethod))
 	command.AppVersion = strings.TrimSpace(command.AppVersion)
+	command.CatalogSnapshotToken = identity.NormalizeClaim(command.CatalogSnapshotToken)
 	if !command.ClientTimestamp.IsZero() {
 		command.ClientTimestamp = command.ClientTimestamp.UTC()
 	}

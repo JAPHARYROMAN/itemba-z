@@ -17,7 +17,8 @@ const (
 	StatusRevoked   Status = "REVOKED"
 	// OfflineSalesLeaseDuration bounds exposure even when no tax transition is
 	// currently scheduled. It is an operational safety lease, not tax policy.
-	OfflineSalesLeaseDuration = 4 * time.Hour
+	OfflineSalesLeaseDuration          = 4 * time.Hour
+	UnacknowledgedCatalogSnapshotToken = "00000000-0000-0000-0000-000000000000"
 )
 
 type Device struct {
@@ -29,25 +30,28 @@ type Device struct {
 	AppVersion string        `json:"app_version"`
 	// MasterDataVersion and PriceVersion are the versions the device has
 	// explicitly acknowledged as durably installed.
-	MasterDataVersion            int64             `json:"master_data_version"`
-	PriceVersion                 int64             `json:"price_version"`
-	AvailableMasterDataVersion   int64             `json:"available_master_data_version"`
-	AvailablePriceVersion        int64             `json:"available_price_version"`
-	OfflineSalesValidFrom        time.Time         `json:"-"`
-	OfflineSalesValidUntil       time.Time         `json:"offline_sales_valid_until"`
-	TimeZone                     string            `json:"timezone"`
-	OfflineEnabled               bool              `json:"offline_enabled"`
-	OfflineTransactionLimitMinor int64             `json:"transaction_value_limit_minor"`
-	OfflineDailyLimitMinor       int64             `json:"daily_value_limit_minor"`
-	OfflineRemainingDailyMinor   int64             `json:"remaining_daily_value_minor"`
-	EnrolledAt                   time.Time         `json:"enrolled_at"`
-	LastSeenAt                   time.Time         `json:"last_seen_at"`
-	StockAllocations             []StockAllocation `json:"stock_allocations"`
+	MasterDataVersion             int64             `json:"master_data_version"`
+	PriceVersion                  int64             `json:"price_version"`
+	AvailableMasterDataVersion    int64             `json:"available_master_data_version"`
+	AvailablePriceVersion         int64             `json:"available_price_version"`
+	CatalogSnapshotToken          string            `json:"catalog_snapshot_token"`
+	AvailableCatalogSnapshotToken string            `json:"available_catalog_snapshot_token"`
+	OfflineSalesValidFrom         time.Time         `json:"-"`
+	OfflineSalesValidUntil        time.Time         `json:"offline_sales_valid_until"`
+	TimeZone                      string            `json:"timezone"`
+	OfflineEnabled                bool              `json:"offline_enabled"`
+	OfflineTransactionLimitMinor  int64             `json:"transaction_value_limit_minor"`
+	OfflineDailyLimitMinor        int64             `json:"daily_value_limit_minor"`
+	OfflineRemainingDailyMinor    int64             `json:"remaining_daily_value_minor"`
+	EnrolledAt                    time.Time         `json:"enrolled_at"`
+	LastSeenAt                    time.Time         `json:"last_seen_at"`
+	StockAllocations              []StockAllocation `json:"stock_allocations"`
 }
 
 type InstallAcknowledgement struct {
-	MasterDataVersion int64
-	PriceVersion      int64
+	MasterDataVersion    int64
+	PriceVersion         int64
+	CatalogSnapshotToken string
 }
 
 // OfflineLease records the exact governed cache and application build that a
@@ -55,13 +59,14 @@ type InstallAcknowledgement struct {
 // later cache acknowledgement cannot strand transactions created under an
 // earlier, still-valid lease.
 type OfflineLease struct {
-	Scope             tenancy.Scope
-	DeviceID          string
-	AppVersion        string
-	MasterDataVersion int64
-	PriceVersion      int64
-	ValidFrom         time.Time
-	ValidUntil        time.Time
+	Scope                tenancy.Scope
+	DeviceID             string
+	AppVersion           string
+	MasterDataVersion    int64
+	PriceVersion         int64
+	CatalogSnapshotToken string
+	ValidFrom            time.Time
+	ValidUntil           time.Time
 }
 
 func ValidateWireSafe(value Device) error {

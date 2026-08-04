@@ -80,6 +80,7 @@ void main() {
       appVersion: '1.0.0+1',
       installedMasterDataVersion: 4,
       installedPriceVersion: 8,
+      installedCatalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
     );
 
     final body = jsonDecode(captured.body!) as Map<String, Object?>;
@@ -176,7 +177,9 @@ void main() {
       developmentIdentityAllowed: true,
     );
 
-    final snapshot = await api.refreshMasterData();
+    final snapshot = await api.refreshMasterData(
+      catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
+    );
 
     expect(snapshot.products.single.sellingPrice, 18500);
     expect(snapshot.products.single.availableQuantity, 12);
@@ -372,7 +375,9 @@ void main() {
     final api = await _bearerApi(transport);
 
     await expectLater(
-      api.refreshMasterData(),
+      api.refreshMasterData(
+        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
+      ),
       throwsA(
         isA<ApiException>().having(
           (error) => error.kind,
@@ -381,6 +386,34 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('catalog download fails closed when a page returns another token', () async {
+    final transport = InMemoryApiTransport(
+      (_) => _json(200, {
+        'items': <Object?>[],
+        'next_cursor': null,
+        'catalog_snapshot_token':
+            '00000000-0000-4000-8000-000000000011',
+        'master_data_version': 4,
+        'price_version': 8,
+      }),
+    );
+    final api = await _bearerApi(transport);
+
+    await expectLater(
+      api.refreshMasterData(
+        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
+      ),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.kind,
+          'kind',
+          ApiFailureKind.invalidResponse,
+        ),
+      ),
+    );
+    expect(transport.requests, hasLength(1));
   });
 
   test(
@@ -426,7 +459,9 @@ void main() {
       final api = await _bearerApi(transport);
 
       await expectLater(
-        api.refreshMasterData(),
+        api.refreshMasterData(
+          catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
+        ),
         throwsA(
           isA<ApiException>().having(
             (error) => error.kind,
@@ -518,6 +553,7 @@ SyncCommand _command() {
     branchId: branchId,
     warehouseId: warehouseId,
     appVersion: '1.0.0+1',
+    catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
     masterDataVersion: 4,
     priceVersion: 8,
     syncAttemptNumber: 1,
@@ -525,11 +561,22 @@ SyncCommand _command() {
   );
 }
 
-ApiResponse _json(int status, Map<String, Object?> value) => ApiResponse(
-  statusCode: status,
-  headers: const {'content-type': 'application/json'},
-  body: jsonEncode(value),
-);
+ApiResponse _json(int status, Map<String, Object?> value) {
+  final body = Map<String, Object?>.of(value);
+  if (body.containsKey('items')) {
+    body.putIfAbsent(
+      'catalog_snapshot_token',
+      () => '00000000-0000-4000-8000-000000000010',
+    );
+    body.putIfAbsent('master_data_version', () => 4);
+    body.putIfAbsent('price_version', () => 8);
+  }
+  return ApiResponse(
+    statusCode: status,
+    headers: const {'content-type': 'application/json'},
+    body: jsonEncode(body),
+  );
+}
 
 Map<String, Object?> get _enrollmentJson => {
   'device_id': deviceId,
@@ -543,10 +590,12 @@ Map<String, Object?> get _enrollmentJson => {
     'warehouse_id': warehouseId,
   },
   'app_version': '1.0.0+1',
+  'catalog_snapshot_token': '00000000-0000-4000-8000-000000000010',
   'master_data_version': 4,
   'price_version': 8,
   'available_master_data_version': 4,
   'available_price_version': 8,
+  'available_catalog_snapshot_token': '00000000-0000-4000-8000-000000000010',
   'timezone': 'Africa/Dar_es_Salaam',
   'offline_enabled': false,
   'transaction_value_limit_minor': 0,

@@ -111,7 +111,7 @@ func TestLiveBootstrapEnrollmentAndSyncRoutes(t *testing.T) {
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"timezone":"Africa/Dar_es_Salaam"`) || !strings.Contains(recorder.Body.String(), `"stock_allocations":[]`) || !strings.Contains(recorder.Body.String(), `"master_data_version":0`) || !strings.Contains(recorder.Body.String(), `"available_master_data_version":1`) {
 		t.Fatalf("enrollment: %d %s", recorder.Code, recorder.Body.String())
 	}
-	enrollmentBody = `{"device_id":"` + deviceID + `","device_name":"POS 1","app_version":"1.0.0","installed_master_data_version":1,"installed_price_version":1}`
+	enrollmentBody = `{"device_id":"` + deviceID + `","device_name":"POS 1","app_version":"1.0.0","installed_master_data_version":1,"installed_price_version":1,"installed_catalog_snapshot_token":"00000000-0000-4000-8000-000000000001"}`
 	recorder = httptest.NewRecorder()
 	routes.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/mobile/devices/enroll", strings.NewReader(enrollmentBody)))
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"master_data_version":1`) {
@@ -122,7 +122,8 @@ func TestLiveBootstrapEnrollmentAndSyncRoutes(t *testing.T) {
 		"customer_id": customerID, "kind": "CASH", "payment_method": "CASH",
 		"lines":     []map[string]any{{"product_id": productID, "quantity": 1}},
 		"device_id": deviceID, "client_transaction_id": clientID, "client_timestamp": at.Format(time.RFC3339),
-		"app_version": "1.0.0", "master_data_version": 1, "price_version": 1, "sync_attempt": 1, "offline": false,
+		"app_version": "1.0.0", "master_data_version": 1, "price_version": 1,
+		"catalog_snapshot_token": "00000000-0000-4000-8000-000000000001", "sync_attempt": 1, "offline": false,
 	}
 	encoded, _ := json.Marshal(syncBody)
 	recorder = httptest.NewRecorder()

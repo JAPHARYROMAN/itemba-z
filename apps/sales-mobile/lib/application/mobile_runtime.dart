@@ -261,10 +261,13 @@ class MobileRuntimeController extends ChangeNotifier {
               'Device or organizational scope changed during master-data refresh.',
         );
       }
-      final snapshot = await api.refreshMasterData();
+      final snapshot = await api.refreshMasterData(
+        catalogSnapshotToken: availableEnrollment.availableCatalogSnapshotToken,
+      );
       _requireSnapshotVersions(snapshot, availableEnrollment);
       final stagedEnrollment = availableEnrollment
           .withInstalledVersions(
+            catalogSnapshotToken: snapshot.catalogSnapshotToken,
             masterDataVersion: snapshot.masterDataVersion,
             priceVersion: snapshot.priceVersion,
           )
@@ -274,6 +277,7 @@ class MobileRuntimeController extends ChangeNotifier {
         products: snapshot.products,
         masterDataVersion: snapshot.masterDataVersion,
         priceVersion: snapshot.priceVersion,
+        catalogSnapshotToken: snapshot.catalogSnapshotToken,
         enrollmentToInstall: stagedEnrollment,
       );
       enrollment = stagedEnrollment;
@@ -302,6 +306,7 @@ class MobileRuntimeController extends ChangeNotifier {
       final installedVersions = await store.readInstalledMasterDataVersions();
       final cacheMatchesInstalled =
           installedVersions?.matches(
+            catalogSnapshotToken: availableEnrollment.catalogSnapshotToken,
             masterDataVersion: availableEnrollment.masterDataVersion,
             priceVersion: availableEnrollment.priceVersion,
           ) ??
@@ -314,6 +319,8 @@ class MobileRuntimeController extends ChangeNotifier {
               availableEnrollment.availableMasterDataVersion &&
           availableEnrollment.priceVersion ==
               availableEnrollment.availablePriceVersion &&
+          availableEnrollment.catalogSnapshotToken ==
+              availableEnrollment.availableCatalogSnapshotToken &&
           installedEnrollment.appVersion == salesMobileAppVersion &&
           availableEnrollment.appVersion == salesMobileAppVersion &&
           controller.offlinePolicy.isLeaseValidAt(DateTime.now()) &&
@@ -438,6 +445,7 @@ class MobileRuntimeController extends ChangeNotifier {
       warehouseId: installedEnrollment.scope.warehouseId,
       warehouseName: installedEnrollment.scope.warehouseId,
       appVersion: installedEnrollment.appVersion,
+      catalogSnapshotToken: installedEnrollment.catalogSnapshotToken,
       masterDataVersion: installedEnrollment.masterDataVersion,
       priceVersion: installedEnrollment.priceVersion,
       approved: installedEnrollment.isActive,
@@ -475,6 +483,7 @@ class MobileRuntimeController extends ChangeNotifier {
     final installedVersions = await store.readInstalledMasterDataVersions();
     final cacheMatchesInstalled =
         installedVersions?.matches(
+          catalogSnapshotToken: installedEnrollment.catalogSnapshotToken,
           masterDataVersion: installedEnrollment.masterDataVersion,
           priceVersion: installedEnrollment.priceVersion,
         ) ??
@@ -487,6 +496,8 @@ class MobileRuntimeController extends ChangeNotifier {
             availableEnrollment.availableMasterDataVersion &&
         installedEnrollment.priceVersion ==
             availableEnrollment.availablePriceVersion &&
+        installedEnrollment.catalogSnapshotToken ==
+            availableEnrollment.availableCatalogSnapshotToken &&
         installedEnrollment.appVersion == salesMobileAppVersion &&
         availableEnrollment.appVersion == salesMobileAppVersion &&
         DateTime.now().toUtc().isBefore(
@@ -499,10 +510,13 @@ class MobileRuntimeController extends ChangeNotifier {
         controller.products.isNotEmpty &&
         controller.products.every((product) => product.hasValidTaxMetadata);
     try {
-      final snapshot = await api.refreshMasterData();
+      final snapshot = await api.refreshMasterData(
+        catalogSnapshotToken: availableEnrollment.availableCatalogSnapshotToken,
+      );
       _requireSnapshotVersions(snapshot, availableEnrollment);
       final stagedEnrollment = availableEnrollment
           .withInstalledVersions(
+            catalogSnapshotToken: snapshot.catalogSnapshotToken,
             masterDataVersion: snapshot.masterDataVersion,
             priceVersion: snapshot.priceVersion,
           )
@@ -512,6 +526,7 @@ class MobileRuntimeController extends ChangeNotifier {
         products: snapshot.products,
         masterDataVersion: snapshot.masterDataVersion,
         priceVersion: snapshot.priceVersion,
+        catalogSnapshotToken: snapshot.catalogSnapshotToken,
         enrollmentToInstall: stagedEnrollment,
       );
       enrollment = stagedEnrollment;
@@ -584,7 +599,9 @@ class MobileRuntimeController extends ChangeNotifier {
   ) {
     if (snapshot.masterDataVersion !=
             availableEnrollment.availableMasterDataVersion ||
-        snapshot.priceVersion != availableEnrollment.availablePriceVersion) {
+        snapshot.priceVersion != availableEnrollment.availablePriceVersion ||
+        snapshot.catalogSnapshotToken !=
+            availableEnrollment.availableCatalogSnapshotToken) {
       throw const ApiException(
         kind: ApiFailureKind.invalidResponse,
         message:
@@ -604,6 +621,7 @@ class MobileRuntimeController extends ChangeNotifier {
       appVersion: salesMobileAppVersion,
       installedMasterDataVersion: snapshot.masterDataVersion,
       installedPriceVersion: snapshot.priceVersion,
+      installedCatalogSnapshotToken: snapshot.catalogSnapshotToken,
     );
     if (!acknowledged.isActive) {
       throw const ApiException(
@@ -615,8 +633,11 @@ class MobileRuntimeController extends ChangeNotifier {
         acknowledged.appVersion != salesMobileAppVersion ||
         acknowledged.masterDataVersion != snapshot.masterDataVersion ||
         acknowledged.priceVersion != snapshot.priceVersion ||
+        acknowledged.catalogSnapshotToken != snapshot.catalogSnapshotToken ||
         acknowledged.availableMasterDataVersion != snapshot.masterDataVersion ||
-        acknowledged.availablePriceVersion != snapshot.priceVersion) {
+        acknowledged.availablePriceVersion != snapshot.priceVersion ||
+        acknowledged.availableCatalogSnapshotToken !=
+            snapshot.catalogSnapshotToken) {
       throw const ApiException(
         kind: ApiFailureKind.invalidResponse,
         message:

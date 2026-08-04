@@ -18,29 +18,31 @@ import (
 )
 
 type EnrollCommand struct {
-	Scope                      tenancy.Scope
-	ActorID                    string
-	DeviceID                   string `json:"device_id"`
-	DeviceName                 string `json:"device_name"`
-	AppVersion                 string `json:"app_version"`
-	InstalledMasterDataVersion *int64 `json:"installed_master_data_version,omitempty"`
-	InstalledPriceVersion      *int64 `json:"installed_price_version,omitempty"`
-	CorrelationID              string
+	Scope                         tenancy.Scope
+	ActorID                       string
+	DeviceID                      string  `json:"device_id"`
+	DeviceName                    string  `json:"device_name"`
+	AppVersion                    string  `json:"app_version"`
+	InstalledMasterDataVersion    *int64  `json:"installed_master_data_version,omitempty"`
+	InstalledPriceVersion         *int64  `json:"installed_price_version,omitempty"`
+	InstalledCatalogSnapshotToken *string `json:"installed_catalog_snapshot_token,omitempty"`
+	CorrelationID                 string
 }
 
 type SyncCommand struct {
-	CustomerID          string              `json:"customer_id"`
-	Kind                sales.Kind          `json:"kind"`
-	PaymentMethod       string              `json:"payment_method,omitempty"`
-	Lines               []sales.CommandLine `json:"lines"`
-	DeviceID            string              `json:"device_id"`
-	ClientTransactionID string              `json:"client_transaction_id"`
-	ClientTimestamp     time.Time           `json:"client_timestamp"`
-	AppVersion          string              `json:"app_version"`
-	MasterDataVersion   int64               `json:"master_data_version"`
-	PriceVersion        int64               `json:"price_version"`
-	SyncAttempt         int                 `json:"sync_attempt"`
-	Offline             bool                `json:"offline"`
+	CustomerID           string              `json:"customer_id"`
+	Kind                 sales.Kind          `json:"kind"`
+	PaymentMethod        string              `json:"payment_method,omitempty"`
+	Lines                []sales.CommandLine `json:"lines"`
+	DeviceID             string              `json:"device_id"`
+	ClientTransactionID  string              `json:"client_transaction_id"`
+	ClientTimestamp      time.Time           `json:"client_timestamp"`
+	AppVersion           string              `json:"app_version"`
+	MasterDataVersion    int64               `json:"master_data_version"`
+	PriceVersion         int64               `json:"price_version"`
+	CatalogSnapshotToken string              `json:"catalog_snapshot_token"`
+	SyncAttempt          int                 `json:"sync_attempt"`
+	Offline              bool                `json:"offline"`
 }
 
 type SyncResult struct {
@@ -77,7 +79,11 @@ func (s *Service) Enroll(ctx context.Context, command EnrollCommand) (devices.De
 	command.DeviceName = strings.TrimSpace(command.DeviceName)
 	command.AppVersion = strings.TrimSpace(command.AppVersion)
 	hasMasterAck, hasPriceAck := command.InstalledMasterDataVersion != nil, command.InstalledPriceVersion != nil
+	hasSnapshotAck := command.InstalledCatalogSnapshotToken != nil
 	if command.Scope.Validate() != nil || command.ActorID == "" || !identity.IsUUID(command.DeviceID) || command.DeviceName == "" || utf8.RuneCountInString(command.DeviceName) > 200 || command.AppVersion == "" || utf8.RuneCountInString(command.AppVersion) > 64 || hasMasterAck != hasPriceAck {
+		return devices.Device{}, sales.ErrInvalidCommand
+	}
+	if hasMasterAck != hasSnapshotAck {
 		return devices.Device{}, sales.ErrInvalidCommand
 	}
 	var acknowledgement *devices.InstallAcknowledgement
@@ -88,10 +94,14 @@ func (s *Service) Enroll(ctx context.Context, command EnrollCommand) (devices.De
 		if *command.InstalledMasterDataVersion > sales.MaxWireSafeInteger || *command.InstalledPriceVersion > sales.MaxWireSafeInteger {
 			return devices.Device{}, sales.ErrUnsafeWireInteger
 		}
-		acknowledgement = &devices.InstallAcknowledgement{MasterDataVersion: *command.InstalledMasterDataVersion, PriceVersion: *command.InstalledPriceVersion}
+		token := identity.NormalizeClaim(*command.InstalledCatalogSnapshotToken)
+		if !identity.IsUUID(token) || token == devices.UnacknowledgedCatalogSnapshotToken {
+			return devices.Device{}, sales.ErrInvalidCommand
+		}
+		acknowledgement = &devices.InstallAcknowledgement{MasterDataVersion: *command.InstalledMasterDataVersion, PriceVersion: *command.InstalledPriceVersion, CatalogSnapshotToken: token}
 	}
 	now := s.clock.Now().UTC()
-	device := devices.Device{ID: command.DeviceID, Status: devices.StatusActive, ActorID: command.ActorID, Scope: command.Scope, Name: command.DeviceName, AppVersion: command.AppVersion, EnrolledAt: now, LastSeenAt: now}
+	device := devices.Device{ID: command.DeviceID, Status: devices.StatusActive, ActorID: command.ActorID, Scope: command.Scope, Name: command.DeviceName, AppVersion: command.AppVersion, CatalogSnapshotToken: devices.UnacknowledgedCatalogSnapshotToken, EnrolledAt: now, LastSeenAt: now}
 	payload, _ := json.Marshal(device)
 	auditID, err := s.ids.New()
 	if err != nil {
@@ -123,11 +133,12 @@ func (s *Service) SyncSale(ctx context.Context, scope tenancy.Scope, actorID, co
 	command.ClientTransactionID = identity.NormalizeClaim(command.ClientTransactionID)
 	command.CustomerID = identity.NormalizeClaim(command.CustomerID)
 	command.AppVersion = strings.TrimSpace(command.AppVersion)
+	command.CatalogSnapshotToken = identity.NormalizeClaim(command.CatalogSnapshotToken)
 	command.Lines = append([]sales.CommandLine(nil), command.Lines...)
 	for index := range command.Lines {
 		command.Lines[index].ProductID = identity.NormalizeClaim(command.Lines[index].ProductID)
 	}
-	if scope.Validate() != nil || actorID == "" || !identity.IsUUID(command.DeviceID) || !identity.IsUUID(command.ClientTransactionID) || command.SyncAttempt < 1 || command.ClientTimestamp.IsZero() || command.MasterDataVersion < 1 || command.PriceVersion < 1 || command.AppVersion == "" || utf8.RuneCountInString(command.AppVersion) > 64 {
+	if scope.Validate() != nil || actorID == "" || !identity.IsUUID(command.DeviceID) || !identity.IsUUID(command.ClientTransactionID) || command.SyncAttempt < 1 || command.ClientTimestamp.IsZero() || command.MasterDataVersion < 1 || command.PriceVersion < 1 || !identity.IsUUID(command.CatalogSnapshotToken) || command.CatalogSnapshotToken == devices.UnacknowledgedCatalogSnapshotToken || command.AppVersion == "" || utf8.RuneCountInString(command.AppVersion) > 64 {
 		return SyncResult{}, sales.ErrInvalidCommand
 	}
 	if !identity.IsUUID(command.CustomerID) {
@@ -145,7 +156,7 @@ func (s *Service) SyncSale(ctx context.Context, scope tenancy.Scope, actorID, co
 	if command.Kind == sales.KindCredit {
 		return SyncResult{}, devices.ErrMobileCreditUnsupported
 	}
-	created, err := s.sales.Complete(ctx, sales.CompleteCommand{Scope: scope, CustomerID: command.CustomerID, Kind: command.Kind, PaymentMethod: command.PaymentMethod, Lines: command.Lines, ActorID: actorID, CorrelationID: correlationID, IdempotencyKey: command.DeviceID + "::" + command.ClientTransactionID, DeviceID: command.DeviceID, ClientTransactionID: command.ClientTransactionID, ClientTimestamp: command.ClientTimestamp, AppVersion: command.AppVersion, MasterDataVersion: command.MasterDataVersion, PriceVersion: command.PriceVersion, SyncAttempt: command.SyncAttempt, Offline: command.Offline})
+	created, err := s.sales.Complete(ctx, sales.CompleteCommand{Scope: scope, CustomerID: command.CustomerID, Kind: command.Kind, PaymentMethod: command.PaymentMethod, Lines: command.Lines, ActorID: actorID, CorrelationID: correlationID, IdempotencyKey: command.DeviceID + "::" + command.ClientTransactionID, DeviceID: command.DeviceID, ClientTransactionID: command.ClientTransactionID, ClientTimestamp: command.ClientTimestamp, AppVersion: command.AppVersion, MasterDataVersion: command.MasterDataVersion, PriceVersion: command.PriceVersion, CatalogSnapshotToken: command.CatalogSnapshotToken, SyncAttempt: command.SyncAttempt, Offline: command.Offline})
 	if err != nil {
 		return SyncResult{}, err
 	}

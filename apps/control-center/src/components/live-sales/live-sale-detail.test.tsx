@@ -23,7 +23,8 @@ const workspace: SaleDetailWorkspace = {
     timezone: "Africa/Dar_es_Salaam",
     permissions: ["sales.reverse"],
     master_data_version: 1,
-    price_version: 1,
+  price_version: 1,
+  catalog_snapshot_token: "00000000-0000-4000-8000-000000000001",
   },
   customers: [
     { id: "00000000-0000-4000-8000-000000000011", code: "C-011", name: "Kijiji Supermarket", status: "active", is_general_customer: false, credit_enabled: true, credit_limit_minor: 5_000_000, current_exposure_minor: 1_000_000, available_credit_minor: 4_000_000 },

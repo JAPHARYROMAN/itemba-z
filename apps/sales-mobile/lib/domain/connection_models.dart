@@ -1,5 +1,8 @@
 enum MobileIdentityMode { bearer, developmentHeaders }
 
+const unacknowledgedCatalogSnapshotToken =
+    '00000000-0000-0000-0000-000000000000';
+
 class DevelopmentIdentity {
   const DevelopmentIdentity({
     required this.actorId,
@@ -104,8 +107,10 @@ class DeviceEnrollment {
     required this.actorId,
     required this.scope,
     required this.appVersion,
+    required this.catalogSnapshotToken,
     required this.masterDataVersion,
     required this.priceVersion,
+    required this.availableCatalogSnapshotToken,
     required this.availableMasterDataVersion,
     required this.availablePriceVersion,
     required this.timezone,
@@ -125,8 +130,10 @@ class DeviceEnrollment {
   final String actorId;
   final EnrollmentScope scope;
   final String appVersion;
+  final String catalogSnapshotToken;
   final int masterDataVersion;
   final int priceVersion;
+  final String availableCatalogSnapshotToken;
   final int availableMasterDataVersion;
   final int availablePriceVersion;
   final String timezone;
@@ -142,6 +149,7 @@ class DeviceEnrollment {
   bool get isActive => status == 'ACTIVE';
 
   DeviceEnrollment withInstalledVersions({
+    required String catalogSnapshotToken,
     required int masterDataVersion,
     required int priceVersion,
   }) => DeviceEnrollment(
@@ -151,8 +159,10 @@ class DeviceEnrollment {
     actorId: actorId,
     scope: scope,
     appVersion: appVersion,
+    catalogSnapshotToken: catalogSnapshotToken,
     masterDataVersion: masterDataVersion,
     priceVersion: priceVersion,
+    availableCatalogSnapshotToken: availableCatalogSnapshotToken,
     availableMasterDataVersion: availableMasterDataVersion,
     availablePriceVersion: availablePriceVersion,
     timezone: timezone,
@@ -173,8 +183,10 @@ class DeviceEnrollment {
     actorId: actorId,
     scope: scope,
     appVersion: appVersion,
+    catalogSnapshotToken: catalogSnapshotToken,
     masterDataVersion: masterDataVersion,
     priceVersion: priceVersion,
+    availableCatalogSnapshotToken: availableCatalogSnapshotToken,
     availableMasterDataVersion: availableMasterDataVersion,
     availablePriceVersion: availablePriceVersion,
     timezone: timezone,

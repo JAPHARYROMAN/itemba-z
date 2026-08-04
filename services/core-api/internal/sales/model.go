@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/wire"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
@@ -60,35 +61,36 @@ func IsCanonicalPaymentMethod(value string) bool {
 }
 
 type Sale struct {
-	ID                  string        `json:"id"`
-	Scope               tenancy.Scope `json:"scope"`
-	RecordType          RecordType    `json:"record_type"`
-	Kind                Kind          `json:"kind"`
-	Status              Status        `json:"status"`
-	CustomerID          string        `json:"customer_id"`
-	Currency            string        `json:"currency"`
-	SubtotalMinor       int64         `json:"subtotal_minor"`
-	TaxMinor            int64         `json:"tax_minor"`
-	TotalMinor          int64         `json:"total_minor"`
-	COGSMinor           int64         `json:"cogs_minor"`
-	PaymentMethod       string        `json:"payment_method,omitempty"`
-	DeviceID            string        `json:"device_id,omitempty"`
-	ClientTransactionID string        `json:"client_transaction_id,omitempty"`
-	ClientTimestamp     *time.Time    `json:"client_timestamp,omitempty"`
-	AppVersion          string        `json:"app_version,omitempty"`
-	MasterDataVersion   int64         `json:"master_data_version,omitempty"`
-	PriceVersion        int64         `json:"price_version,omitempty"`
-	Offline             bool          `json:"offline,omitempty"`
-	ReceiptReference    string        `json:"receipt_reference"`
-	FiscalStatus        FiscalStatus  `json:"fiscal_status"`
-	ReversalOf          string        `json:"reversal_of,omitempty"`
-	ReversalReason      string        `json:"reversal_reason,omitempty"`
-	CreatedBy           string        `json:"created_by"`
-	CorrelationID       string        `json:"correlation_id"`
-	CreatedAt           time.Time     `json:"created_at"`
-	ReversedAt          *time.Time    `json:"reversed_at,omitempty"`
-	Lines               []Line        `json:"lines"`
-	IdempotentReplay    bool          `json:"-"`
+	ID                   string        `json:"id"`
+	Scope                tenancy.Scope `json:"scope"`
+	RecordType           RecordType    `json:"record_type"`
+	Kind                 Kind          `json:"kind"`
+	Status               Status        `json:"status"`
+	CustomerID           string        `json:"customer_id"`
+	Currency             string        `json:"currency"`
+	SubtotalMinor        int64         `json:"subtotal_minor"`
+	TaxMinor             int64         `json:"tax_minor"`
+	TotalMinor           int64         `json:"total_minor"`
+	COGSMinor            int64         `json:"cogs_minor"`
+	PaymentMethod        string        `json:"payment_method,omitempty"`
+	DeviceID             string        `json:"device_id,omitempty"`
+	ClientTransactionID  string        `json:"client_transaction_id,omitempty"`
+	ClientTimestamp      *time.Time    `json:"client_timestamp,omitempty"`
+	AppVersion           string        `json:"app_version,omitempty"`
+	MasterDataVersion    int64         `json:"master_data_version,omitempty"`
+	PriceVersion         int64         `json:"price_version,omitempty"`
+	CatalogSnapshotToken string        `json:"catalog_snapshot_token,omitempty"`
+	Offline              bool          `json:"offline,omitempty"`
+	ReceiptReference     string        `json:"receipt_reference"`
+	FiscalStatus         FiscalStatus  `json:"fiscal_status"`
+	ReversalOf           string        `json:"reversal_of,omitempty"`
+	ReversalReason       string        `json:"reversal_reason,omitempty"`
+	CreatedBy            string        `json:"created_by"`
+	CorrelationID        string        `json:"correlation_id"`
+	CreatedAt            time.Time     `json:"created_at"`
+	ReversedAt           *time.Time    `json:"reversed_at,omitempty"`
+	Lines                []Line        `json:"lines"`
+	IdempotentReplay     bool          `json:"-"`
 }
 
 type Line struct {
@@ -116,22 +118,23 @@ type Payment struct {
 }
 
 type CompleteCommand struct {
-	Scope               tenancy.Scope `json:"scope"`
-	CustomerID          string        `json:"customer_id"`
-	Kind                Kind          `json:"kind"`
-	PaymentMethod       string        `json:"payment_method,omitempty"`
-	Lines               []CommandLine `json:"lines"`
-	ActorID             string        `json:"actor_id"`
-	CorrelationID       string        `json:"-"`
-	IdempotencyKey      string        `json:"-"`
-	DeviceID            string        `json:"device_id,omitempty"`
-	ClientTransactionID string        `json:"client_transaction_id,omitempty"`
-	ClientTimestamp     time.Time     `json:"client_timestamp,omitempty"`
-	AppVersion          string        `json:"app_version,omitempty"`
-	MasterDataVersion   int64         `json:"master_data_version,omitempty"`
-	PriceVersion        int64         `json:"price_version,omitempty"`
-	SyncAttempt         int           `json:"-"`
-	Offline             bool          `json:"offline,omitempty"`
+	Scope                tenancy.Scope `json:"scope"`
+	CustomerID           string        `json:"customer_id"`
+	Kind                 Kind          `json:"kind"`
+	PaymentMethod        string        `json:"payment_method,omitempty"`
+	Lines                []CommandLine `json:"lines"`
+	ActorID              string        `json:"actor_id"`
+	CorrelationID        string        `json:"-"`
+	IdempotencyKey       string        `json:"-"`
+	DeviceID             string        `json:"device_id,omitempty"`
+	ClientTransactionID  string        `json:"client_transaction_id,omitempty"`
+	ClientTimestamp      time.Time     `json:"client_timestamp,omitempty"`
+	AppVersion           string        `json:"app_version,omitempty"`
+	MasterDataVersion    int64         `json:"master_data_version,omitempty"`
+	PriceVersion         int64         `json:"price_version,omitempty"`
+	CatalogSnapshotToken string        `json:"catalog_snapshot_token,omitempty"`
+	SyncAttempt          int           `json:"-"`
+	Offline              bool          `json:"offline,omitempty"`
 }
 
 type CommandLine struct {
@@ -166,7 +169,8 @@ func (c CompleteCommand) Validate() error {
 	}
 	if hasDevice {
 		if c.ClientTimestamp.IsZero() || strings.TrimSpace(c.AppVersion) == "" ||
-			c.MasterDataVersion < 1 || c.PriceVersion < 1 || c.SyncAttempt < 1 {
+			c.MasterDataVersion < 1 || c.PriceVersion < 1 || c.SyncAttempt < 1 ||
+			!identity.IsUUID(c.CatalogSnapshotToken) || c.CatalogSnapshotToken == devices.UnacknowledgedCatalogSnapshotToken {
 			return ErrInvalidCommand
 		}
 		if c.MasterDataVersion > MaxWireSafeInteger || c.PriceVersion > MaxWireSafeInteger || int64(c.SyncAttempt) > MaxWireSafeInteger {

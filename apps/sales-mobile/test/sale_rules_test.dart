@@ -231,6 +231,7 @@ void main() {
         warehouseId: 'warehouse',
         warehouseName: 'Warehouse',
         appVersion: '1.0.0+1',
+        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
         masterDataVersion: 2,
         priceVersion: 2,
         approved: true,
@@ -266,6 +267,7 @@ void main() {
         warehouseId: 'warehouse-dar-main',
         warehouseName: 'Dar Main Store',
         appVersion: '1.0.0+1',
+        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
         masterDataVersion: 2,
         priceVersion: 2,
         approved: true,
@@ -278,6 +280,30 @@ void main() {
 
       await expectLater(
         controller.completeSale(v1Draft),
+        throwsA(
+          isA<SaleRuleException>().having(
+            (error) => error.violations.map((value) => value.code),
+            'violations',
+            contains(SaleRuleCode.staleDraftContext),
+          ),
+        ),
+      );
+      expect(await store.readSales(), isEmpty);
+      expect(await store.readSyncQueue(), isEmpty);
+    });
+
+    test('draft is rejected when its catalog token has been superseded', () async {
+      final store = InMemoryEncryptedLocalStore();
+      final controller = SalesController(store: store);
+      final draft = controller.createNewSale()..addProduct(demoProducts.first);
+      controller.device = controller.device.copyWithVersions(
+        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
+        masterDataVersion: controller.device.masterDataVersion,
+        priceVersion: controller.device.priceVersion,
+      );
+
+      await expectLater(
+        controller.completeSale(draft),
         throwsA(
           isA<SaleRuleException>().having(
             (error) => error.violations.map((value) => value.code),

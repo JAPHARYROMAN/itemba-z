@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/wire"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
@@ -14,20 +15,21 @@ import (
 )
 
 type WorkingContext struct {
-	ActorID           string   `json:"actor_id"`
-	TenantID          string   `json:"tenant_id"`
-	CompanyID         string   `json:"company_id"`
-	CompanyName       string   `json:"company_name"`
-	BranchID          string   `json:"branch_id"`
-	BranchName        string   `json:"branch_name"`
-	WarehouseID       string   `json:"warehouse_id"`
-	WarehouseName     string   `json:"warehouse_name"`
-	Currency          string   `json:"currency"`
-	Locale            string   `json:"locale"`
-	TimeZone          string   `json:"timezone"`
-	Permissions       []string `json:"permissions"`
-	MasterDataVersion int64    `json:"master_data_version"`
-	PriceVersion      int64    `json:"price_version"`
+	ActorID              string   `json:"actor_id"`
+	TenantID             string   `json:"tenant_id"`
+	CompanyID            string   `json:"company_id"`
+	CompanyName          string   `json:"company_name"`
+	BranchID             string   `json:"branch_id"`
+	BranchName           string   `json:"branch_name"`
+	WarehouseID          string   `json:"warehouse_id"`
+	WarehouseName        string   `json:"warehouse_name"`
+	Currency             string   `json:"currency"`
+	Locale               string   `json:"locale"`
+	TimeZone             string   `json:"timezone"`
+	Permissions          []string `json:"permissions"`
+	MasterDataVersion    int64    `json:"master_data_version"`
+	PriceVersion         int64    `json:"price_version"`
+	CatalogSnapshotToken string   `json:"catalog_snapshot_token"`
 }
 
 type CustomerSummary struct {
@@ -56,12 +58,18 @@ type ProductSummary struct {
 }
 
 type CustomerPage struct {
-	Items      []CustomerSummary `json:"items"`
-	NextCursor *string           `json:"next_cursor"`
+	Items                []CustomerSummary `json:"items"`
+	NextCursor           *string           `json:"next_cursor"`
+	CatalogSnapshotToken string            `json:"catalog_snapshot_token"`
+	MasterDataVersion    int64             `json:"master_data_version"`
+	PriceVersion         int64             `json:"price_version"`
 }
 type ProductPage struct {
-	Items      []ProductSummary `json:"items"`
-	NextCursor *string          `json:"next_cursor"`
+	Items                []ProductSummary `json:"items"`
+	NextCursor           *string          `json:"next_cursor"`
+	CatalogSnapshotToken string           `json:"catalog_snapshot_token"`
+	MasterDataVersion    int64            `json:"master_data_version"`
+	PriceVersion         int64            `json:"price_version"`
 }
 type SalePage struct {
 	Items      []sales.Sale `json:"items"`
@@ -69,16 +77,23 @@ type SalePage struct {
 }
 
 type ListOptions struct {
-	Query          string
-	CreditEligible *bool
-	AfterID        string
-	Limit          int
+	Query                string
+	CreditEligible       *bool
+	AfterID              string
+	Limit                int
+	CatalogSnapshotToken string
+}
+
+type CatalogSnapshot struct {
+	Token             string
+	MasterDataVersion int64
+	PriceVersion      int64
 }
 
 type Repository interface {
 	WorkingContext(ctx context.Context, scope tenancy.Scope, actorID string) (WorkingContext, error)
-	ListCustomers(ctx context.Context, scope tenancy.Scope, actorID string, options ListOptions) ([]CustomerSummary, error)
-	ListProducts(ctx context.Context, scope tenancy.Scope, actorID string, options ListOptions) ([]ProductSummary, error)
+	ListCustomers(ctx context.Context, scope tenancy.Scope, actorID string, options ListOptions) (CatalogSnapshot, []CustomerSummary, error)
+	ListProducts(ctx context.Context, scope tenancy.Scope, actorID string, options ListOptions) (CatalogSnapshot, []ProductSummary, error)
 	ListSales(ctx context.Context, scope tenancy.Scope, actorID string, options ListOptions) ([]sales.Sale, error)
 }
 
@@ -104,20 +119,23 @@ func (s *Service) Context(ctx context.Context, scope tenancy.Scope, actorID stri
 	if !wire.IsSafeInteger(value.MasterDataVersion) || !wire.IsSafeInteger(value.PriceVersion) {
 		return WorkingContext{}, wire.ErrUnsafeInteger
 	}
+	if !identity.IsUUID(value.CatalogSnapshotToken) || value.CatalogSnapshotToken == devices.UnacknowledgedCatalogSnapshotToken {
+		return WorkingContext{}, sales.ErrPostingConfig
+	}
 	return value, nil
 }
 
-func (s *Service) Customers(ctx context.Context, scope tenancy.Scope, actorID, query, cursor string, creditEligible *bool, pageSize int) (CustomerPage, error) {
+func (s *Service) Customers(ctx context.Context, scope tenancy.Scope, actorID, query, cursor, snapshotToken string, creditEligible *bool, pageSize int) (CustomerPage, error) {
 	scope = scope.Normalize()
 	actorID = identity.NormalizeClaim(actorID)
 	if scope.Validate() != nil || actorID == "" {
 		return CustomerPage{}, sales.ErrInvalidCommand
 	}
-	options, err := listOptions(query, cursor, creditEligible, pageSize)
+	options, err := listOptions(query, cursor, snapshotToken, creditEligible, pageSize)
 	if err != nil {
 		return CustomerPage{}, err
 	}
-	items, err := s.repository.ListCustomers(ctx, scope, actorID, options)
+	snapshot, items, err := s.repository.ListCustomers(ctx, scope, actorID, options)
 	if err != nil {
 		return CustomerPage{}, err
 	}
@@ -127,20 +145,23 @@ func (s *Service) Customers(ctx context.Context, scope tenancy.Scope, actorID, q
 		}
 	}
 	page, next := trim(items, options.Limit)
-	return CustomerPage{Items: page, NextCursor: next}, nil
+	if err := validateCatalogSnapshot(snapshot); err != nil {
+		return CustomerPage{}, err
+	}
+	return CustomerPage{Items: page, NextCursor: next, CatalogSnapshotToken: snapshot.Token, MasterDataVersion: snapshot.MasterDataVersion, PriceVersion: snapshot.PriceVersion}, nil
 }
 
-func (s *Service) Products(ctx context.Context, scope tenancy.Scope, actorID, query, cursor string, pageSize int) (ProductPage, error) {
+func (s *Service) Products(ctx context.Context, scope tenancy.Scope, actorID, query, cursor, snapshotToken string, pageSize int) (ProductPage, error) {
 	scope = scope.Normalize()
 	actorID = identity.NormalizeClaim(actorID)
 	if scope.Validate() != nil || actorID == "" {
 		return ProductPage{}, sales.ErrInvalidCommand
 	}
-	options, err := listOptions(query, cursor, nil, pageSize)
+	options, err := listOptions(query, cursor, snapshotToken, nil, pageSize)
 	if err != nil {
 		return ProductPage{}, err
 	}
-	items, err := s.repository.ListProducts(ctx, scope, actorID, options)
+	snapshot, items, err := s.repository.ListProducts(ctx, scope, actorID, options)
 	if err != nil {
 		return ProductPage{}, err
 	}
@@ -151,7 +172,10 @@ func (s *Service) Products(ctx context.Context, scope tenancy.Scope, actorID, qu
 		}
 	}
 	page, next := trim(items, options.Limit)
-	return ProductPage{Items: page, NextCursor: next}, nil
+	if err := validateCatalogSnapshot(snapshot); err != nil {
+		return ProductPage{}, err
+	}
+	return ProductPage{Items: page, NextCursor: next, CatalogSnapshotToken: snapshot.Token, MasterDataVersion: snapshot.MasterDataVersion, PriceVersion: snapshot.PriceVersion}, nil
 }
 
 func (s *Service) Sales(ctx context.Context, scope tenancy.Scope, actorID, cursor string, pageSize int) (SalePage, error) {
@@ -160,7 +184,7 @@ func (s *Service) Sales(ctx context.Context, scope tenancy.Scope, actorID, curso
 	if scope.Validate() != nil || actorID == "" {
 		return SalePage{}, sales.ErrInvalidCommand
 	}
-	options, err := listOptions("", cursor, nil, pageSize)
+	options, err := listOptions("", cursor, "", nil, pageSize)
 	if err != nil {
 		return SalePage{}, err
 	}
@@ -180,7 +204,7 @@ func (s *Service) Sales(ctx context.Context, scope tenancy.Scope, actorID, curso
 	return SalePage{Items: items[:options.Limit], NextCursor: &value}, nil
 }
 
-func listOptions(query, cursor string, eligible *bool, pageSize int) (ListOptions, error) {
+func listOptions(query, cursor, snapshotToken string, eligible *bool, pageSize int) (ListOptions, error) {
 	query = strings.TrimSpace(query)
 	if len(query) > 120 || pageSize < 1 || pageSize > 200 {
 		return ListOptions{}, sales.ErrInvalidCommand
@@ -189,7 +213,20 @@ func listOptions(query, cursor string, eligible *bool, pageSize int) (ListOption
 	if err != nil {
 		return ListOptions{}, sales.ErrInvalidCommand
 	}
-	return ListOptions{Query: query, CreditEligible: eligible, AfterID: after, Limit: pageSize}, nil
+	snapshotToken = identity.NormalizeClaim(snapshotToken)
+	if snapshotToken != "" && !identity.IsUUID(snapshotToken) {
+		return ListOptions{}, sales.ErrInvalidCommand
+	}
+	return ListOptions{Query: query, CreditEligible: eligible, AfterID: after, Limit: pageSize, CatalogSnapshotToken: snapshotToken}, nil
+}
+
+func validateCatalogSnapshot(value CatalogSnapshot) error {
+	if !identity.IsUUID(value.Token) || value.Token == devices.UnacknowledgedCatalogSnapshotToken ||
+		!wire.IsSafeInteger(value.MasterDataVersion) || !wire.IsSafeInteger(value.PriceVersion) ||
+		value.MasterDataVersion < 1 || value.PriceVersion < 1 {
+		return sales.ErrPostingConfig
+	}
+	return nil
 }
 
 type identified interface{ identifier() string }

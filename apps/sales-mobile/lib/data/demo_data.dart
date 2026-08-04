@@ -12,6 +12,7 @@ const demoDevice = DeviceContext(
   warehouseId: 'warehouse-dar-main',
   warehouseName: 'Dar Main Store',
   appVersion: '1.0.0',
+  catalogSnapshotToken: '00000000-0000-4000-8000-000000000001',
   masterDataVersion: 1,
   priceVersion: 1,
   approved: true,

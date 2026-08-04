@@ -22,6 +22,8 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
 
+const testCatalogSnapshotToken = "00000000-0000-4000-8000-000000000001"
+
 type TaxRate struct {
 	TenantID      string
 	CompanyID     string
@@ -155,18 +157,28 @@ func (s *Store) SeedContext(scope tenancy.Scope, value readmodel.WorkingContext)
 	defer s.mu.Unlock()
 	value.TenantID, value.CompanyID = scope.TenantID, scope.CompanyID
 	value.BranchID, value.WarehouseID = scope.BranchID, scope.WarehouseID
+	if value.CatalogSnapshotToken == "" {
+		value.CatalogSnapshotToken = testCatalogSnapshotToken
+	}
 	s.state.contexts[scopeKey(scope)] = value
 }
 
 func (s *Store) SeedDevice(value devices.Device) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if value.CatalogSnapshotToken == "" {
+		value.CatalogSnapshotToken = testCatalogSnapshotToken
+	}
+	if value.AvailableCatalogSnapshotToken == "" {
+		value.AvailableCatalogSnapshotToken = value.CatalogSnapshotToken
+	}
 	s.state.devices[deviceKey(value.Scope.TenantID, value.ID)] = value
 	if value.OfflineSalesValidUntil.After(value.OfflineSalesValidFrom) {
 		appendOfflineLease(s.state, devices.OfflineLease{
 			Scope: value.Scope, DeviceID: value.ID, AppVersion: value.AppVersion,
 			MasterDataVersion: value.MasterDataVersion, PriceVersion: value.PriceVersion,
-			ValidFrom: value.OfflineSalesValidFrom, ValidUntil: value.OfflineSalesValidUntil,
+			CatalogSnapshotToken: value.CatalogSnapshotToken,
+			ValidFrom:            value.OfflineSalesValidFrom, ValidUntil: value.OfflineSalesValidUntil,
 		})
 	}
 }

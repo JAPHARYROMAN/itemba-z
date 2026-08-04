@@ -153,6 +153,7 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
         warehouseId: row['warehouse_id']! as String,
       ),
       appVersion: row['app_version']! as String,
+      catalogSnapshotToken: row['catalog_snapshot_token']! as String,
       masterDataVersion: _exactInt(
         row['master_data_version'],
         'device_enrollment.master_data_version',
@@ -169,6 +170,8 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
         row['available_price_version'],
         'device_enrollment.available_price_version',
       ),
+      availableCatalogSnapshotToken:
+          row['available_catalog_snapshot_token']! as String,
       timezone: row['timezone']! as String,
       offlineEnabled: row['offline_enabled'] == 1,
       transactionValueLimitMinor: _exactInt(
@@ -328,13 +331,20 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
   @override
   Future<InstalledMasterDataVersions?> readInstalledMasterDataVersions() async {
     final database = await _database;
+    final installStates = await database.query(
+      'catalog_install_state',
+      where: 'singleton_id = 1',
+      limit: 1,
+    );
     final customerVersions = await database.rawQuery(
       'SELECT DISTINCT master_data_version FROM cached_customers',
     );
     final productVersions = await database.rawQuery(
       'SELECT DISTINCT master_data_version, price_version FROM cached_products',
     );
-    if (customerVersions.length != 1 || productVersions.length != 1) {
+    if (installStates.length != 1 ||
+        customerVersions.length != 1 ||
+        productVersions.length != 1) {
       return null;
     }
     final customerMaster = _versionInt(
@@ -343,10 +353,22 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
     final productMaster = _versionInt(
       productVersions.single['master_data_version'],
     );
-    if (customerMaster != productMaster) return null;
+    final installState = installStates.single;
+    final installedMaster = _versionInt(installState['master_data_version']);
+    final installedPrice = _versionInt(installState['price_version']);
+    final productPrice = _versionInt(productVersions.single['price_version']);
+    final catalogSnapshotToken =
+        installState['catalog_snapshot_token']! as String;
+    if (customerMaster != productMaster ||
+        installedMaster != customerMaster ||
+        installedPrice != productPrice ||
+        catalogSnapshotToken == unacknowledgedCatalogSnapshotToken) {
+      return null;
+    }
     return InstalledMasterDataVersions(
+      catalogSnapshotToken: catalogSnapshotToken,
       masterDataVersion: customerMaster,
-      priceVersion: _versionInt(productVersions.single['price_version']),
+      priceVersion: productPrice,
     );
   }
 
@@ -356,6 +378,7 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
     required List<Product> products,
     required int masterDataVersion,
     required int priceVersion,
+    required String catalogSnapshotToken,
     DeviceEnrollment? enrollment,
   }) async {
     final database = await _database;
@@ -375,6 +398,13 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
           _productRow(product, masterDataVersion, priceVersion, updatedAt),
         );
       }
+      await transaction.insert('catalog_install_state', {
+        'singleton_id': 1,
+        'catalog_snapshot_token': catalogSnapshotToken,
+        'master_data_version': masterDataVersion,
+        'price_version': priceVersion,
+        'installed_at_epoch': updatedAt,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
       if (enrollment != null) {
         await transaction.insert(
           'device_enrollment',
@@ -721,6 +751,7 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
       await transaction.delete('sale_drafts');
       await transaction.delete('cached_products');
       await transaction.delete('cached_customers');
+      await transaction.delete('catalog_install_state');
     });
   }
 
@@ -759,6 +790,7 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
     'app_version': command.appVersion,
     'master_data_version': command.masterDataVersion,
     'price_version': command.priceVersion,
+    'catalog_snapshot_token': command.catalogSnapshotToken,
     'sync_attempt_number': command.syncAttemptNumber,
     'command_json': LocalDataCodec.encodeSyncCommand(command),
     'queued_at_epoch': DateTime.now().millisecondsSinceEpoch,
@@ -787,10 +819,13 @@ class SqlCipherLocalStore implements EncryptedLocalStore {
     'branch_id': enrollment.scope.branchId,
     'warehouse_id': enrollment.scope.warehouseId,
     'app_version': enrollment.appVersion,
+    'catalog_snapshot_token': enrollment.catalogSnapshotToken,
     'master_data_version': enrollment.masterDataVersion,
     'price_version': enrollment.priceVersion,
     'available_master_data_version': enrollment.availableMasterDataVersion,
     'available_price_version': enrollment.availablePriceVersion,
+    'available_catalog_snapshot_token':
+        enrollment.availableCatalogSnapshotToken,
     'timezone': enrollment.timezone,
     'offline_enabled': _bool(enrollment.offlineEnabled),
     'transaction_value_limit_minor': enrollment.transactionValueLimitMinor,
