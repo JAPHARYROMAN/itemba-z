@@ -29,8 +29,10 @@ type Transaction interface {
 	CompleteIdempotency(ctx context.Context, scope tenancy.Scope, operation, key, resultID string) error
 
 	Customer(ctx context.Context, scope tenancy.Scope, customerID string) (customers.Account, error)
+	OfflineCatalogCustomer(ctx context.Context, scope tenancy.Scope, catalogSnapshotToken, customerID string) (customers.Account, error)
 	LockCustomerCredit(ctx context.Context, scope tenancy.Scope, customerID string) error
 	Product(ctx context.Context, scope tenancy.Scope, productID string) (catalog.Product, error)
+	OfflineCatalogProduct(ctx context.Context, scope tenancy.Scope, catalogSnapshotToken, productID string, at time.Time) (catalog.Product, int64, error)
 	TaxRateBasisPoints(ctx context.Context, scope tenancy.Scope, taxCode string, at time.Time) (int64, error)
 	AvailableStock(ctx context.Context, scope tenancy.Scope, productID string) (int64, error)
 	CreditExposure(ctx context.Context, scope tenancy.Scope, customerID string) (int64, error)

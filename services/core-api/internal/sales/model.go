@@ -240,5 +240,6 @@ var (
 	ErrOfflineCredit          = errors.New("offline sales must be cash sales")
 	ErrOfflinePaymentMethod   = errors.New("offline sales require the physical CASH payment method")
 	ErrOfflineTaxUnsupported  = errors.New("offline sales currently support only zero-rated products")
+	ErrOfflineReconciliation  = errors.New("offline catalog publication evidence is unavailable; retain the exact command for governed reconciliation")
 	ErrUnsafeWireInteger      = wire.ErrUnsafeInteger
 )

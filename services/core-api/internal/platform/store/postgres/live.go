@@ -57,6 +57,14 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 		if acknowledgement != nil && (acknowledgement.MasterDataVersion != value.AvailableMasterDataVersion || acknowledgement.PriceVersion != value.AvailablePriceVersion || acknowledgement.CatalogSnapshotToken != value.AvailableCatalogSnapshotToken) {
 			return devices.ErrStaleMasterData
 		}
+		if acknowledgement != nil {
+			if err := tx.ensureCatalogPublication(ctx, value.Scope, readmodel.CatalogSnapshot{
+				Token: value.AvailableCatalogSnapshotToken, MasterDataVersion: value.AvailableMasterDataVersion,
+				PriceVersion: value.AvailablePriceVersion,
+			}); err != nil {
+				return err
+			}
+		}
 		existing, err := tx.MobileDevice(ctx, value.Scope, value.ActorID, value.ID)
 		if err == nil {
 			existing.AvailableMasterDataVersion, existing.AvailablePriceVersion = value.AvailableMasterDataVersion, value.AvailablePriceVersion
@@ -375,7 +383,73 @@ func (t *transaction) catalogSnapshot(ctx context.Context, scope tenancy.Scope, 
 	if expectedToken != "" && expectedToken != value.Token {
 		return readmodel.CatalogSnapshot{}, devices.ErrStaleMasterData
 	}
+	if err := t.ensureCatalogPublication(ctx, scope, value); err != nil {
+		return readmodel.CatalogSnapshot{}, err
+	}
 	return value, nil
+}
+
+// ensureCatalogPublication captures the complete server-owned posting facts
+// for a token while the caller holds the legal-company catalog version lock.
+// Concurrent readers may race safely through ON CONFLICT; governed writers
+// cannot rotate the token until this transaction releases the lock.
+func (t *transaction) ensureCatalogPublication(ctx context.Context, scope tenancy.Scope, snapshot readmodel.CatalogSnapshot) error {
+	if _, err := t.tx.Exec(ctx, `
+		INSERT INTO catalog_publications (
+			tenant_id, company_id, catalog_snapshot_token, master_data_version, price_version
+		) VALUES ($1,$2,$3,$4,$5)
+		ON CONFLICT (tenant_id, company_id, catalog_snapshot_token) DO NOTHING`,
+		scope.TenantID, scope.CompanyID, snapshot.Token, snapshot.MasterDataVersion, snapshot.PriceVersion); err != nil {
+		return normalizeError(err)
+	}
+	var publishedMasterVersion, publishedPriceVersion int64
+	if err := t.tx.QueryRow(ctx, `
+		SELECT master_data_version, price_version FROM catalog_publications
+		WHERE tenant_id=$1 AND company_id=$2 AND catalog_snapshot_token=$3`,
+		scope.TenantID, scope.CompanyID, snapshot.Token).Scan(&publishedMasterVersion, &publishedPriceVersion); err != nil {
+		return normalizeError(err)
+	}
+	if publishedMasterVersion != snapshot.MasterDataVersion || publishedPriceVersion != snapshot.PriceVersion {
+		return sales.ErrOfflineReconciliation
+	}
+	if _, err := t.tx.Exec(ctx, `
+		INSERT INTO catalog_publication_customers (
+			tenant_id, company_id, catalog_snapshot_token, customer_id, code, name,
+			active, is_general, credit_enabled, credit_limit_minor
+		)
+		SELECT tenant_id, company_id, $3, id, code, name, active, is_general,
+		       credit_enabled, credit_limit_minor
+		FROM customer_accounts WHERE tenant_id=$1 AND company_id=$2
+		ON CONFLICT DO NOTHING`, scope.TenantID, scope.CompanyID, snapshot.Token); err != nil {
+		return normalizeError(err)
+	}
+	if _, err := t.tx.Exec(ctx, `
+		INSERT INTO catalog_publication_products (
+			tenant_id, company_id, catalog_snapshot_token, product_id, sku, name,
+			base_unit_code, active, currency, list_price_minor, standard_cost_minor,
+			tax_code, revenue_account_id, cogs_account_id, inventory_account_id,
+			price_version, master_data_version
+		)
+		SELECT tenant_id, company_id, $3, id, sku, name, base_unit_code, active,
+		       currency, list_price_minor, standard_cost_minor, tax_code,
+		       revenue_account_id, cogs_account_id, inventory_account_id,
+		       price_version, master_data_version
+		FROM products WHERE tenant_id=$1 AND company_id=$2
+		ON CONFLICT DO NOTHING`, scope.TenantID, scope.CompanyID, snapshot.Token); err != nil {
+		return normalizeError(err)
+	}
+	if _, err := t.tx.Exec(ctx, `
+		INSERT INTO catalog_publication_tax_rules (
+			tenant_id, company_id, catalog_snapshot_token, tax_rule_id, code,
+			basis_points, effective_from, effective_to
+		)
+		SELECT tenant_id, company_id, $3, id, code, basis_points,
+		       effective_from, effective_to
+		FROM tax_rules WHERE tenant_id=$1 AND company_id=$2
+		ON CONFLICT DO NOTHING`, scope.TenantID, scope.CompanyID, snapshot.Token); err != nil {
+		return normalizeError(err)
+	}
+	return nil
 }
 
 func (s *Store) ListSales(ctx context.Context, scope tenancy.Scope, actorID string, options readmodel.ListOptions) ([]sales.Sale, error) {

@@ -83,7 +83,8 @@ class SalesController extends ChangeNotifier {
             (sale) =>
                 sale.syncStatus == SyncStatus.pendingSync ||
                 sale.syncStatus == SyncStatus.rejected ||
-                sale.syncStatus == SyncStatus.requiresReview,
+                sale.syncStatus == SyncStatus.requiresReview ||
+                sale.syncStatus == SyncStatus.reconciliationRequired,
           )
           .length;
 
@@ -122,9 +123,18 @@ class SalesController extends ChangeNotifier {
       final index = sales.indexWhere(
         (sale) => sale.clientTransactionId == command.clientTransactionId,
       );
-      final recovered = (index >= 0 ? sales[index] : command.sale).copyWith(
-        syncStatus: SyncStatus.pendingSync,
-        syncMessage: 'Recovered from the durable synchronization queue.',
+      final stored = index >= 0 ? sales[index] : command.sale;
+      final needsReconciliation =
+          stored.syncStatus == SyncStatus.reconciliationRequired;
+      final recovered = stored.copyWith(
+        syncStatus:
+            needsReconciliation
+                ? SyncStatus.reconciliationRequired
+                : SyncStatus.pendingSync,
+        syncMessage:
+            needsReconciliation
+                ? stored.syncMessage
+                : 'Recovered from the durable synchronization queue.',
       );
       if (index >= 0) {
         sales[index] = recovered;
@@ -460,6 +470,7 @@ class SalesController extends ChangeNotifier {
         SyncFailureKind.retryable => SyncStatus.pendingSync,
         SyncFailureKind.ambiguous => SyncStatus.requiresReview,
         SyncFailureKind.terminal => SyncStatus.rejected,
+        SyncFailureKind.reconciliation => SyncStatus.reconciliationRequired,
         SyncFailureKind.authentication ||
         SyncFailureKind.suspended => SyncStatus.requiresReview,
       };
@@ -524,6 +535,9 @@ class SalesController extends ChangeNotifier {
           index = sales.length - 1;
         }
         final sale = sales[index];
+        if (sale.syncStatus == SyncStatus.reconciliationRequired) {
+          continue;
+        }
         sales[index] = sale.copyWith(syncStatus: SyncStatus.syncing);
         notifyListeners();
         sales[index] = await _syncExact(sale, command);

@@ -11,6 +11,7 @@ enum SyncStatus {
   synced,
   rejected,
   requiresReview,
+  reconciliationRequired,
 }
 
 enum FiscalStatus { notConfigured, pending, fiscalized, failed }

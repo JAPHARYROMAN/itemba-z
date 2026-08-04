@@ -9,6 +9,7 @@ enum SyncFailureKind {
   retryable,
   ambiguous,
   terminal,
+  reconciliation,
   authentication,
   suspended,
 }

@@ -60,10 +60,11 @@ effects while preserving the original transaction and its audit history.
 | Duplicate web command | Repeating the same idempotency key and body returns the original sale; a changed body conflicts. |
 | Duplicate mobile synchronization | Repeating `device_id + client_transaction_id` returns the original server sale and cannot post twice. |
 | Unauthorized device | An unbound, disabled, actor-mismatched, or scope-mismatched device cannot synchronize. |
-| Offline cash sale | The encrypted queue survives restart and synchronizes exactly once when the authoritative product, master, price, and tax facts remain compatible; this milestone accepts physical CASH and authoritative zero-rated lines only, while detected drift fails closed for governed review and reconciliation. |
+| Offline cash sale | The encrypted queue survives restart and synchronizes exactly once from the acknowledged immutable publication, including after later customer, product, price, cost, posting-account, or tax configuration drift. This milestone accepts physical CASH and publication-owned zero-rated lines only. |
 | Catalog snapshot download | Every customer and product page echoes the requested immutable token and identical version metadata; token drift aborts the download before installation. |
 | Cache acknowledgement | Installed and available token/version triples are distinct; stale acknowledgements fail, while retry after a lost response is idempotent. |
-| Offline cache lease | A successful acknowledgement issues an exact app/token/master/price lease for no more than four hours and never across a known tax transition; historical rows preserve the authorization proof after renewal, while later governed-data drift still fails closed. |
+| Offline cache lease | A successful acknowledgement issues an exact app/token/master/price lease for no more than four hours and never across a known tax transition; historical lease and catalog-publication rows preserve both authorization and posting facts after renewal. |
+| Missing publication evidence | The API returns `offline_reconciliation_required` with no business effects; the POS retains the exact idempotent command as Reconciliation Required across restart and does not automatically retry it. |
 | Late tax scheduling | Tax-rule mutations that overlap an outstanding lease are rejected under the same serialization lock used by acknowledgement. |
 | Queued business day | Offline daily limits are charged to the lease-validated client creation day in the legal-company timezone, even when synchronization occurs after midnight. |
 | Exact integers | TZS minor-unit amounts and whole-unit quantities remain within the JSON safe-integer contract or fail with 422 and no effects. |
@@ -82,15 +83,14 @@ receipt until those integrations receive professional validation. Mobile credit
 sale entry also remains fail-closed until the authoritative AR-aging and credit
 policy contract supplies overdue amount, due date, approval state, and the
 expected post-sale balance. The client must never infer a zero overdue balance.
-Offline nonzero-tax sale completion also remains fail-closed until posting owns
-a governed historical tax/clock snapshot; the live product tax rate is exposed
-for exact review totals but is not sufficient statutory evidence.
-Production continuity across catalog or price changes additionally requires
-versioned historical product/price facts and
-an operator workflow that reconciles collected cash when a queued transaction
-fails closed. The current milestone demonstrates conflict detection and durable
-review state; the immutable token closes the download/activation race but does
-not claim unattended recovery across later configuration drift.
+Offline nonzero-tax sale completion remains fail-closed pending professional
+validation of document-time tax and fiscalization policy. Posting now owns the
+effective tax rules in each immutable publication, but the current release
+slice deliberately accepts only zero-rated offline lines. A server-side
+operator workflow is still required to register, investigate, approve, and
+audit resolution when historical publication evidence is missing; the mobile
+client currently preserves and pauses the exact command without granting
+itself authority to alter or repost it.
 Release 1 also needs a governed distinction between offline document time and
 server posting time, including clock-skew limits, fiscal-period policy, and a
 reconciliation path for sales synchronized after a period boundary. The

@@ -480,7 +480,7 @@ func TestOfflineLeaseNeverExceedsFourHours(t *testing.T) {
 	}
 }
 
-func TestHistoricalLeaseSurvivesRenewalAndRejectsChangedProductPrice(t *testing.T) {
+func TestHistoricalLeasePostsImmutableProductFactsAfterRenewalAndPriceChange(t *testing.T) {
 	at := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
 	store, firstService := fixture(t, at)
 	store.SeedTaxRate(memory.TaxRate{TenantID: tenantID, CompanyID: companyID, Code: "VAT", BasisPoints: 0, EffectiveFrom: at.Add(-time.Minute)})
@@ -542,13 +542,42 @@ func TestHistoricalLeaseSurvivesRenewalAndRejectsChangedProductPrice(t *testing.
 	}
 	queued.ClientTransactionID = "20000000-0000-4000-8000-000000000024"
 	queued.ClientTimestamp = at.Add(45 * time.Minute)
-	if _, err := renewalService.SyncSale(context.Background(), testScope, actorID, "", queued); !errors.Is(err, devices.ErrStaleMasterData) {
-		t.Fatalf("changed historic price error=%v", err)
+	historical, err := renewalService.SyncSale(context.Background(), testScope, actorID, "", queued)
+	if err != nil {
+		t.Fatalf("historical publication post: %v", err)
+	}
+	if historical.Sale.TotalMinor != 10_000 || historical.Sale.Lines[0].UnitPriceMinor != 10_000 || historical.Sale.Lines[0].UnitCostMinor != 6_000 {
+		t.Fatalf("historical facts were not preserved: %+v", historical.Sale)
 	}
 	after := store.Snapshot()
-	if len(after.Sales) != len(before.Sales) || len(after.Payments) != len(before.Payments) || len(after.Journals) != len(before.Journals) || len(after.Outbox) != len(before.Outbox) || len(after.Movements) != len(before.Movements) {
-		t.Fatalf("rejected changed-price sale left effects: before=%+v after=%+v", before, after)
+	if len(after.Sales) != len(before.Sales)+1 || len(after.Payments) != len(before.Payments)+1 || len(after.Journals) != len(before.Journals)+1 || len(after.Outbox) != len(before.Outbox)+1 || len(after.Movements) != len(before.Movements)+1 {
+		t.Fatalf("historical sale did not commit exactly once: before=%+v after=%+v", before, after)
 	}
+}
+
+func TestMissingHistoricalPublicationFactRequiresReconciliationWithoutEffects(t *testing.T) {
+	at := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
+	store, service := fixture(t, at)
+	store.SeedTaxRate(memory.TaxRate{TenantID: tenantID, CompanyID: companyID, Code: "VAT", BasisPoints: 0, EffectiveFrom: at.Add(-time.Minute)})
+	store.SeedDevice(offlineDevice(at))
+	const unpublishedProductID = "20000000-0000-4000-8000-000000000099"
+	store.SeedProduct(catalog.Product{
+		ID: unpublishedProductID, TenantID: tenantID, CompanyID: companyID, SKU: "LATE", Name: "Not published",
+		BaseUnitCode: "EA", Active: true, Currency: "TZS", ListPriceMinor: 10_000,
+		StandardCostMinor: 6_000, TaxCode: "VAT", RevenueAccountID: "revenue",
+		COGSAccountID: "cogs", InventoryAccountID: "inventory", PriceVersion: 1, MasterDataVersion: 1,
+	})
+	command := mobile.SyncCommand{
+		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash,
+		Lines: []sales.CommandLine{{ProductID: unpublishedProductID, Quantity: 1}}, DeviceID: deviceID,
+		ClientTransactionID: "20000000-0000-4000-8000-000000000098", ClientTimestamp: at,
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1,
+		SyncAttempt: 1, Offline: true,
+	}
+	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", command); !errors.Is(err, sales.ErrOfflineReconciliation) {
+		t.Fatalf("missing publication fact error=%v", err)
+	}
+	assertNoMobileSaleEffects(t, store)
 }
 
 func assertNoMobileSaleEffects(t *testing.T, store *memory.Store) {

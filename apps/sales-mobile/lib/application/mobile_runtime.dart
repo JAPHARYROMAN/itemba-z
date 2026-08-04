@@ -576,6 +576,7 @@ class MobileRuntimeController extends ChangeNotifier {
     ApiFailureKind.suspended => LiveConnectionState.suspended,
     ApiFailureKind.retryable ||
     ApiFailureKind.terminal ||
+    ApiFailureKind.reconciliation ||
     ApiFailureKind.invalidResponse => LiveConnectionState.error,
   };
 

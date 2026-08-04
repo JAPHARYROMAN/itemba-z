@@ -137,14 +137,18 @@ void main() {
       expect(queued.idempotencyKey, command.idempotencyKey);
       expect(queued.sale.total, sale.total);
       await store.recordSyncFailure(
-        sale: sale.copyWith(syncStatus: SyncStatus.requiresReview),
+        sale: sale.copyWith(syncStatus: SyncStatus.reconciliationRequired),
         idempotencyKey: command.idempotencyKey,
         authoritativeRejection: false,
       );
       expect(
+        (await store.readSales()).single.syncStatus,
+        SyncStatus.reconciliationRequired,
+      );
+      expect(
         await store.readSyncQueue(),
         hasLength(1),
-        reason: 'ambiguous failures must retain the exact command',
+        reason: 'reconciliation must retain the exact command',
       );
 
       const result = SyncResult(

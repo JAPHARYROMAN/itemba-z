@@ -87,6 +87,34 @@ void main() {
     expect(rejected.syncStatus, SyncStatus.rejected);
     expect(await store.readSyncQueue(), isEmpty);
   });
+
+  test(
+    'reconciliation retains the exact command and pauses automatic retry',
+    () async {
+      final store = InMemoryEncryptedLocalStore();
+      final gateway = _FailingGateway(SyncFailureKind.reconciliation);
+      final controller = SalesController(store: store, gateway: gateway);
+      final draft = controller.createNewSale()..addProduct(demoProducts.first);
+
+      final held = await controller.completeSale(draft);
+
+      expect(held.syncStatus, SyncStatus.reconciliationRequired);
+      expect(await store.readSyncQueue(), hasLength(1));
+      final restarted = SalesController(store: store, gateway: gateway);
+      await restarted.initializeLocalData();
+      expect(
+        restarted.sales.single.syncStatus,
+        SyncStatus.reconciliationRequired,
+      );
+      await restarted.synchronizePending();
+      expect(
+        gateway.calls,
+        1,
+        reason: 'operator review must precede another post',
+      );
+      expect(await store.readSyncQueue(), hasLength(1));
+    },
+  );
 }
 
 class _FailingGateway implements AuthoritativeSyncGateway {

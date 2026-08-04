@@ -46,6 +46,12 @@ type idempotency struct {
 	ResultID    string
 }
 
+type catalogPublication struct {
+	customers map[string]customers.Account
+	products  map[string]catalog.Product
+	taxRates  []TaxRate
+}
+
 type state struct {
 	permissions   map[string]bool
 	customers     map[string]customers.Account
@@ -65,6 +71,7 @@ type state struct {
 	devices       map[string]devices.Device
 	offlineLeases []devices.OfflineLease
 	allocations   map[string]int64
+	publications  map[string]catalogPublication
 }
 
 func newState() *state {
@@ -74,7 +81,7 @@ func newState() *state {
 		posting: make(map[string]finance.SalesPostingConfig), sales: make(map[string]sales.Sale),
 		idempotencies: make(map[string]idempotency),
 		contexts:      make(map[string]readmodel.WorkingContext), devices: make(map[string]devices.Device),
-		allocations: make(map[string]int64),
+		allocations: make(map[string]int64), publications: make(map[string]catalogPublication),
 	}
 }
 
@@ -172,6 +179,9 @@ func (s *Store) SeedDevice(value devices.Device) {
 	if value.AvailableCatalogSnapshotToken == "" {
 		value.AvailableCatalogSnapshotToken = value.CatalogSnapshotToken
 	}
+	if value.CatalogSnapshotToken != devices.UnacknowledgedCatalogSnapshotToken {
+		captureCatalogPublication(s.state, value.Scope, value.CatalogSnapshotToken)
+	}
 	s.state.devices[deviceKey(value.Scope.TenantID, value.ID)] = value
 	if value.OfflineSalesValidUntil.After(value.OfflineSalesValidFrom) {
 		appendOfflineLease(s.state, devices.OfflineLease{
@@ -260,6 +270,18 @@ func (t *transaction) Customer(_ context.Context, scope tenancy.Scope, customerI
 	return value, nil
 }
 
+func (t *transaction) OfflineCatalogCustomer(_ context.Context, scope tenancy.Scope, catalogSnapshotToken, customerID string) (customers.Account, error) {
+	publication, ok := t.state.publications[publicationKey(scope, catalogSnapshotToken)]
+	if !ok {
+		return customers.Account{}, sales.ErrOfflineReconciliation
+	}
+	value, ok := publication.customers[customerID]
+	if !ok {
+		return customers.Account{}, sales.ErrOfflineReconciliation
+	}
+	return value, nil
+}
+
 func (t *transaction) LockCustomerCredit(_ context.Context, scope tenancy.Scope, customerID string) error {
 	value, ok := t.state.customers[companyEntityKey(scope.TenantID, scope.CompanyID, customerID)]
 	if !ok || value.TenantID != scope.TenantID || value.CompanyID != scope.CompanyID {
@@ -274,6 +296,31 @@ func (t *transaction) Product(_ context.Context, scope tenancy.Scope, productID 
 		return catalog.Product{}, sales.ErrNotFound
 	}
 	return value, nil
+}
+
+func (t *transaction) OfflineCatalogProduct(_ context.Context, scope tenancy.Scope, catalogSnapshotToken, productID string, at time.Time) (catalog.Product, int64, error) {
+	publication, ok := t.state.publications[publicationKey(scope, catalogSnapshotToken)]
+	if !ok {
+		return catalog.Product{}, 0, sales.ErrOfflineReconciliation
+	}
+	product, ok := publication.products[productID]
+	if !ok {
+		return catalog.Product{}, 0, sales.ErrOfflineReconciliation
+	}
+	found := false
+	var selected TaxRate
+	for _, value := range publication.taxRates {
+		if value.Code != product.TaxCode || at.Before(value.EffectiveFrom) || (value.EffectiveTo != nil && !at.Before(*value.EffectiveTo)) {
+			continue
+		}
+		if !found || value.EffectiveFrom.After(selected.EffectiveFrom) {
+			selected, found = value, true
+		}
+	}
+	if !found {
+		return catalog.Product{}, 0, sales.ErrOfflineReconciliation
+	}
+	return product, selected.BasisPoints, nil
 }
 
 func (t *transaction) TaxRateBasisPoints(_ context.Context, scope tenancy.Scope, code string, at time.Time) (int64, error) {
@@ -501,6 +548,36 @@ func deviceKey(tenantID, deviceID string) string { return tenantID + "\x00" + de
 func allocationKey(scope tenancy.Scope, deviceID, productID string) string {
 	return scopeKey(scope) + "\x00" + deviceID + "\x00" + productID
 }
+func publicationKey(scope tenancy.Scope, token string) string {
+	return companyKey(scope.TenantID, scope.CompanyID) + "\x00" + token
+}
+
+func captureCatalogPublication(current *state, scope tenancy.Scope, token string) {
+	key := publicationKey(scope, token)
+	if _, exists := current.publications[key]; exists {
+		return
+	}
+	publication := catalogPublication{
+		customers: make(map[string]customers.Account),
+		products:  make(map[string]catalog.Product),
+	}
+	for _, value := range current.customers {
+		if value.TenantID == scope.TenantID && value.CompanyID == scope.CompanyID {
+			publication.customers[value.ID] = value
+		}
+	}
+	for _, value := range current.products {
+		if value.TenantID == scope.TenantID && value.CompanyID == scope.CompanyID {
+			publication.products[value.ID] = value
+		}
+	}
+	for _, value := range current.taxRates {
+		if value.TenantID == scope.TenantID && value.CompanyID == scope.CompanyID {
+			publication.taxRates = append(publication.taxRates, value)
+		}
+	}
+	current.publications[key] = publication
+}
 
 func cloneState(source *state) *state {
 	result := newState()
@@ -543,6 +620,20 @@ func cloneState(source *state) *state {
 	result.offlineLeases = append([]devices.OfflineLease(nil), source.offlineLeases...)
 	for key, value := range source.allocations {
 		result.allocations[key] = value
+	}
+	for key, value := range source.publications {
+		copyValue := catalogPublication{
+			customers: make(map[string]customers.Account, len(value.customers)),
+			products:  make(map[string]catalog.Product, len(value.products)),
+			taxRates:  append([]TaxRate(nil), value.taxRates...),
+		}
+		for id, account := range value.customers {
+			copyValue.customers[id] = account
+		}
+		for id, product := range value.products {
+			copyValue.products[id] = product
+		}
+		result.publications[key] = copyValue
 	}
 	return result
 }

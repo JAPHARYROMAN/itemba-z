@@ -39,7 +39,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -265,14 +265,16 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 		t.Fatalf("sale after rejected transition: %v", err)
 	}
 	finalPriceVersion := priceVersion + 2
-	if _, err := pool.Exec(ctx, `UPDATE `+pgx.Identifier{schema}.Sanitize()+`.legal_companies
-		SET price_version=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, companyID, finalPriceVersion); err != nil {
+	var finalSnapshotToken string
+	if err := pool.QueryRow(ctx, `UPDATE `+pgx.Identifier{schema}.Sanitize()+`.legal_companies
+		SET price_version=$3, catalog_snapshot_token=gen_random_uuid()
+		WHERE tenant_id=$1 AND id=$2 RETURNING catalog_snapshot_token`, tenantID, companyID, finalPriceVersion).Scan(&finalSnapshotToken); err != nil {
 		t.Fatal(err)
 	}
 	refreshed, err := mobileService.Enroll(ctx, mobile.EnrollCommand{
 		Scope: scope, ActorID: userID, DeviceID: deviceID, DeviceName: "Integration POS", AppVersion: "1.1.0",
 	})
-	if err != nil || refreshed.MasterDataVersion != taxMasterVersion || refreshed.PriceVersion != priceVersion || refreshed.CatalogSnapshotToken != taxSnapshotToken || refreshed.AvailableMasterDataVersion != taxMasterVersion || refreshed.AvailablePriceVersion != finalPriceVersion || refreshed.AvailableCatalogSnapshotToken != taxSnapshotToken || refreshed.AppVersion != "1.0.0" {
+	if err != nil || refreshed.MasterDataVersion != taxMasterVersion || refreshed.PriceVersion != priceVersion || refreshed.CatalogSnapshotToken != taxSnapshotToken || refreshed.AvailableMasterDataVersion != taxMasterVersion || refreshed.AvailablePriceVersion != finalPriceVersion || refreshed.AvailableCatalogSnapshotToken != finalSnapshotToken || refreshed.AppVersion != "1.0.0" {
 		t.Fatalf("re-enrollment changed unacknowledged installed versions: %+v err=%v", refreshed, err)
 	}
 	var persistedAppVersion string
@@ -296,9 +298,9 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	for attempt := 1; attempt <= 2; attempt++ {
 		acknowledged, err := mobileService.Enroll(ctx, mobile.EnrollCommand{
 			Scope: scope, ActorID: userID, DeviceID: deviceID, DeviceName: "Integration POS", AppVersion: "1.1.0",
-			InstalledMasterDataVersion: &taxMasterVersion, InstalledPriceVersion: &finalPriceVersion, InstalledCatalogSnapshotToken: &taxSnapshotToken,
+			InstalledMasterDataVersion: &taxMasterVersion, InstalledPriceVersion: &finalPriceVersion, InstalledCatalogSnapshotToken: &finalSnapshotToken,
 		})
-		if err != nil || acknowledged.AppVersion != "1.1.0" || acknowledged.MasterDataVersion != taxMasterVersion || acknowledged.PriceVersion != finalPriceVersion || acknowledged.CatalogSnapshotToken != taxSnapshotToken {
+		if err != nil || acknowledged.AppVersion != "1.1.0" || acknowledged.MasterDataVersion != taxMasterVersion || acknowledged.PriceVersion != finalPriceVersion || acknowledged.CatalogSnapshotToken != finalSnapshotToken {
 			t.Fatalf("app/cache acknowledgement attempt %d: %+v err=%v", attempt, acknowledged, err)
 		}
 		if err := pool.QueryRow(ctx, `SELECT
@@ -321,7 +323,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	for label, payload := range map[string][]byte{"audit": auditedPayload, "outbox": publishedPayload} {
 		var finalState devices.Device
 		if err := json.Unmarshal(payload, &finalState); err != nil || finalState.AppVersion != "1.1.0" ||
-			finalState.MasterDataVersion != taxMasterVersion || finalState.PriceVersion != finalPriceVersion || finalState.CatalogSnapshotToken != taxSnapshotToken || !finalState.OfflineSalesValidUntil.After(leaseStart) {
+			finalState.MasterDataVersion != taxMasterVersion || finalState.PriceVersion != finalPriceVersion || finalState.CatalogSnapshotToken != finalSnapshotToken || !finalState.OfflineSalesValidUntil.After(leaseStart) {
 			t.Fatalf("%s acknowledgement payload=%+v err=%v", label, finalState, err)
 		}
 	}
@@ -333,7 +335,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	renewed, err := renewalService.Enroll(ctx, mobile.EnrollCommand{
 		Scope: scope, ActorID: userID, DeviceID: deviceID, DeviceName: "Integration POS", AppVersion: "1.1.0",
-		InstalledMasterDataVersion: &taxMasterVersion, InstalledPriceVersion: &finalPriceVersion, InstalledCatalogSnapshotToken: &taxSnapshotToken,
+		InstalledMasterDataVersion: &taxMasterVersion, InstalledPriceVersion: &finalPriceVersion, InstalledCatalogSnapshotToken: &finalSnapshotToken,
 	})
 	if err != nil || !renewed.OfflineSalesValidUntil.Equal(expiredAt.Add(devices.OfflineSalesLeaseDuration)) {
 		t.Fatalf("expired lease renewal: %+v err=%v", renewed, err)
@@ -464,7 +466,7 @@ func TestRestrictedRuntimeRoleEnforcesTenantRLS(t *testing.T) {
 		_, _ = clusterPool.Exec(context.Background(), "DROP ROLE "+pgx.Identifier{apiUser}.Sanitize())
 		_, _ = clusterPool.Exec(context.Background(), "DROP ROLE "+pgx.Identifier{workerUser}.Sanitize())
 	}()
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql"} {
 		applyTestMigration(t, ctx, adminPool, "itembaz", name)
 	}
 	const (
@@ -514,6 +516,20 @@ func TestRestrictedRuntimeRoleEnforcesTenantRLS(t *testing.T) {
 	if !apiLeaseSelect || !apiLeaseInsert || !apiLeaseColumnUpdate || apiLeaseUpdate || apiLeaseDelete || workerLeaseSelect {
 		t.Fatalf("unsafe lease capabilities api(select=%v insert=%v update=%v delete=%v column_update=%v) worker_select=%v",
 			apiLeaseSelect, apiLeaseInsert, apiLeaseUpdate, apiLeaseDelete, apiLeaseColumnUpdate, workerLeaseSelect)
+	}
+	var apiPublicationSelect, apiPublicationInsert, apiPublicationUpdate, apiPublicationDelete, workerPublicationSelect bool
+	if err := adminPool.QueryRow(ctx, `
+		SELECT has_table_privilege($1, 'itembaz.catalog_publications', 'SELECT'),
+		       has_table_privilege($1, 'itembaz.catalog_publications', 'INSERT'),
+		       has_table_privilege($1, 'itembaz.catalog_publications', 'UPDATE'),
+		       has_table_privilege($1, 'itembaz.catalog_publications', 'DELETE'),
+		       has_table_privilege($2, 'itembaz.catalog_publications', 'SELECT')`, apiUser, workerUser).Scan(
+		&apiPublicationSelect, &apiPublicationInsert, &apiPublicationUpdate, &apiPublicationDelete, &workerPublicationSelect); err != nil {
+		t.Fatal(err)
+	}
+	if !apiPublicationSelect || !apiPublicationInsert || apiPublicationUpdate || apiPublicationDelete || workerPublicationSelect {
+		t.Fatalf("unsafe publication capabilities api(select=%v insert=%v update=%v delete=%v) worker_select=%v",
+			apiPublicationSelect, apiPublicationInsert, apiPublicationUpdate, apiPublicationDelete, workerPublicationSelect)
 	}
 	var futureACL string
 	var apiFutureExecute bool
@@ -577,6 +593,15 @@ func TestRestrictedRuntimeRoleEnforcesTenantRLS(t *testing.T) {
 	}
 	if err := connection.QueryRow(ctx, `SELECT count(*) FROM legal_companies`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("correct tenant context returned %d companies: %v", count, err)
+	}
+	if _, err := connection.Exec(ctx, `INSERT INTO catalog_publications
+		(tenant_id,company_id,catalog_snapshot_token,master_data_version,price_version)
+		SELECT tenant_id,id,catalog_snapshot_token,master_data_version,price_version
+		FROM legal_companies WHERE tenant_id=$1 AND id=$2`, tenantA, companyA); err != nil {
+		t.Fatalf("API lost required publication insert capability: %v", err)
+	}
+	if _, err := connection.Exec(ctx, `UPDATE catalog_publications SET price_version=price_version+1 WHERE tenant_id=$1`, tenantA); err == nil {
+		t.Fatal("API could mutate immutable catalog publication evidence")
 	}
 	if _, err := connection.Exec(ctx, `INSERT INTO legal_companies(id,tenant_id,name) VALUES($1,$2,'Forbidden')`,
 		"60000000-0000-4000-8000-000000000005", tenantB); err == nil {

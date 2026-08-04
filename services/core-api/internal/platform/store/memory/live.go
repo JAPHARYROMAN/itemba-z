@@ -37,6 +37,9 @@ func (s *Store) EnrollDevice(_ context.Context, value devices.Device, acknowledg
 	if err := devices.ValidateWireSafe(value); err != nil {
 		return devices.Device{}, err
 	}
+	if acknowledgement != nil {
+		captureCatalogPublication(s.state, value.Scope, acknowledgement.CatalogSnapshotToken)
+	}
 	if existing, ok := s.state.devices[key]; ok {
 		if existing.Scope != value.Scope || existing.ActorID != value.ActorID {
 			return devices.Device{}, devices.ErrScopeMismatch
@@ -200,6 +203,7 @@ func (s *Store) ListCustomers(_ context.Context, scope tenancy.Scope, actorID st
 	if options.CatalogSnapshotToken != "" && options.CatalogSnapshotToken != snapshot.Token {
 		return readmodel.CatalogSnapshot{}, nil, devices.ErrStaleMasterData
 	}
+	captureCatalogPublication(s.state, scope, snapshot.Token)
 	query := strings.ToLower(options.Query)
 	items := make([]readmodel.CustomerSummary, 0)
 	for _, account := range s.state.customers {
@@ -248,6 +252,7 @@ func (s *Store) ListProducts(_ context.Context, scope tenancy.Scope, actorID str
 	if options.CatalogSnapshotToken != "" && options.CatalogSnapshotToken != snapshot.Token {
 		return readmodel.CatalogSnapshot{}, nil, devices.ErrStaleMasterData
 	}
+	captureCatalogPublication(s.state, scope, snapshot.Token)
 	query := strings.ToLower(options.Query)
 	items := make([]readmodel.ProductSummary, 0)
 	for _, product := range s.state.products {

@@ -103,6 +103,26 @@ func (t *transaction) Customer(ctx context.Context, scope tenancy.Scope, custome
 	return value, normalizeError(err)
 }
 
+func (t *transaction) OfflineCatalogCustomer(ctx context.Context, scope tenancy.Scope, catalogSnapshotToken, customerID string) (customers.Account, error) {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return customers.Account{}, err
+	}
+	var value customers.Account
+	err := t.tx.QueryRow(ctx, `
+		SELECT customer_id, code, tenant_id, company_id, name, active, is_general,
+		       credit_enabled, credit_limit_minor
+		FROM catalog_publication_customers
+		WHERE tenant_id = $1 AND company_id = $2
+		  AND catalog_snapshot_token = $3 AND customer_id = $4`,
+		scope.TenantID, scope.CompanyID, catalogSnapshotToken, customerID).Scan(
+		&value.ID, &value.Code, &value.TenantID, &value.CompanyID, &value.Name,
+		&value.Active, &value.General, &value.CreditEnabled, &value.CreditLimitMinor)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return customers.Account{}, sales.ErrOfflineReconciliation
+	}
+	return value, normalizeError(err)
+}
+
 func (t *transaction) LockCustomerCredit(ctx context.Context, scope tenancy.Scope, customerID string) error {
 	if err := t.ensureScope(ctx, scope); err != nil {
 		return err
@@ -139,6 +159,42 @@ func (t *transaction) Product(ctx context.Context, scope tenancy.Scope, productI
 		&value.RevenueAccountID, &value.COGSAccountID, &value.InventoryAccountID,
 		&value.PriceVersion, &value.MasterDataVersion)
 	return value, normalizeError(err)
+}
+
+func (t *transaction) OfflineCatalogProduct(ctx context.Context, scope tenancy.Scope, catalogSnapshotToken, productID string, at time.Time) (catalog.Product, int64, error) {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return catalog.Product{}, 0, err
+	}
+	var value catalog.Product
+	var rate int64
+	err := t.tx.QueryRow(ctx, `
+		SELECT p.product_id, p.tenant_id, p.company_id, p.sku, p.name,
+		       p.base_unit_code, p.active, p.currency, p.list_price_minor,
+		       p.standard_cost_minor, p.tax_code, p.revenue_account_id,
+		       p.cogs_account_id, p.inventory_account_id, p.price_version,
+		       p.master_data_version, tax.basis_points
+		FROM catalog_publication_products p
+		JOIN LATERAL (
+			SELECT r.basis_points
+			FROM catalog_publication_tax_rules r
+			WHERE r.tenant_id = p.tenant_id AND r.company_id = p.company_id
+			  AND r.catalog_snapshot_token = p.catalog_snapshot_token
+			  AND r.code = p.tax_code AND r.effective_from <= $5
+			  AND (r.effective_to IS NULL OR r.effective_to > $5)
+			ORDER BY r.effective_from DESC LIMIT 1
+		) tax ON true
+		WHERE p.tenant_id = $1 AND p.company_id = $2
+		  AND p.catalog_snapshot_token = $3 AND p.product_id = $4`,
+		scope.TenantID, scope.CompanyID, catalogSnapshotToken, productID, at).Scan(
+		&value.ID, &value.TenantID, &value.CompanyID, &value.SKU, &value.Name,
+		&value.BaseUnitCode, &value.Active, &value.Currency, &value.ListPriceMinor,
+		&value.StandardCostMinor, &value.TaxCode, &value.RevenueAccountID,
+		&value.COGSAccountID, &value.InventoryAccountID, &value.PriceVersion,
+		&value.MasterDataVersion, &rate)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return catalog.Product{}, 0, sales.ErrOfflineReconciliation
+	}
+	return value, rate, normalizeError(err)
 }
 
 func (t *transaction) TaxRateBasisPoints(ctx context.Context, scope tenancy.Scope, taxCode string, at time.Time) (int64, error) {

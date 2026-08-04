@@ -274,6 +274,44 @@ void main() {
     expect(transport.requests, hasLength(1));
   });
 
+  test(
+    'catalog evidence gap is classified for governed reconciliation',
+    () async {
+      final transport = InMemoryApiTransport(
+        (_) => _json(409, {
+          'type': 'about:blank',
+          'title': 'Conflict',
+          'detail': 'Retain the exact command for governed reconciliation.',
+          'status': 409,
+          'code': 'offline_reconciliation_required',
+          'correlation_id': actorId,
+        }),
+      );
+      final gateway = HttpAuthoritativeSyncGateway(
+        api: await _bearerApi(transport),
+        delay: (_) async {},
+      );
+
+      await expectLater(
+        gateway.submit(_command()),
+        throwsA(
+          isA<SyncFailure>()
+              .having(
+                (failure) => failure.kind,
+                'kind',
+                SyncFailureKind.reconciliation,
+              )
+              .having(
+                (failure) => failure.code,
+                'code',
+                'offline_reconciliation_required',
+              ),
+        ),
+      );
+      expect(transport.requests, hasLength(1));
+    },
+  );
+
   test('corrupt success response is ambiguous, never terminal', () async {
     final gateway = HttpAuthoritativeSyncGateway(
       api: await _bearerApi(

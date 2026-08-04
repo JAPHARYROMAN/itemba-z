@@ -43,6 +43,7 @@ class HttpAuthoritativeSyncGateway implements AuthoritativeSyncGateway {
       ApiFailureKind.invalidResponse => SyncFailureKind.ambiguous,
       ApiFailureKind.authentication => SyncFailureKind.authentication,
       ApiFailureKind.suspended => SyncFailureKind.suspended,
+      ApiFailureKind.reconciliation => SyncFailureKind.reconciliation,
       ApiFailureKind.terminal => SyncFailureKind.terminal,
     },
     message: error.message,

@@ -13,6 +13,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/catalog"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
@@ -122,7 +123,12 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 			}
 		}
 
-		customer, err := tx.Customer(ctx, command.Scope, command.CustomerID)
+		var customer customers.Account
+		if command.Offline {
+			customer, err = tx.OfflineCatalogCustomer(ctx, command.Scope, command.CatalogSnapshotToken, command.CustomerID)
+		} else {
+			customer, err = tx.Customer(ctx, command.Scope, command.CustomerID)
+		}
 		if err != nil {
 			return err
 		}
@@ -188,19 +194,18 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 		}
 		journalEntries := make([]finance.JournalEntry, 0, 2+len(command.Lines)*3)
 		for _, requested := range command.Lines {
-			product, err := tx.Product(ctx, command.Scope, requested.ProductID)
+			var product catalog.Product
+			var rate int64
+			if command.Offline {
+				product, rate, err = tx.OfflineCatalogProduct(ctx, command.Scope, command.CatalogSnapshotToken, requested.ProductID, command.ClientTimestamp.UTC())
+			} else {
+				product, err = tx.Product(ctx, command.Scope, requested.ProductID)
+			}
 			if err != nil {
 				return err
 			}
 			if !product.Active {
 				return ErrProductInactive
-			}
-			// Per-product versions are the version in which that product last
-			// changed. A historical lease may legitimately predate unrelated
-			// company changes, but it must fail closed if this product moved
-			// beyond either governed cache version in the command.
-			if command.Offline && (product.PriceVersion > command.PriceVersion || product.MasterDataVersion > command.MasterDataVersion) {
-				return devices.ErrStaleMasterData
 			}
 			if product.ListPriceMinor <= 0 || product.StandardCostMinor < 0 ||
 				product.RevenueAccountID == "" || product.COGSAccountID == "" || product.InventoryAccountID == "" {
@@ -211,13 +216,11 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 			} else if sale.Currency != product.Currency {
 				return ErrInvalidCommand
 			}
-			taxAt := now
-			if command.Offline {
-				taxAt = command.ClientTimestamp.UTC()
-			}
-			rate, err := tx.TaxRateBasisPoints(ctx, command.Scope, product.TaxCode, taxAt)
-			if err != nil {
-				return err
+			if !command.Offline {
+				rate, err = tx.TaxRateBasisPoints(ctx, command.Scope, product.TaxCode, now)
+				if err != nil {
+					return err
+				}
 			}
 			if command.Offline && rate != 0 {
 				return ErrOfflineTaxUnsupported

@@ -17,6 +17,7 @@ const int maximumSafeApiInteger = 9007199254740991;
 enum ApiFailureKind {
   retryable,
   terminal,
+  reconciliation,
   authentication,
   suspended,
   invalidResponse,
@@ -667,11 +668,12 @@ class ItembaApiClient {
         problemCode != null &&
         problemCorrelation != null &&
         UuidGenerator.isValid(problemCorrelation);
-    final kind = switch (status) {
-      401 => ApiFailureKind.authentication,
-      403 => ApiFailureKind.suspended,
-      408 || 429 => ApiFailureKind.retryable,
-      >= 500 => ApiFailureKind.retryable,
+    final kind = switch ((status, problemCode)) {
+      (409, 'offline_reconciliation_required') => ApiFailureKind.reconciliation,
+      (401, _) => ApiFailureKind.authentication,
+      (403, _) => ApiFailureKind.suspended,
+      (408 || 429, _) => ApiFailureKind.retryable,
+      (>= 500, _) => ApiFailureKind.retryable,
       _ when authoritativeRejection => ApiFailureKind.terminal,
       _ => ApiFailureKind.invalidResponse,
     };
