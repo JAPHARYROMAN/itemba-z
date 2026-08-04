@@ -1,8 +1,9 @@
 import type { BackendIdentity } from "@/live-api/auth";
 import { buildIdentityHeaders } from "@/live-api/auth";
 import type {
-  CompleteSaleCommand, CustomerPage, ProductPage, PublicProblem, ReverseSaleCommand,
-  Sale, SalePage, WorkingContext,
+  CompleteSaleCommand, CustomerPage, MobileReconciliationCase, MobileReconciliationPage,
+  MobileReconciliationStatus, ProductPage, PublicProblem, ResolveMobileReconciliationCommand,
+  ReverseSaleCommand, Sale, SalePage, WorkingContext,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -194,6 +195,25 @@ export class ItembaApiClient {
 
   reverseSale(saleId: string, command: ReverseSaleCommand, idempotencyKey: string): Promise<Sale> {
     return this.request(`/v1/sales/${encodeURIComponent(saleId)}/reversals`, {
+      method: "POST",
+      body: command,
+      idempotencyKey,
+    });
+  }
+
+  listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
+    const query = new URLSearchParams({ page_size: "100" });
+    if (status) query.set("status", status);
+    if (cursor) query.set("cursor", cursor);
+    return this.request(`/v1/mobile/reconciliation-cases?${query.toString()}`);
+  }
+
+  getReconciliationCase(caseId: string): Promise<MobileReconciliationCase> {
+    return this.request(`/v1/mobile/reconciliation-cases/${encodeURIComponent(caseId)}`);
+  }
+
+  resolveReconciliationCase(caseId: string, command: ResolveMobileReconciliationCommand, idempotencyKey: string): Promise<MobileReconciliationCase> {
+    return this.request(`/v1/mobile/reconciliation-cases/${encodeURIComponent(caseId)}/resolutions`, {
       method: "POST",
       body: command,
       idempotencyKey,

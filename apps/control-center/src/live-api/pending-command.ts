@@ -66,6 +66,10 @@ export function saleReversalPendingScope(context: PendingCommandOwnerContext, sa
   return `sales:reverse:${commandOwnerScope(context)}:sale=${encodeURIComponent(saleId)}`;
 }
 
+export function reconciliationResolutionPendingScope(context: PendingCommandOwnerContext, caseId: string): string {
+  return `mobile:reconciliation:resolve:${commandOwnerScope(context)}:case=${encodeURIComponent(caseId)}`;
+}
+
 export function pendingCommandStorageKey(scope: string): string {
   return `${STORAGE_PREFIX}${scope}`;
 }

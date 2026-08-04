@@ -10,6 +10,10 @@ export type SalePage = components["schemas"]["SalePage"];
 export type PaymentMethod = components["schemas"]["PaymentMethod"];
 export type CompleteSaleCommand = components["schemas"]["CompleteSaleCommand"];
 export type ReverseSaleCommand = components["schemas"]["ReverseSaleCommand"];
+export type MobileReconciliationCase = components["schemas"]["MobileReconciliationCase"];
+export type MobileReconciliationPage = components["schemas"]["MobileReconciliationPage"];
+export type MobileReconciliationStatus = components["schemas"]["MobileReconciliationStatus"];
+export type ResolveMobileReconciliationCommand = components["schemas"]["ResolveMobileReconciliationCommand"];
 
 export interface PublicProblem {
   type: string;
@@ -37,4 +41,16 @@ export interface SalesWorkspace extends SalesBootstrap {
 
 export interface SaleDetailWorkspace extends SalesBootstrap {
   sale: Sale;
+}
+
+export interface ReconciliationWorkspace {
+  context: WorkingContext;
+  cases: MobileReconciliationCase[];
+  nextCursor: string | null;
+  status: MobileReconciliationStatus | "";
+}
+
+export interface ReconciliationDetailWorkspace {
+  context: WorkingContext;
+  reconciliationCase: MobileReconciliationCase;
 }

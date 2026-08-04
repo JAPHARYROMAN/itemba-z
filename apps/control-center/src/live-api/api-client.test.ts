@@ -112,4 +112,22 @@ describe("ItembaApiClient", () => {
     }, "00000000-0000-4000-8000-000000000012")).rejects.toMatchObject({ problem: { code: "request_integer_unsafe" } });
     expect(fetchImplementation).not.toHaveBeenCalled();
   });
+
+  it("uses scoped reconciliation URLs and forwards an idempotent disposition", async () => {
+    const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      void input;
+      void init;
+      return Response.json({ items: [], next_cursor: null });
+    });
+    const client = new ItembaApiClient({ baseUrl: "http://core-api:8080", identity: bearerIdentity, fetchImplementation, createCorrelationId: () => correlationId });
+    await client.listReconciliationCases("OPEN", "cursor-token");
+    await client.resolveReconciliationCase("case/id", { action: "CASH_REFUNDED", reason: "Cash returned to customer" }, "reconciliation-idempotency-0001");
+
+    const [listUrl] = fetchImplementation.mock.calls[0] ?? [];
+    const [resolutionUrl, resolutionRequest] = fetchImplementation.mock.calls[1] ?? [];
+    expect(String(listUrl)).toBe("http://core-api:8080/v1/mobile/reconciliation-cases?page_size=100&status=OPEN&cursor=cursor-token");
+    expect(String(resolutionUrl)).toBe("http://core-api:8080/v1/mobile/reconciliation-cases/case%2Fid/resolutions");
+    expect(new Headers(resolutionRequest?.headers).get("Idempotency-Key")).toBe("reconciliation-idempotency-0001");
+    expect(JSON.parse(String(resolutionRequest?.body))).toEqual({ action: "CASH_REFUNDED", reason: "Cash returned to customer" });
+  });
 });

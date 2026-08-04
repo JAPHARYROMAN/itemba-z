@@ -6,7 +6,7 @@ import { useState } from "react";
 import {
   Bell, ChartNoAxesCombined, ChevronDown, CircleHelp, ClipboardList,
   Landmark, LayoutDashboard, LogOut, Menu, PackageOpen, Search, Settings2, ShieldCheck,
-  ShoppingCart, Truck, UserRoundCog, UsersRound, Wifi, X,
+  ShoppingCart, Truck, UserRoundCog, UsersRound, Wifi, X, ListChecks,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
@@ -19,6 +19,7 @@ const iconMap: Record<NavigationIcon, LucideIcon> = {
   dashboard: LayoutDashboard, customers: UsersRound, suppliers: Truck, sales: ShoppingCart,
   purchases: ClipboardList, inventory: PackageOpen, finance: Landmark, people: UserRoundCog,
   reports: ChartNoAxesCombined, settings: Settings2,
+  reconciliation: ListChecks,
 };
 
 export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -2,7 +2,10 @@ import "server-only";
 
 import { createServerRepository } from "@/live-api/server-repository";
 import { publicProblem } from "@/live-api/errors";
-import type { LiveSnapshot, SaleDetailWorkspace, SalesBootstrap, SalesWorkspace } from "@/live-api/types";
+import type {
+  LiveSnapshot, MobileReconciliationStatus, ReconciliationDetailWorkspace,
+  ReconciliationWorkspace, SaleDetailWorkspace, SalesBootstrap, SalesWorkspace,
+} from "@/live-api/types";
 
 export async function loadSalesBootstrap(): Promise<LiveSnapshot<SalesBootstrap>> {
   try {
@@ -10,6 +13,32 @@ export async function loadSalesBootstrap(): Promise<LiveSnapshot<SalesBootstrap>
     const context = await repository.getWorkingContext();
     const [customers, products] = await Promise.all([repository.listCustomers(), repository.listProducts()]);
     return { state: "ready", data: { context, customers: customers.items, products: products.items } };
+  } catch (error) {
+    return { state: "unavailable", problem: publicProblem(error) };
+  }
+}
+
+export async function loadReconciliationWorkspace(status: MobileReconciliationStatus | "", cursor?: string): Promise<LiveSnapshot<ReconciliationWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const [context, cases] = await Promise.all([
+      repository.getWorkingContext(),
+      repository.listReconciliationCases(status || undefined, cursor),
+    ]);
+    return { state: "ready", data: { context, cases: cases.items, nextCursor: cases.next_cursor ?? null, status } };
+  } catch (error) {
+    return { state: "unavailable", problem: publicProblem(error) };
+  }
+}
+
+export async function loadReconciliationDetail(caseId: string): Promise<LiveSnapshot<ReconciliationDetailWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const [context, reconciliationCase] = await Promise.all([
+      repository.getWorkingContext(),
+      repository.getReconciliationCase(caseId),
+    ]);
+    return { state: "ready", data: { context, reconciliationCase } };
   } catch (error) {
     return { state: "unavailable", problem: publicProblem(error) };
   }
