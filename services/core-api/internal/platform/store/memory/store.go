@@ -16,6 +16,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
@@ -53,25 +54,28 @@ type catalogPublication struct {
 }
 
 type state struct {
-	permissions   map[string]bool
-	customers     map[string]customers.Account
-	products      map[string]catalog.Product
-	taxRates      []TaxRate
-	periods       []FiscalPeriod
-	posting       map[string]finance.SalesPostingConfig
-	sales         map[string]sales.Sale
-	movements     []inventory.Movement
-	ledger        []customers.LedgerEntry
-	payments      []sales.Payment
-	journals      []finance.Journal
-	audits        []audit.Event
-	outbox        []outbox.Event
-	idempotencies map[string]idempotency
-	contexts      map[string]readmodel.WorkingContext
-	devices       map[string]devices.Device
-	offlineLeases []devices.OfflineLease
-	allocations   map[string]int64
-	publications  map[string]catalogPublication
+	permissions               map[string]bool
+	customers                 map[string]customers.Account
+	products                  map[string]catalog.Product
+	taxRates                  []TaxRate
+	periods                   []FiscalPeriod
+	posting                   map[string]finance.SalesPostingConfig
+	sales                     map[string]sales.Sale
+	movements                 []inventory.Movement
+	ledger                    []customers.LedgerEntry
+	payments                  []sales.Payment
+	journals                  []finance.Journal
+	audits                    []audit.Event
+	outbox                    []outbox.Event
+	idempotencies             map[string]idempotency
+	contexts                  map[string]readmodel.WorkingContext
+	devices                   map[string]devices.Device
+	offlineLeases             []devices.OfflineLease
+	allocations               map[string]int64
+	publications              map[string]catalogPublication
+	reconciliationCases       map[string]mobile.ReconciliationCase
+	reconciliationByCommand   map[string]string
+	reconciliationIdempotency map[string]string
 }
 
 func newState() *state {
@@ -81,7 +85,11 @@ func newState() *state {
 		posting: make(map[string]finance.SalesPostingConfig), sales: make(map[string]sales.Sale),
 		idempotencies: make(map[string]idempotency),
 		contexts:      make(map[string]readmodel.WorkingContext), devices: make(map[string]devices.Device),
-		allocations: make(map[string]int64), publications: make(map[string]catalogPublication),
+		allocations:               make(map[string]int64),
+		publications:              make(map[string]catalogPublication),
+		reconciliationCases:       make(map[string]mobile.ReconciliationCase),
+		reconciliationByCommand:   make(map[string]string),
+		reconciliationIdempotency: make(map[string]string),
 	}
 }
 
@@ -200,14 +208,15 @@ func (s *Store) SeedOfflineAllocation(scope tenancy.Scope, deviceID, productID s
 }
 
 type Snapshot struct {
-	Sales         []sales.Sale
-	Movements     []inventory.Movement
-	Ledger        []customers.LedgerEntry
-	Payments      []sales.Payment
-	Journals      []finance.Journal
-	Audits        []audit.Event
-	Outbox        []outbox.Event
-	OfflineLeases []devices.OfflineLease
+	Sales               []sales.Sale
+	Movements           []inventory.Movement
+	Ledger              []customers.LedgerEntry
+	Payments            []sales.Payment
+	Journals            []finance.Journal
+	Audits              []audit.Event
+	Outbox              []outbox.Event
+	OfflineLeases       []devices.OfflineLease
+	ReconciliationCases []mobile.ReconciliationCase
 }
 
 func (s *Store) Snapshot() Snapshot {
@@ -220,6 +229,9 @@ func (s *Store) Snapshot() Snapshot {
 		Audits:        append([]audit.Event(nil), s.state.audits...),
 		Outbox:        append([]outbox.Event(nil), s.state.outbox...),
 		OfflineLeases: append([]devices.OfflineLease(nil), s.state.offlineLeases...),
+	}
+	for _, value := range s.state.reconciliationCases {
+		result.ReconciliationCases = append(result.ReconciliationCases, cloneReconciliationCase(value))
 	}
 	for _, sale := range s.state.sales {
 		result.Sales = append(result.Sales, cloneSale(sale))
@@ -635,6 +647,15 @@ func cloneState(source *state) *state {
 		}
 		result.publications[key] = copyValue
 	}
+	for key, value := range source.reconciliationCases {
+		result.reconciliationCases[key] = cloneReconciliationCase(value)
+	}
+	for key, value := range source.reconciliationByCommand {
+		result.reconciliationByCommand[key] = value
+	}
+	for key, value := range source.reconciliationIdempotency {
+		result.reconciliationIdempotency[key] = value
+	}
 	return result
 }
 
@@ -652,4 +673,13 @@ func cloneStringMap(source map[string]string) map[string]string {
 		result[key] = value
 	}
 	return result
+}
+
+func cloneReconciliationCase(value mobile.ReconciliationCase) mobile.ReconciliationCase {
+	value.Command = append([]byte(nil), value.Command...)
+	if value.Resolution != nil {
+		resolution := *value.Resolution
+		value.Resolution = &resolution
+	}
+	return value
 }

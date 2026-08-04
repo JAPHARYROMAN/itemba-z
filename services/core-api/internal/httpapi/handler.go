@@ -72,6 +72,9 @@ func (h *Handler) Routes() http.Handler {
 	if h.mobile != nil {
 		mux.HandleFunc("POST /v1/mobile/devices/enroll", h.enrollDevice)
 		mux.HandleFunc("POST /v1/mobile/sync/sales", h.syncMobileSale)
+		mux.HandleFunc("GET /v1/mobile/reconciliation-cases", h.listMobileReconciliationCases)
+		mux.HandleFunc("GET /v1/mobile/reconciliation-cases/{caseID}", h.getMobileReconciliationCase)
+		mux.HandleFunc("POST /v1/mobile/reconciliation-cases/{caseID}/resolutions", h.resolveMobileReconciliationCase)
 	}
 	mux.HandleFunc("GET /v1/sales/{saleID}", h.getSale)
 	mux.HandleFunc("POST /v1/sales/{saleID}/reversals", h.reverseSale)
@@ -211,6 +214,80 @@ func (h *Handler) syncMobileSale(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 	writeJSON(writer, http.StatusOK, presentMobileSync(result))
+}
+
+func (h *Handler) listMobileReconciliationCases(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	pageSize, ok := parsePageSize(writer, request)
+	if !ok {
+		return
+	}
+	result, err := h.mobile.ReconciliationCases(request.Context(), principal.Scope, principal.ActorID,
+		request.URL.Query().Get("status"), request.URL.Query().Get("cursor"), pageSize)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+
+func (h *Handler) getMobileReconciliationCase(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	caseID, err := identity.CanonicalUUID(request.PathValue("caseID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "caseID must be a UUID")
+		return
+	}
+	result, err := h.mobile.ReconciliationCase(request.Context(), principal.Scope, principal.ActorID, caseID)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+
+type resolveMobileReconciliationRequest struct {
+	Action            mobile.ResolutionAction `json:"action"`
+	Reason            string                  `json:"reason"`
+	ExternalReference string                  `json:"external_reference,omitempty"`
+}
+
+func (h *Handler) resolveMobileReconciliationCase(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	idempotencyKey := strings.TrimSpace(request.Header.Get("Idempotency-Key"))
+	if len(idempotencyKey) < 16 || len(idempotencyKey) > 128 {
+		writeProblem(writer, http.StatusBadRequest, "idempotency_key_required", "Idempotency-Key header must contain 16 to 128 characters")
+		return
+	}
+	caseID, err := identity.CanonicalUUID(request.PathValue("caseID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "caseID must be a UUID")
+		return
+	}
+	var body resolveMobileReconciliationRequest
+	if !decodeJSON(writer, request, &body) {
+		return
+	}
+	result, err := h.mobile.ResolveReconciliation(request.Context(), mobile.ResolveReconciliationCommand{
+		Scope: principal.Scope, ActorID: principal.ActorID, CaseID: caseID,
+		Action: body.Action, Reason: body.Reason, ExternalReference: body.ExternalReference,
+		IdempotencyKey: idempotencyKey, CorrelationID: correlationID(writer),
+	})
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writer.Header().Set("Location", "/v1/mobile/reconciliation-cases/"+caseID)
+	writeJSON(writer, http.StatusCreated, result)
 }
 
 type completeSaleRequest struct {
@@ -398,6 +475,8 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusForbidden, "device_binding_forbidden"
 	case errors.Is(err, sales.ErrIdempotencyConflict):
 		status, code = http.StatusConflict, "idempotency_conflict"
+	case errors.Is(err, mobile.ErrReconciliationResolved):
+		status, code = http.StatusConflict, "reconciliation_already_resolved"
 	case errors.Is(err, sales.ErrInsufficientStock):
 		status, code = http.StatusConflict, "insufficient_stock"
 	case errors.Is(err, sales.ErrFiscalPeriodClosed):

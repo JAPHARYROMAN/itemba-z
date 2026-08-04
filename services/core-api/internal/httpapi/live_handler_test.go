@@ -10,11 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/catalog"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/memory"
@@ -34,13 +36,14 @@ func TestLiveBootstrapEnrollmentAndSyncRoutes(t *testing.T) {
 		productID        = "30000000-0000-4000-8000-000000000007"
 		deviceID         = "30000000-0000-4000-8000-000000000008"
 		clientID         = "30000000-0000-4000-8000-000000000009"
+		reconciliationID = "30000000-0000-4000-8000-00000000000c"
 		otherBranchID    = "30000000-0000-4000-8000-00000000000a"
 		otherWarehouseID = "30000000-0000-4000-8000-00000000000b"
 	)
 	at := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
 	scope := tenancy.Scope{TenantID: tenantID, CompanyID: companyID, BranchID: branchID, WarehouseID: warehouseID}
 	store := memory.New()
-	for _, permission := range []string{"sales.complete", "sales.read", "customers.read", "products.read", "mobile.devices.enroll", "mobile.sales.sync"} {
+	for _, permission := range []string{"sales.complete", "sales.read", "customers.read", "products.read", "mobile.devices.enroll", "mobile.sales.sync", "mobile.reconciliation.read", "mobile.reconciliation.resolve"} {
 		store.SeedPermission(scope, actorID, permission)
 	}
 	store.SeedContext(scope, readmodel.WorkingContext{CompanyName: "Company", BranchName: "Branch", WarehouseName: "Warehouse", Currency: "TZS", Locale: "en-TZ", TimeZone: "Africa/Dar_es_Salaam", MasterDataVersion: 1, PriceVersion: 1})
@@ -145,9 +148,43 @@ func TestLiveBootstrapEnrollmentAndSyncRoutes(t *testing.T) {
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"idempotent_replay":true`) {
 		t.Fatalf("replay: %d %s", recorder.Code, recorder.Body.String())
 	}
+	caseValue := mobile.ReconciliationCase{
+		ID: reconciliationID, Scope: scope, Status: mobile.ReconciliationOpen,
+		DeviceID: deviceID, ClientTransactionID: "30000000-0000-4000-8000-00000000000d",
+		ClientTimestamp: at, AppVersion: "1.0.0", MasterDataVersion: 1, PriceVersion: 1,
+		CatalogSnapshotToken: "00000000-0000-4000-8000-000000000001",
+		FailureCode:          "offline_reconciliation_required", Command: json.RawMessage(`{"offline":true}`),
+		CommandHash: strings.Repeat("a", 64), CreatedBy: actorID,
+		CorrelationID: "30000000-0000-4000-8000-00000000000e", CreatedAt: at,
+	}
+	if _, err := store.RecordReconciliationCase(request.Context(), caseValue,
+		audit.Event{ID: "30000000-0000-4000-8000-00000000000f"},
+		outbox.Event{ID: "30000000-0000-4000-8000-000000000010"}); err != nil {
+		t.Fatal(err)
+	}
+	recorder = httptest.NewRecorder()
+	routes.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/mobile/reconciliation-cases?status=OPEN&page_size=10", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), reconciliationID) || !strings.Contains(recorder.Body.String(), `"status":"OPEN"`) {
+		t.Fatalf("reconciliation list: %d %s", recorder.Code, recorder.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/v1/mobile/reconciliation-cases/"+reconciliationID+"/resolutions", strings.NewReader(`{"action":"CASH_REFUNDED","reason":"Cash returned to customer"}`))
+	request.Header.Set("Idempotency-Key", "http-reconciliation-refund-0001")
+	recorder = httptest.NewRecorder()
+	routes.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated || !strings.Contains(recorder.Body.String(), `"status":"RESOLVED"`) || !strings.Contains(recorder.Body.String(), `"action":"CASH_REFUNDED"`) {
+		t.Fatalf("reconciliation resolution: %d %s", recorder.Code, recorder.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/v1/mobile/reconciliation-cases/"+reconciliationID+"/resolutions", strings.NewReader(`{"action":"CASH_REFUNDED","reason":"Cash returned to customer"}`))
+	request.Header.Set("Idempotency-Key", "http-reconciliation-refund-0001")
+	recorder = httptest.NewRecorder()
+	routes.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("resolution replay: %d %s", recorder.Code, recorder.Body.String())
+	}
 	otherScope := tenancy.Scope{TenantID: tenantID, CompanyID: companyID, BranchID: otherBranchID, WarehouseID: otherWarehouseID}
 	store.SeedPermission(otherScope, actorID, "sales.read")
 	store.SeedPermission(otherScope, actorID, "sales.reverse")
+	store.SeedPermission(otherScope, actorID, "mobile.reconciliation.read")
 	otherHandler, err := NewLive(salesService, readService, mobileService, logger, fixedAuthenticator{principal: Principal{ActorID: actorID, Scope: otherScope}})
 	if err != nil {
 		t.Fatal(err)
@@ -157,6 +194,11 @@ func TestLiveBootstrapEnrollmentAndSyncRoutes(t *testing.T) {
 	otherRoutes.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/sales/"+synced.Sale.ID, nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("cross-branch HTTP read: %d %s", recorder.Code, recorder.Body.String())
+	}
+	recorder = httptest.NewRecorder()
+	otherRoutes.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/mobile/reconciliation-cases/"+reconciliationID, nil))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("cross-branch reconciliation read: %d %s", recorder.Code, recorder.Body.String())
 	}
 	request = httptest.NewRequest(http.MethodPost, "/v1/sales/"+synced.Sale.ID+"/reversals", strings.NewReader(`{"reason":"Cross-branch attempt"}`))
 	request.Header.Set("Idempotency-Key", "cross-branch-http-reversal")

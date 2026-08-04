@@ -198,6 +198,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/mobile/reconciliation-cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List governed offline-sale reconciliation cases
+         * @description Returns only cases in the caller's exact tenant, legal-company, branch, and warehouse scope.
+         */
+        get: operations["listMobileReconciliationCases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mobile/reconciliation-cases/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one governed offline-sale reconciliation case */
+        get: operations["getMobileReconciliationCase"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mobile/reconciliation-cases/{case_id}/resolutions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append a controlled reconciliation resolution
+         * @description Records an immutable operator disposition only; it never posts accounting or stock implicitly.
+         */
+        post: operations["resolveMobileReconciliationCase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -486,6 +543,64 @@ export interface components {
             idempotent_replay: boolean;
             sale: components["schemas"]["Sale"];
         };
+        /** @enum {string} */
+        MobileReconciliationStatus: "OPEN" | "RESOLVED";
+        /** @enum {string} */
+        MobileReconciliationAction: "CASH_REFUNDED" | "POSTED_EXTERNALLY" | "DUPLICATE_CONFIRMED";
+        MobileReconciliationResolution: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            case_id: string;
+            action: components["schemas"]["MobileReconciliationAction"];
+            reason: string;
+            external_reference?: string;
+            /** Format: uuid */
+            resolved_by: string;
+            /** Format: uuid */
+            correlation_id: string;
+            /** Format: date-time */
+            resolved_at: string;
+        };
+        MobileReconciliationCase: {
+            /** Format: uuid */
+            id: string;
+            scope: components["schemas"]["Scope"];
+            status: components["schemas"]["MobileReconciliationStatus"];
+            /** Format: uuid */
+            device_id: string;
+            /** Format: uuid */
+            client_transaction_id: string;
+            /** Format: date-time */
+            client_timestamp: string;
+            app_version: string;
+            master_data_version: components["schemas"]["SafePositiveInteger"];
+            price_version: components["schemas"]["SafePositiveInteger"];
+            /** Format: uuid */
+            catalog_snapshot_token: string;
+            /** @enum {string} */
+            failure_code: "offline_reconciliation_required";
+            /** @description Exact canonical mobile command retained as reconciliation evidence. */
+            command: {
+                [key: string]: unknown;
+            };
+            /** Format: uuid */
+            created_by: string;
+            /** Format: uuid */
+            correlation_id: string;
+            /** Format: date-time */
+            created_at: string;
+            resolution?: components["schemas"]["MobileReconciliationResolution"];
+        };
+        MobileReconciliationPage: {
+            items: components["schemas"]["MobileReconciliationCase"][];
+            next_cursor: string | null;
+        };
+        ResolveMobileReconciliationCommand: {
+            action: components["schemas"]["MobileReconciliationAction"];
+            reason: string;
+            external_reference?: string;
+        };
         Metric: {
             key: string;
             label: string;
@@ -609,6 +724,7 @@ export interface components {
         IdempotencyKey: string;
         CorrelationId: string;
         SaleId: string;
+        ReconciliationCaseId: string;
     };
     requestBodies: never;
     headers: never;
@@ -943,6 +1059,97 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listMobileReconciliationCases: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["MobileReconciliationStatus"];
+                cursor?: components["parameters"]["Cursor"];
+                page_size?: components["parameters"]["PageSize"];
+            };
+            header?: {
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scoped reconciliation-case page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileReconciliationPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getMobileReconciliationCase: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path: {
+                case_id: components["parameters"]["ReconciliationCaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reconciliation case and immutable evidence. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileReconciliationCase"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    resolveMobileReconciliationCase: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path: {
+                case_id: components["parameters"]["ReconciliationCaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveMobileReconciliationCommand"];
+            };
+        };
+        responses: {
+            /** @description Immutable resolution appended. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileReconciliationCase"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
 }

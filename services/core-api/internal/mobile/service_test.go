@@ -42,7 +42,7 @@ var (
 func fixture(t *testing.T, at time.Time) (*memory.Store, *mobile.Service) {
 	t.Helper()
 	store := memory.New()
-	for _, permission := range []string{"sales.complete", "sales.read", "mobile.devices.enroll", "mobile.sales.sync", "customers.read", "products.read"} {
+	for _, permission := range []string{"sales.complete", "sales.read", "mobile.devices.enroll", "mobile.sales.sync", "mobile.reconciliation.read", "mobile.reconciliation.resolve", "customers.read", "products.read"} {
 		store.SeedPermission(testScope, actorID, permission)
 	}
 	store.SeedContext(testScope, readmodel.WorkingContext{
@@ -578,6 +578,68 @@ func TestMissingHistoricalPublicationFactRequiresReconciliationWithoutEffects(t 
 		t.Fatalf("missing publication fact error=%v", err)
 	}
 	assertNoMobileSaleEffects(t, store)
+	opened := store.Snapshot()
+	if len(opened.ReconciliationCases) != 1 || opened.ReconciliationCases[0].Status != mobile.ReconciliationOpen ||
+		len(opened.Audits) != 1 || opened.Audits[0].Action != "mobile.reconciliation.opened" ||
+		len(opened.Outbox) != 1 || opened.Outbox[0].EventType != "mobile.reconciliation.opened" {
+		t.Fatalf("reconciliation evidence=%+v", opened)
+	}
+	command.SyncAttempt = 2
+	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", command); !errors.Is(err, sales.ErrOfflineReconciliation) {
+		t.Fatalf("reconciliation replay error=%v", err)
+	}
+	replayed := store.Snapshot()
+	if len(replayed.ReconciliationCases) != 1 || len(replayed.Audits) != 1 || len(replayed.Outbox) != 1 {
+		t.Fatalf("reconciliation replay duplicated evidence: %+v", replayed)
+	}
+	page, err := service.ReconciliationCases(context.Background(), testScope, actorID, "OPEN", "", 50)
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != opened.ReconciliationCases[0].ID {
+		t.Fatalf("open reconciliation page=%+v err=%v", page, err)
+	}
+	resolved, err := service.ResolveReconciliation(context.Background(), mobile.ResolveReconciliationCommand{
+		Scope: testScope, ActorID: actorID, CaseID: page.Items[0].ID,
+		Action: mobile.ResolutionCashRefunded, Reason: "Cash returned to customer",
+		IdempotencyKey: "refund-reconciliation-0001",
+	})
+	if err != nil || resolved.Status != mobile.ReconciliationResolved || resolved.Resolution == nil {
+		t.Fatalf("resolved case=%+v err=%v", resolved, err)
+	}
+	resolvedReplay, err := service.ResolveReconciliation(context.Background(), mobile.ResolveReconciliationCommand{
+		Scope: testScope, ActorID: actorID, CaseID: page.Items[0].ID,
+		Action: mobile.ResolutionCashRefunded, Reason: "Cash returned to customer",
+		IdempotencyKey: "refund-reconciliation-0001",
+	})
+	if err != nil || resolvedReplay.Resolution == nil || resolvedReplay.Resolution.ID != resolved.Resolution.ID {
+		t.Fatalf("resolution replay=%+v err=%v", resolvedReplay, err)
+	}
+	if _, err := service.ResolveReconciliation(context.Background(), mobile.ResolveReconciliationCommand{
+		Scope: testScope, ActorID: actorID, CaseID: page.Items[0].ID,
+		Action: mobile.ResolutionDuplicateConfirmed, Reason: "Verified as an existing sale",
+		IdempotencyKey: "refund-reconciliation-0001",
+	}); !errors.Is(err, sales.ErrIdempotencyConflict) {
+		t.Fatalf("resolution mismatch error=%v", err)
+	}
+	final := store.Snapshot()
+	if len(final.Sales) != 0 || len(final.Payments) != 0 || len(final.Journals) != 0 || len(final.Movements) != 1 ||
+		len(final.ReconciliationCases) != 1 || len(final.Audits) != 2 || len(final.Outbox) != 2 {
+		t.Fatalf("resolution created accounting effects or duplicate evidence: %+v", final)
+	}
+}
+
+func TestReconciliationReadIsPermissionAndExactScopeBound(t *testing.T) {
+	at := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
+	store, service := fixture(t, at)
+	otherScope := testScope
+	otherScope.BranchID = "20000000-0000-4000-8000-000000000088"
+	otherScope.WarehouseID = "20000000-0000-4000-8000-000000000089"
+	store.SeedPermission(otherScope, actorID, "mobile.reconciliation.read")
+	if _, err := service.ReconciliationCases(context.Background(), otherScope, actorID, "", "", 50); err != nil {
+		t.Fatalf("empty exact-scope list: %v", err)
+	}
+	const unprivileged = "20000000-0000-4000-8000-000000000087"
+	if _, err := service.ReconciliationCases(context.Background(), testScope, unprivileged, "", "", 50); !errors.Is(err, sales.ErrForbidden) {
+		t.Fatalf("permission error=%v", err)
+	}
 }
 
 func assertNoMobileSaleEffects(t *testing.T, store *memory.Store) {

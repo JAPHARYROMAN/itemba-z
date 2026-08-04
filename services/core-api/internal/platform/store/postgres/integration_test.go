@@ -39,7 +39,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -347,6 +347,71 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 		tenantID, deviceID).Scan(&acknowledgementAudits, &acknowledgementEvents, &leaseCount); err != nil || acknowledgementAudits != 4 || acknowledgementEvents != 4 || leaseCount != 3 {
 		t.Fatalf("expired renewal evidence audits=%d outbox=%d leases=%d err=%v", acknowledgementAudits, acknowledgementEvents, leaseCount, err)
 	}
+	const (
+		unpublishedProductID = "10000000-0000-4000-8000-000000000006"
+		reconciliationTxnID  = "10000000-0000-4000-8000-000000000007"
+	)
+	if _, err := pool.Exec(ctx, `INSERT INTO `+pgx.Identifier{schema}.Sanitize()+`.products
+		(id,tenant_id,company_id,sku,name,currency,list_price_minor,standard_cost_minor,tax_code,revenue_account_id,cogs_account_id,inventory_account_id)
+		VALUES($1,$2,$3,'LATE','Unpublished Product','TZS',10000,6000,'VAT','revenue','cogs','inventory')`,
+		unpublishedProductID, tenantID, companyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO `+pgx.Identifier{schema}.Sanitize()+`.mobile_device_stock_allocations
+		(tenant_id,company_id,branch_id,warehouse_id,device_id,product_id,allocated_quantity)
+		VALUES ($1,$2,$3,$4,$5,$6,10)`, tenantID, companyID, branchID, warehouseID, deviceID, unpublishedProductID); err != nil {
+		t.Fatal(err)
+	}
+	reconciliationCommand := mobile.SyncCommand{
+		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash,
+		Lines: []sales.CommandLine{{ProductID: unpublishedProductID, Quantity: 1}}, DeviceID: deviceID,
+		ClientTransactionID: reconciliationTxnID, ClientTimestamp: expiredAt.Add(time.Minute), AppVersion: "1.1.0",
+		MasterDataVersion: taxMasterVersion, PriceVersion: finalPriceVersion, CatalogSnapshotToken: finalSnapshotToken,
+		SyncAttempt: 1, Offline: true,
+	}
+	if _, err := renewalService.SyncSale(ctx, scope, userID, "", reconciliationCommand); !errors.Is(err, sales.ErrOfflineReconciliation) {
+		t.Fatalf("missing publication reconciliation error=%v", err)
+	}
+	reconciliationCommand.SyncAttempt = 2
+	if _, err := renewalService.SyncSale(ctx, scope, userID, "", reconciliationCommand); !errors.Is(err, sales.ErrOfflineReconciliation) {
+		t.Fatalf("missing publication reconciliation replay error=%v", err)
+	}
+	cases, err := renewalService.ReconciliationCases(ctx, scope, userID, "OPEN", "", 10)
+	if err != nil || len(cases.Items) != 1 || cases.Items[0].ClientTransactionID != reconciliationTxnID {
+		t.Fatalf("PostgreSQL reconciliation cases=%+v err=%v", cases, err)
+	}
+	caseID := cases.Items[0].ID
+	resolved, err := renewalService.ResolveReconciliation(ctx, mobile.ResolveReconciliationCommand{
+		Scope: scope, ActorID: userID, CaseID: caseID, Action: mobile.ResolutionPostedExternally,
+		Reason: "Verified in the legacy register", ExternalReference: "LEGACY-001",
+		IdempotencyKey: "postgres-reconciliation-0001",
+	})
+	if err != nil || resolved.Status != mobile.ReconciliationResolved || resolved.Resolution == nil {
+		t.Fatalf("PostgreSQL reconciliation resolution=%+v err=%v", resolved, err)
+	}
+	resolvedReplay, err := renewalService.ResolveReconciliation(ctx, mobile.ResolveReconciliationCommand{
+		Scope: scope, ActorID: userID, CaseID: caseID, Action: mobile.ResolutionPostedExternally,
+		Reason: "Verified in the legacy register", ExternalReference: "LEGACY-001",
+		IdempotencyKey: "postgres-reconciliation-0001",
+	})
+	if err != nil || resolvedReplay.Resolution == nil || resolvedReplay.Resolution.ID != resolved.Resolution.ID {
+		t.Fatalf("PostgreSQL resolution replay=%+v err=%v", resolvedReplay, err)
+	}
+	var caseCount, resolutionCount, saleCount, openedCount, resolvedCount int
+	if err := pool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM `+pgx.Identifier{schema}.Sanitize()+`.mobile_reconciliation_cases WHERE tenant_id=$1 AND id=$2),
+		(SELECT count(*) FROM `+pgx.Identifier{schema}.Sanitize()+`.mobile_reconciliation_resolutions WHERE tenant_id=$1 AND case_id=$2),
+		(SELECT count(*) FROM `+pgx.Identifier{schema}.Sanitize()+`.sales WHERE tenant_id=$1 AND device_id=$3 AND client_transaction_id=$4),
+		(SELECT count(*) FROM `+pgx.Identifier{schema}.Sanitize()+`.audit_events WHERE tenant_id=$1 AND entity_id=$2 AND action='mobile.reconciliation.opened'),
+		(SELECT count(*) FROM `+pgx.Identifier{schema}.Sanitize()+`.audit_events WHERE tenant_id=$1 AND entity_id=$2 AND action='mobile.reconciliation.resolved')`,
+		tenantID, caseID, deviceID, reconciliationTxnID).Scan(&caseCount, &resolutionCount, &saleCount, &openedCount, &resolvedCount); err != nil ||
+		caseCount != 1 || resolutionCount != 1 || saleCount != 0 || openedCount != 1 || resolvedCount != 1 {
+		t.Fatalf("reconciliation persistence cases=%d resolutions=%d sales=%d opened=%d resolved=%d err=%v",
+			caseCount, resolutionCount, saleCount, openedCount, resolvedCount, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE `+pgx.Identifier{schema}.Sanitize()+`.mobile_reconciliation_resolutions SET reason='Changed evidence' WHERE tenant_id=$1 AND case_id=$2`, tenantID, caseID); err == nil || !strings.Contains(err.Error(), "is append-only") {
+		t.Fatalf("reconciliation resolution mutation error=%v", err)
+	}
 	canonicalizedScope := tenancy.Scope{
 		TenantID: " " + strings.ToUpper(tenantID) + " ", CompanyID: " " + strings.ToUpper(companyID) + " ",
 		BranchID: " " + strings.ToUpper(branchID) + " ", WarehouseID: " " + strings.ToUpper(warehouseID) + " ",
@@ -426,7 +491,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 0 || salesCount != 5 || journalCount != 5 || outboxCount != 10 || processedCount != 1 {
+	if stock != 0 || salesCount != 5 || journalCount != 5 || outboxCount != 12 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }
@@ -466,7 +531,7 @@ func TestRestrictedRuntimeRoleEnforcesTenantRLS(t *testing.T) {
 		_, _ = clusterPool.Exec(context.Background(), "DROP ROLE "+pgx.Identifier{apiUser}.Sanitize())
 		_, _ = clusterPool.Exec(context.Background(), "DROP ROLE "+pgx.Identifier{workerUser}.Sanitize())
 	}()
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql"} {
 		applyTestMigration(t, ctx, adminPool, "itembaz", name)
 	}
 	const (
@@ -530,6 +595,20 @@ func TestRestrictedRuntimeRoleEnforcesTenantRLS(t *testing.T) {
 	if !apiPublicationSelect || !apiPublicationInsert || apiPublicationUpdate || apiPublicationDelete || workerPublicationSelect {
 		t.Fatalf("unsafe publication capabilities api(select=%v insert=%v update=%v delete=%v) worker_select=%v",
 			apiPublicationSelect, apiPublicationInsert, apiPublicationUpdate, apiPublicationDelete, workerPublicationSelect)
+	}
+	var apiCaseSelect, apiCaseInsert, apiCaseUpdate, apiCaseDelete, workerCaseSelect bool
+	if err := adminPool.QueryRow(ctx, `
+		SELECT has_table_privilege($1, 'itembaz.mobile_reconciliation_cases', 'SELECT'),
+		       has_table_privilege($1, 'itembaz.mobile_reconciliation_cases', 'INSERT'),
+		       has_table_privilege($1, 'itembaz.mobile_reconciliation_cases', 'UPDATE'),
+		       has_table_privilege($1, 'itembaz.mobile_reconciliation_cases', 'DELETE'),
+		       has_table_privilege($2, 'itembaz.mobile_reconciliation_cases', 'SELECT')`, apiUser, workerUser).Scan(
+		&apiCaseSelect, &apiCaseInsert, &apiCaseUpdate, &apiCaseDelete, &workerCaseSelect); err != nil {
+		t.Fatal(err)
+	}
+	if !apiCaseSelect || !apiCaseInsert || apiCaseUpdate || apiCaseDelete || workerCaseSelect {
+		t.Fatalf("unsafe reconciliation capabilities api(select=%v insert=%v update=%v delete=%v) worker_select=%v",
+			apiCaseSelect, apiCaseInsert, apiCaseUpdate, apiCaseDelete, workerCaseSelect)
 	}
 	var futureACL string
 	var apiFutureExecute bool

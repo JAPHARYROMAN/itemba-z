@@ -5,7 +5,7 @@
 // ignore_for_file: avoid_dynamic_calls
 
 const String itembaZV1SpecificationSha256 =
-    '28cae991291c74ddf377d152469395b5fbe9618c40a6f3dc7f821bcf9aa9d5c9';
+    'dc67f108c01c18c6b2252585d43cc428345358ab441e8675c3e2fd9d77da2bd2';
 
 typedef GeneratedJson = Map<String, Object?>;
 

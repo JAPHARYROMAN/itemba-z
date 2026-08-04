@@ -2,6 +2,8 @@ package mobile
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -56,6 +58,10 @@ type SyncResult struct {
 
 type Repository interface {
 	EnrollDevice(ctx context.Context, device devices.Device, acknowledgement *devices.InstallAcknowledgement, enrollmentAudit audit.Event, enrollmentEvent outbox.Event) (devices.Device, error)
+	RecordReconciliationCase(ctx context.Context, value ReconciliationCase, caseAudit audit.Event, caseEvent outbox.Event) (ReconciliationCase, error)
+	ListReconciliationCases(ctx context.Context, scope tenancy.Scope, actorID string, status ReconciliationStatus, afterID string, limit int) ([]ReconciliationCase, error)
+	ReconciliationCase(ctx context.Context, scope tenancy.Scope, actorID, caseID string) (ReconciliationCase, error)
+	ResolveReconciliationCase(ctx context.Context, scope tenancy.Scope, actorID string, resolution ReconciliationResolution, resolutionAudit audit.Event, resolutionEvent outbox.Event) (ReconciliationCase, error)
 }
 
 type Service struct {
@@ -158,7 +164,59 @@ func (s *Service) SyncSale(ctx context.Context, scope tenancy.Scope, actorID, co
 	}
 	created, err := s.sales.Complete(ctx, sales.CompleteCommand{Scope: scope, CustomerID: command.CustomerID, Kind: command.Kind, PaymentMethod: command.PaymentMethod, Lines: command.Lines, ActorID: actorID, CorrelationID: correlationID, IdempotencyKey: command.DeviceID + "::" + command.ClientTransactionID, DeviceID: command.DeviceID, ClientTransactionID: command.ClientTransactionID, ClientTimestamp: command.ClientTimestamp, AppVersion: command.AppVersion, MasterDataVersion: command.MasterDataVersion, PriceVersion: command.PriceVersion, CatalogSnapshotToken: command.CatalogSnapshotToken, SyncAttempt: command.SyncAttempt, Offline: command.Offline})
 	if err != nil {
+		if command.Offline && errors.Is(err, sales.ErrOfflineReconciliation) {
+			if recordErr := s.recordReconciliationCase(ctx, scope, actorID, correlationID, command); recordErr != nil {
+				return SyncResult{}, recordErr
+			}
+		}
 		return SyncResult{}, err
 	}
 	return SyncResult{ClientTransactionID: command.ClientTransactionID, State: "synced", ReceiptReference: created.ReceiptReference, FiscalStatus: created.FiscalStatus, IdempotentReplay: created.IdempotentReplay, Sale: created}, nil
+}
+
+func (s *Service) recordReconciliationCase(ctx context.Context, scope tenancy.Scope, actorID, correlationID string, command SyncCommand) error {
+	stable := command
+	stable.SyncAttempt = 0
+	canonical, err := json.Marshal(stable)
+	if err != nil {
+		return err
+	}
+	hash := sha256.Sum256(canonical)
+	evidence, err := json.Marshal(command)
+	if err != nil {
+		return err
+	}
+	caseID, err := s.ids.New()
+	if err != nil {
+		return err
+	}
+	auditID, err := s.ids.New()
+	if err != nil {
+		return err
+	}
+	eventID, err := s.ids.New()
+	if err != nil {
+		return err
+	}
+	if correlationID == "" {
+		correlationID = caseID
+	}
+	now := s.clock.Now().UTC()
+	value := ReconciliationCase{
+		ID: caseID, Scope: scope, Status: ReconciliationOpen, DeviceID: command.DeviceID,
+		ClientTransactionID: command.ClientTransactionID, ClientTimestamp: command.ClientTimestamp.UTC(),
+		AppVersion: command.AppVersion, MasterDataVersion: command.MasterDataVersion,
+		PriceVersion: command.PriceVersion, CatalogSnapshotToken: command.CatalogSnapshotToken,
+		FailureCode: "offline_reconciliation_required", Command: evidence,
+		CommandHash: hex.EncodeToString(hash[:]), CreatedBy: actorID,
+		CorrelationID: correlationID, CreatedAt: now,
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = s.repository.RecordReconciliationCase(ctx, value,
+		audit.Event{ID: auditID, TenantID: scope.TenantID, CompanyID: scope.CompanyID, ActorID: actorID, Action: "mobile.reconciliation.opened", EntityType: "mobile_reconciliation_case", EntityID: caseID, CorrelationID: correlationID, CausationID: command.ClientTransactionID, Data: payload, OccurredAt: now},
+		outbox.Event{ID: eventID, TenantID: scope.TenantID, CompanyID: scope.CompanyID, AggregateType: "mobile_reconciliation_case", AggregateID: caseID, EventType: "mobile.reconciliation.opened", Version: 1, CorrelationID: correlationID, CausationID: command.ClientTransactionID, Payload: payload, OccurredAt: now})
+	return err
 }

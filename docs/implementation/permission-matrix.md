@@ -17,3 +17,8 @@ Permissions combine action, module, tenant, legal-company, branch, warehouse, ow
 | Auditor | Scoped read-only data and audit reports | No mutations or approvals |
 
 The seed matrix is a starting policy. Named users, value thresholds, substitutes, delegations, and emergency access require signed business-owner approval before production.
+
+Offline-sale exception access is split into `mobile.reconciliation.read` and
+`mobile.reconciliation.resolve`. Production role assignment must preserve this
+separation where policy requires investigation and disposition by different
+people; neither permission grants sale posting or ledger mutation authority.

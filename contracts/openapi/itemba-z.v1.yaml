@@ -346,6 +346,75 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /v1/mobile/reconciliation-cases:
+    get:
+      summary: List governed offline-sale reconciliation cases
+      description: Returns only cases in the caller's exact tenant, legal-company, branch, and warehouse scope.
+      operationId: listMobileReconciliationCases
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/MobileReconciliationStatus' }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Scoped reconciliation-case page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileReconciliationPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/mobile/reconciliation-cases/{case_id}:
+    get:
+      summary: Read one governed offline-sale reconciliation case
+      operationId: getMobileReconciliationCase
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ReconciliationCaseId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Reconciliation case and immutable evidence.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileReconciliationCase' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/mobile/reconciliation-cases/{case_id}/resolutions:
+    post:
+      summary: Append a controlled reconciliation resolution
+      description: Records an immutable operator disposition only; it never posts accounting or stock implicitly.
+      operationId: resolveMobileReconciliationCase
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ReconciliationCaseId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolveMobileReconciliationCommand' }
+      responses:
+        '201':
+          description: Immutable resolution appended.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileReconciliationCase' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 components:
   securitySchemes:
     oidc:
@@ -395,6 +464,11 @@ components:
       schema: { type: string, format: uuid }
     SaleId:
       name: sale_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ReconciliationCaseId:
+      name: case_id
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -747,6 +821,66 @@ components:
           type: boolean
           description: True only when the server restored a previously committed result for this device and client transaction pair.
         sale: { $ref: '#/components/schemas/Sale' }
+    MobileReconciliationStatus:
+      type: string
+      enum: [OPEN, RESOLVED]
+    MobileReconciliationAction:
+      type: string
+      enum: [CASH_REFUNDED, POSTED_EXTERNALLY, DUPLICATE_CONFIRMED]
+    MobileReconciliationResolution:
+      type: object
+      additionalProperties: false
+      required: [id, case_id, action, reason, resolved_by, correlation_id, resolved_at]
+      properties:
+        id: { type: string, format: uuid }
+        case_id: { type: string, format: uuid }
+        action: { $ref: '#/components/schemas/MobileReconciliationAction' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        external_reference: { type: string, maxLength: 200 }
+        resolved_by: { type: string, format: uuid }
+        correlation_id: { type: string, format: uuid }
+        resolved_at: { type: string, format: date-time }
+    MobileReconciliationCase:
+      type: object
+      additionalProperties: false
+      required: [id, scope, status, device_id, client_transaction_id, client_timestamp, app_version, master_data_version, price_version, catalog_snapshot_token, failure_code, command, created_by, correlation_id, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        status: { $ref: '#/components/schemas/MobileReconciliationStatus' }
+        device_id: { type: string, format: uuid }
+        client_transaction_id: { type: string, format: uuid }
+        client_timestamp: { type: string, format: date-time }
+        app_version: { type: string, minLength: 1, maxLength: 64 }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        catalog_snapshot_token: { type: string, format: uuid }
+        failure_code: { type: string, enum: [offline_reconciliation_required] }
+        command:
+          type: object
+          additionalProperties: true
+          description: Exact canonical mobile command retained as reconciliation evidence.
+        created_by: { type: string, format: uuid }
+        correlation_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        resolution: { $ref: '#/components/schemas/MobileReconciliationResolution' }
+    MobileReconciliationPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MobileReconciliationCase' }
+        next_cursor: { type: [string, 'null'] }
+    ResolveMobileReconciliationCommand:
+      type: object
+      additionalProperties: false
+      required: [action, reason]
+      properties:
+        action: { $ref: '#/components/schemas/MobileReconciliationAction' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        external_reference: { type: string, maxLength: 200 }
     Metric:
       type: object
       required: [key, label, value]

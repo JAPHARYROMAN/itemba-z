@@ -64,7 +64,8 @@ effects while preserving the original transaction and its audit history.
 | Catalog snapshot download | Every customer and product page echoes the requested immutable token and identical version metadata; token drift aborts the download before installation. |
 | Cache acknowledgement | Installed and available token/version triples are distinct; stale acknowledgements fail, while retry after a lost response is idempotent. |
 | Offline cache lease | A successful acknowledgement issues an exact app/token/master/price lease for no more than four hours and never across a known tax transition; historical lease and catalog-publication rows preserve both authorization and posting facts after renewal. |
-| Missing publication evidence | The API returns `offline_reconciliation_required` with no business effects; the POS retains the exact idempotent command as Reconciliation Required across restart and does not automatically retry it. |
+| Missing publication evidence | The API returns `offline_reconciliation_required` with no business effects, registers one append-only scoped case with the exact command, and emits audit/outbox evidence. The POS retains the command as Reconciliation Required across restart and does not automatically retry it. |
+| Reconciliation resolution | A separately authorized operator appends exactly one idempotent `CASH_REFUNDED`, `POSTED_EXTERNALLY`, or `DUPLICATE_CONFIRMED` disposition. Resolution creates audit/outbox evidence but never stock, cash, sale, or journal effects. |
 | Late tax scheduling | Tax-rule mutations that overlap an outstanding lease are rejected under the same serialization lock used by acknowledgement. |
 | Queued business day | Offline daily limits are charged to the lease-validated client creation day in the legal-company timezone, even when synchronization occurs after midnight. |
 | Exact integers | TZS minor-unit amounts and whole-unit quantities remain within the JSON safe-integer contract or fail with 422 and no effects. |
@@ -86,11 +87,11 @@ expected post-sale balance. The client must never infer a zero overdue balance.
 Offline nonzero-tax sale completion remains fail-closed pending professional
 validation of document-time tax and fiscalization policy. Posting now owns the
 effective tax rules in each immutable publication, but the current release
-slice deliberately accepts only zero-rated offline lines. A server-side
-operator workflow is still required to register, investigate, approve, and
-audit resolution when historical publication evidence is missing; the mobile
-client currently preserves and pauses the exact command without granting
-itself authority to alter or repost it.
+slice deliberately accepts only zero-rated offline lines. The server now
+registers and resolves missing-publication cases through a permission-separated,
+exact-scope API. A Control Center evidence screen and business approval
+assignments remain to be implemented; the mobile client continues to preserve
+and pause the exact command without authority to alter or repost it.
 Release 1 also needs a governed distinction between offline document time and
 server posting time, including clock-skew limits, fiscal-period policy, and a
 reconciliation path for sales synchronized after a period boundary. The
