@@ -1,0 +1,46 @@
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# JavaScript / Next.js
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Go
+bin/
+*.test
+*.out
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+**/android/.gradle/
+**/android/local.properties
+**/ios/Pods/
+
+# Infrastructure and local state
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+infra/docker/data/
+
+# Reports and generated clients
+artifacts/
+contracts/generated/

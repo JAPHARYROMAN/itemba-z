@@ -1,0 +1,595 @@
+openapi: 3.1.0
+info:
+  title: ITEMBA-Z Platform API
+  version: 1.0.0
+  description: >-
+    Versioned contract for the ITEMBA-Z Control Center, Sales POS, and approved
+    integrations. Posted-sale money uses integer minor units and the current
+    transactional slice accepts whole-unit quantities. Planned read models use
+    decimal strings where fractional quantities or display money are required.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: /
+    description: Current deployment origin
+security:
+  - oidc: []
+tags:
+  - name: System
+    description: Health and runtime state.
+  - name: Context
+    description: Authorized tenant and working scope.
+  - name: Dashboard
+    description: Governed management metrics and alerts.
+  - name: Customers
+    description: Company-scoped customer accounts and credit eligibility.
+  - name: Products
+    description: Authorized catalog, prices, and availability.
+  - name: Sales
+    description: Atomic sales, receipts, and linked reversals.
+  - name: Mobile Sync
+    description: Idempotent mobile transaction synchronization.
+paths:
+  /healthz:
+    get:
+      summary: Check process health
+      operationId: getHealth
+      tags: [System]
+      x-implementation-status: implemented
+      security: []
+      responses:
+        '200':
+          description: Process is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /readyz:
+    get:
+      summary: Check process readiness
+      operationId: getReadiness
+      tags: [System]
+      x-implementation-status: implemented
+      security: []
+      responses:
+        '200':
+          description: Process is ready to serve requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /v1/context:
+    get:
+      summary: Get the caller's working context
+      operationId: getWorkingContext
+      tags: [Context]
+      x-implementation-status: planned
+      responses:
+        '200':
+          description: Current authorized working context.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkingContext'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/dashboard:
+    get:
+      summary: Get governed executive metrics
+      operationId: getExecutiveDashboard
+      tags: [Dashboard]
+      x-implementation-status: planned
+      parameters:
+        - $ref: '#/components/parameters/LegalCompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Governed metrics and alerts within authorized scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/customers:
+    get:
+      summary: List scoped customers
+      operationId: listCustomers
+      tags: [Customers]
+      x-implementation-status: planned
+      parameters:
+        - $ref: '#/components/parameters/LegalCompanyId'
+        - name: query
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: credit_eligible
+          in: query
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Customers visible in the caller's scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/products:
+    get:
+      summary: List scoped products and availability
+      operationId: listProducts
+      tags: [Products]
+      x-implementation-status: planned
+      parameters:
+        - $ref: '#/components/parameters/LegalCompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - name: warehouse_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: query
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Authorized products, prices, and available quantities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/sales:
+    post:
+      summary: Complete and atomically post a sale
+      operationId: completeSale
+      tags: [Sales]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteSaleCommand'
+      responses:
+        '201':
+          description: Sale completed, or its idempotent original result returned, exactly once.
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    get:
+      summary: List scoped sales
+      operationId: listSales
+      tags: [Sales]
+      x-implementation-status: planned
+      parameters:
+        - $ref: '#/components/parameters/LegalCompanyId'
+        - $ref: '#/components/parameters/BranchId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Sales visible in the caller's ownership and organization scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalePage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/sales/{sale_id}:
+    get:
+      summary: Get an immutable posted sale
+      operationId: getSale
+      tags: [Sales]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/SaleId'
+      responses:
+        '200':
+          description: Immutable posted sale.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/sales/{sale_id}/reversals:
+    post:
+      summary: Post a linked sale reversal
+      operationId: reverseSale
+      tags: [Sales]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/SaleId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReverseSaleCommand'
+      responses:
+        '201':
+          description: Linked reversal posted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /v1/mobile/sync/sales:
+    post:
+      summary: Synchronize a mobile sale idempotently
+      operationId: syncMobileSale
+      tags: [Mobile Sync]
+      x-implementation-status: planned
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileSaleSyncCommand'
+      responses:
+        '200':
+          description: Existing or newly completed sale result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileSyncResult'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+components:
+  securitySchemes:
+    oidc:
+      type: openIdConnect
+      openIdConnectUrl: https://identity.itemba-z.example/.well-known/openid-configuration
+      description: >-
+        Production tokens must contain UUID-valued user_id, tenant_id,
+        company_id, branch_id, and warehouse_id claims. The standard sub claim
+        remains identity-provider provenance and is not used as a database key.
+  parameters:
+    LegalCompanyId:
+      name: legal_company_id
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
+    BranchId:
+      name: branch_id
+      in: query
+      required: false
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 128 }
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema: { type: string, format: uuid }
+    SaleId:
+      name: sale_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Request syntax or parameters are invalid.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Authentication is missing or invalid.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Caller lacks permission or organization scope.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Resource is absent or not visible to the caller.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Current resource state conflicts with the command.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ValidationFailed:
+      description: Business validation rejected the command.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [healthy] }
+        version: { type: string }
+    WorkingContext:
+      type: object
+      additionalProperties: false
+      required: [tenant_id, legal_company_id, legal_company_name, branch_id, branch_name, currency, locale, permissions]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        legal_company_id: { type: string, format: uuid }
+        legal_company_name: { type: string }
+        branch_id: { type: string, format: uuid }
+        branch_name: { type: string }
+        warehouse_id: { type: [string, 'null'], format: uuid }
+        currency: { type: string, const: TZS }
+        locale: { type: string, enum: [en-TZ, sw-TZ] }
+        permissions:
+          type: array
+          items: { type: string }
+    Money:
+      type: object
+      additionalProperties: false
+      required: [amount, currency]
+      properties:
+        amount: { type: string, pattern: '^-?[0-9]+(\\.[0-9]{1,4})?$' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+    CustomerSummary:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, status, is_general_customer, credit_enabled]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        phone: { type: [string, 'null'] }
+        status: { type: string, enum: [active, blocked, inactive] }
+        is_general_customer: { type: boolean }
+        credit_enabled: { type: boolean }
+        available_credit: { $ref: '#/components/schemas/Money' }
+        overdue_amount: { $ref: '#/components/schemas/Money' }
+    CustomerPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/CustomerSummary' } }
+        next_cursor: { type: [string, 'null'] }
+    ProductSummary:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, unit, price, available_quantity]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        unit: { type: string }
+        price: { $ref: '#/components/schemas/Money' }
+        available_quantity: { type: string, pattern: '^-?[0-9]+(\\.[0-9]{1,6})?$' }
+        price_version: { type: integer, minimum: 1 }
+        master_data_version: { type: integer, minimum: 1 }
+    ProductPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ProductSummary' } }
+        next_cursor: { type: [string, 'null'] }
+    Scope:
+      type: object
+      additionalProperties: false
+      required: [tenant_id, company_id, branch_id, warehouse_id]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        branch_id: { type: string, format: uuid }
+        warehouse_id: { type: string, format: uuid }
+    SaleKind:
+      type: string
+      enum: [CASH, CREDIT]
+    SaleRecordType:
+      type: string
+      enum: [SALE, REVERSAL]
+    SaleStatus:
+      type: string
+      enum: [POSTED, REVERSED]
+    SaleLineCommand:
+      type: object
+      additionalProperties: false
+      required: [product_id, quantity]
+      properties:
+        product_id: { type: string, format: uuid }
+        quantity: { type: integer, format: int64, minimum: 1 }
+    CompleteSaleCommand:
+      type: object
+      additionalProperties: false
+      required: [customer_id, kind, lines]
+      properties:
+        customer_id: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/SaleKind' }
+        payment_method: { type: string, minLength: 1, maxLength: 64 }
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SaleLineCommand' }
+    SaleLine:
+      type: object
+      additionalProperties: false
+      required: [id, product_id, quantity, unit_price_minor, subtotal_minor, tax_minor, total_minor, unit_cost_minor, cogs_minor]
+      properties:
+        id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        quantity: { type: integer, format: int64, minimum: 1 }
+        unit_price_minor: { type: integer, format: int64 }
+        subtotal_minor: { type: integer, format: int64 }
+        tax_minor: { type: integer, format: int64 }
+        total_minor: { type: integer, format: int64 }
+        unit_cost_minor: { type: integer, format: int64 }
+        cogs_minor: { type: integer, format: int64 }
+    Sale:
+      type: object
+      additionalProperties: false
+      required: [id, scope, record_type, kind, status, customer_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor, created_by, correlation_id, created_at, lines]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        record_type: { $ref: '#/components/schemas/SaleRecordType' }
+        kind: { $ref: '#/components/schemas/SaleKind' }
+        status: { $ref: '#/components/schemas/SaleStatus' }
+        customer_id: { type: string, format: uuid }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        subtotal_minor: { type: integer, format: int64 }
+        tax_minor: { type: integer, format: int64 }
+        total_minor: { type: integer, format: int64 }
+        cogs_minor: { type: integer, format: int64 }
+        payment_method: { type: string }
+        reversal_of: { type: string, format: uuid }
+        reversal_reason: { type: string }
+        created_by: { type: string, format: uuid }
+        correlation_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        reversed_at: { type: string, format: date-time }
+        lines: { type: array, items: { $ref: '#/components/schemas/SaleLine' } }
+    SalePage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Sale' } }
+        next_cursor: { type: [string, 'null'] }
+    ReverseSaleCommand:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    MobileSaleSyncCommand:
+      type: object
+      additionalProperties: false
+      required: [customer_id, kind, lines, device_id, client_transaction_id, client_timestamp, app_version, master_data_version, price_version, sync_attempt]
+      properties:
+        customer_id: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/SaleKind' }
+        payment_method: { type: string, minLength: 1, maxLength: 64 }
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SaleLineCommand' }
+        device_id: { type: string, format: uuid }
+        client_transaction_id: { type: string, format: uuid }
+        client_timestamp: { type: string, format: date-time }
+        app_version: { type: string }
+        master_data_version: { type: integer, minimum: 1 }
+        price_version: { type: integer, minimum: 1 }
+        sync_attempt: { type: integer, minimum: 1 }
+        offline: { type: boolean, default: false }
+    MobileSyncResult:
+      type: object
+      additionalProperties: false
+      required: [client_transaction_id, state]
+      properties:
+        client_transaction_id: { type: string, format: uuid }
+        state: { type: string, enum: [synced, rejected, requires_review] }
+        sale: { $ref: '#/components/schemas/Sale' }
+        rejection_code: { type: [string, 'null'] }
+        rejection_message: { type: [string, 'null'] }
+    Metric:
+      type: object
+      required: [key, label, value]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        value: { $ref: '#/components/schemas/Money' }
+        trend_percent: { type: [string, 'null'] }
+    DashboardAlert:
+      type: object
+      required: [id, severity, title, source_type, source_id]
+      properties:
+        id: { type: string, format: uuid }
+        severity: { type: string, enum: [info, warning, critical] }
+        title: { type: string }
+        source_type: { type: string }
+        source_id: { type: string, format: uuid }
+    Dashboard:
+      type: object
+      required: [as_of, metrics, alerts, pending_approvals]
+      properties:
+        as_of: { type: string, format: date-time }
+        metrics: { type: array, items: { $ref: '#/components/schemas/Metric' } }
+        alerts: { type: array, items: { $ref: '#/components/schemas/DashboardAlert' } }
+        pending_approvals: { type: integer, minimum: 0 }
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, correlation_id]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+        code: { type: string }
+        correlation_id: { type: string, format: uuid }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }

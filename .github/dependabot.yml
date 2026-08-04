@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /apps/control-center
+    schedule:
+      interval: weekly
+    groups:
+      control-center:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /services/core-api
+    schedule:
+      interval: weekly
+    groups:
+      core-api:
+        patterns: ["*"]
+  - package-ecosystem: pub
+    directory: /apps/sales-mobile
+    schedule:
+      interval: weekly
+    groups:
+      sales-mobile:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

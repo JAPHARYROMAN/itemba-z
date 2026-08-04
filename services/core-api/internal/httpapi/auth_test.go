@@ -1,0 +1,90 @@
+package httpapi
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
+)
+
+type fixedAuthenticator struct {
+	principal Principal
+	err       error
+}
+
+func (a fixedAuthenticator) Authenticate(context.Context, *http.Request) (Principal, error) {
+	return a.principal, a.err
+}
+
+func TestVerifiedPrincipalIgnoresSpoofedScopeHeaders(t *testing.T) {
+	trusted := Principal{ActorID: "trusted-user", Scope: tenancy.Scope{TenantID: "trusted-tenant", CompanyID: "trusted-company", BranchID: "trusted-branch", WarehouseID: "trusted-warehouse"}}
+	handler := &Handler{authenticator: fixedAuthenticator{principal: trusted}}
+	request := httptest.NewRequest(http.MethodGet, "/v1/sales/sale-1", nil)
+	request.Header.Set("X-Actor-ID", "spoofed-user")
+	request.Header.Set("X-Tenant-ID", "spoofed-tenant")
+	request.Header.Set("X-Company-ID", "spoofed-company")
+	request.Header.Set("X-Branch-ID", "spoofed-branch")
+	request.Header.Set("X-Warehouse-ID", "spoofed-warehouse")
+	principal, ok := handler.requestContext(httptest.NewRecorder(), request)
+	if !ok {
+		t.Fatal("verified principal was rejected")
+	}
+	if principal != trusted {
+		t.Fatalf("spoofed headers changed principal: %+v", principal)
+	}
+}
+
+func TestRejectedAuthenticationDoesNotFallBackToScopeHeaders(t *testing.T) {
+	handler := &Handler{authenticator: fixedAuthenticator{err: ErrUnauthenticated}}
+	request := httptest.NewRequest(http.MethodGet, "/v1/sales/sale-1", nil)
+	request.Header.Set("X-Actor-ID", "spoofed-user")
+	request.Header.Set("X-Tenant-ID", "spoofed-tenant")
+	request.Header.Set("X-Company-ID", "spoofed-company")
+	request.Header.Set("X-Branch-ID", "spoofed-branch")
+	request.Header.Set("X-Warehouse-ID", "spoofed-warehouse")
+	recorder := httptest.NewRecorder()
+	if _, ok := handler.requestContext(recorder, request); ok {
+		t.Fatal("spoofed headers bypassed authentication")
+	}
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d", recorder.Code)
+	}
+}
+
+func TestDevelopmentHeaderAuthenticatorIsExplicitAndValidatesAllScope(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/v1/sales/sale-1", nil)
+	request.Header.Set("X-Actor-ID", "dev-user")
+	request.Header.Set("X-Tenant-ID", "dev-tenant")
+	request.Header.Set("X-Company-ID", "dev-company")
+	request.Header.Set("X-Branch-ID", "dev-branch")
+	if _, err := (DevelopmentHeaderAuthenticator{}).Authenticate(context.Background(), request); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("incomplete scope accepted: %v", err)
+	}
+	request.Header.Set("X-Warehouse-ID", "dev-warehouse")
+	principal, err := (DevelopmentHeaderAuthenticator{}).Authenticate(context.Background(), request)
+	if err != nil || principal.ActorID != "dev-user" {
+		t.Fatalf("development auth failed: %+v %v", principal, err)
+	}
+}
+
+func TestOIDCClaimsRequireInternalUUIDAndDoNotUseOpaqueSubjectAsActorID(t *testing.T) {
+	claims := oidcClaims{
+		Subject: "identity-provider|opaque-subject", UserID: "00000000-0000-4000-8000-000000000005",
+		TenantID: "00000000-0000-4000-8000-000000000001", CompanyID: "00000000-0000-4000-8000-000000000002",
+		BranchID: "00000000-0000-4000-8000-000000000003", WarehouseID: "00000000-0000-4000-8000-000000000004",
+	}
+	principal, err := principalFromOIDCClaims(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if principal.ActorID != claims.UserID || principal.ActorID == claims.Subject || principal.Subject != claims.Subject {
+		t.Fatalf("incorrect identity mapping: %+v", principal)
+	}
+	claims.UserID = claims.Subject
+	if _, err := principalFromOIDCClaims(claims); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("opaque subject accepted as database UUID: %v", err)
+	}
+}

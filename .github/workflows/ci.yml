@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts-and-infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Lint OpenAPI
+        run: pnpm --package=@redocly/cli@2.9.0 dlx redocly lint contracts/openapi/itemba-z.v1.yaml
+      - name: Validate event schema JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('contracts/events/event-envelope.v1.schema.json','utf8'))"
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+      - name: Validate Terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform -chdir=infra/terraform init -backend=false
+          terraform -chdir=infra/terraform validate
+      - name: Validate local service topology
+        env:
+          POSTGRES_DB: itemba_z
+          POSTGRES_USER: itemba_z
+          POSTGRES_PASSWORD: ci-only-password
+          MINIO_ROOT_USER: itemba_z_ci
+          MINIO_ROOT_PASSWORD: ci-only-password
+        run: docker compose -f infra/docker/compose.yaml config --quiet
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/core-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/core-api/go.mod
+          cache-dependency-path: services/core-api/go.sum
+      - run: go test -race -coverprofile=coverage.out ./...
+      - run: go vet ./...
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+      - name: Scan reachable Go vulnerabilities
+        run: govulncheck ./...
+      - name: Build core API container
+        run: docker build --tag itemba-z-core-api:ci .
+
+  control-center:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/control-center
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/control-center/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Build Control Center container
+        run: docker build --tag itemba-z-control-center:ci .
+
+  sales-mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/sales-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build apk --debug
