@@ -237,6 +237,9 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
                         if (allowDevelopmentIdentity) ...[
                           const SizedBox(height: 14),
                           DropdownButtonFormField<MobileIdentityMode>(
+                            // Flutter 3.29 compatibility. Remove with the next
+                            // minimum-SDK upgrade and use initialValue instead.
+                            // ignore: deprecated_member_use
                             value: _mode,
                             decoration: InputDecoration(
                               labelText: _text(
