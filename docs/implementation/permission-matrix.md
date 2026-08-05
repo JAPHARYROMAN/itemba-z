@@ -28,3 +28,9 @@ Device operations are separately split into `mobile.devices.read` and
 and allocation commands only inside the operator's exact assigned scope. It
 does not permit device enrollment, mobile sale synchronization, stock-ledger
 adjustment, or mutation of append-only change evidence.
+
+Customer receivables are separately split into `customers.accounts.read` and
+`customers.credit.manage`. Account read exposes scoped invoice ageing and the
+effective policy. Credit management only appends a reasoned, future-effective
+policy; it cannot edit history, alter ledger balances, enable General Customer
+credit, or bypass overdue, risk-hold, and reconciliation controls.

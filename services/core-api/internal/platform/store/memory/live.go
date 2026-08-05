@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
@@ -222,9 +223,15 @@ func (s *Store) ListCustomers(_ context.Context, scope tenancy.Scope, actorID st
 		if query != "" && !strings.Contains(strings.ToLower(code+" "+account.Name), query) {
 			continue
 		}
-		exposure := creditExposure(s.state, scope, account.ID)
-		available := account.CreditLimitMinor - exposure
-		eligible := account.Active && !account.General && account.CreditEnabled && available > 0
+		policy, policyErr := activeMemoryCreditPolicy(s.state, scope, account.ID, time.Now().UTC())
+		if policyErr != nil {
+			return readmodel.CatalogSnapshot{}, nil, policyErr
+		}
+		aging := memoryReceivableAging(s.state, scope, account.ID, time.Now().UTC())
+		exposure := aging.LedgerBalanceMinor
+		available := policy.CreditLimitMinor - exposure
+		eligible := account.Active && !account.General && policy.CreditEnabled && policy.RiskStatus != customers.CreditRiskHold &&
+			aging.Reconciled && aging.OldestOverdueDays <= policy.MaxOverdueDays && available > 0
 		if options.CreditEligible != nil && eligible != *options.CreditEligible {
 			continue
 		}
@@ -234,8 +241,8 @@ func (s *Store) ListCustomers(_ context.Context, scope tenancy.Scope, actorID st
 		}
 		items = append(items, readmodel.CustomerSummary{
 			ID: account.ID, Code: code, Name: account.Name, Status: status,
-			IsGeneralCustomer: account.General, CreditEnabled: account.CreditEnabled,
-			CreditLimitMinor: account.CreditLimitMinor, CurrentExposureMinor: exposure,
+			IsGeneralCustomer: account.General, CreditEnabled: policy.CreditEnabled,
+			CreditLimitMinor: policy.CreditLimitMinor, CurrentExposureMinor: exposure,
 			AvailableCreditMinor: available,
 		})
 	}

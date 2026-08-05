@@ -14,10 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 )
 
@@ -29,6 +31,7 @@ type Handler struct {
 	sales         *sales.Service
 	read          *readmodel.Service
 	mobile        *mobile.Service
+	receivables   *receivables.Service
 	logger        *slog.Logger
 	authenticator Authenticator
 }
@@ -46,15 +49,15 @@ func New(salesService *sales.Service, logger *slog.Logger, authenticator Authent
 	return &Handler{sales: salesService, logger: logger, authenticator: authenticator}, nil
 }
 
-func NewLive(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+func NewLive(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
 	handler, err := New(salesService, logger, authenticator)
 	if err != nil {
 		return nil, err
 	}
-	if readService == nil || mobileService == nil {
-		return nil, errors.New("read and mobile services are required")
+	if readService == nil || mobileService == nil || receivablesService == nil {
+		return nil, errors.New("read, mobile, and receivables services are required")
 	}
-	handler.read, handler.mobile = readService, mobileService
+	handler.read, handler.mobile, handler.receivables = readService, mobileService, receivablesService
 	return handler, nil
 }
 
@@ -79,9 +82,76 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("GET /v1/mobile/reconciliation-cases/{caseID}", h.getMobileReconciliationCase)
 		mux.HandleFunc("POST /v1/mobile/reconciliation-cases/{caseID}/resolutions", h.resolveMobileReconciliationCase)
 	}
+	mux.HandleFunc("GET /v1/customers/{customerID}/account", h.customerAccount)
+	mux.HandleFunc("POST /v1/customers/{customerID}/credit-policies", h.scheduleCustomerCreditPolicy)
 	mux.HandleFunc("GET /v1/sales/{saleID}", h.getSale)
 	mux.HandleFunc("POST /v1/sales/{saleID}/reversals", h.reverseSale)
 	return securityHeaders(correlationIDs(identity.UUIDGenerator{}, h.observe(mux)))
+}
+
+func (h *Handler) customerAccount(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	customerID, err := identity.CanonicalUUID(request.PathValue("customerID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "customerID must be a UUID")
+		return
+	}
+	result, err := h.receivables.Account(request.Context(), principal.Scope, principal.ActorID, customerID)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+
+type scheduleCustomerCreditPolicyRequest struct {
+	CreditEnabled    bool   `json:"credit_enabled"`
+	CreditLimitMinor int64  `json:"credit_limit_minor"`
+	PaymentTermsDays int64  `json:"payment_terms_days"`
+	MaxOverdueDays   int64  `json:"max_overdue_days"`
+	RiskStatus       string `json:"risk_status"`
+	Reason           string `json:"reason"`
+	EffectiveFrom    string `json:"effective_from"`
+}
+
+func (h *Handler) scheduleCustomerCreditPolicy(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	idempotencyKey, ok := requireIdempotencyKey(writer, request)
+	if !ok {
+		return
+	}
+	customerID, err := identity.CanonicalUUID(request.PathValue("customerID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "customerID must be a UUID")
+		return
+	}
+	var body scheduleCustomerCreditPolicyRequest
+	if !decodeJSON(writer, request, &body) {
+		return
+	}
+	effectiveFrom, err := time.Parse(time.RFC3339, strings.TrimSpace(body.EffectiveFrom))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "effective_from must be an RFC 3339 timestamp")
+		return
+	}
+	result, err := h.receivables.ScheduleCreditPolicy(request.Context(), receivables.ScheduleCreditPolicyCommand{
+		Scope: principal.Scope, ActorID: principal.ActorID, CustomerID: customerID,
+		CreditEnabled: body.CreditEnabled, CreditLimitMinor: body.CreditLimitMinor,
+		PaymentTermsDays: body.PaymentTermsDays, MaxOverdueDays: body.MaxOverdueDays,
+		RiskStatus: customers.CreditRiskStatus(body.RiskStatus), Reason: body.Reason, EffectiveFrom: effectiveFrom,
+		IdempotencyKey: idempotencyKey, CorrelationID: correlationID(writer),
+	})
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, result)
 }
 
 func (h *Handler) listManagedDevices(writer http.ResponseWriter, request *http.Request) {
@@ -580,6 +650,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusForbidden, "device_binding_forbidden"
 	case errors.Is(err, sales.ErrIdempotencyConflict):
 		status, code = http.StatusConflict, "idempotency_conflict"
+	case errors.Is(err, customers.ErrCreditPolicySequence), errors.Is(err, customers.ErrCreditPolicyBackdated):
+		status, code = http.StatusConflict, "credit_policy_conflict"
+	case errors.Is(err, customers.ErrReceivablesUnbalanced):
+		status, code = http.StatusConflict, "receivables_reconciliation_required"
 	case errors.Is(err, mobile.ErrReconciliationResolved):
 		status, code = http.StatusConflict, "reconciliation_already_resolved"
 	case errors.Is(err, devices.ErrStatusUnchanged):
@@ -598,7 +672,7 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		errors.Is(err, sales.ErrOfflinePeriodReconciliation),
 		errors.Is(err, sales.ErrOfflineClockReconciliation):
 		status, code = http.StatusConflict, "offline_reconciliation_required"
-	case errors.Is(err, sales.ErrGeneralCustomerCredit), errors.Is(err, sales.ErrCustomerCreditDisabled), errors.Is(err, sales.ErrCreditLimitExceeded), errors.Is(err, sales.ErrCustomerInactive), errors.Is(err, sales.ErrProductInactive),
+	case errors.Is(err, sales.ErrGeneralCustomerCredit), errors.Is(err, sales.ErrCustomerCreditDisabled), errors.Is(err, sales.ErrCreditLimitExceeded), errors.Is(err, sales.ErrCustomerInactive), errors.Is(err, sales.ErrProductInactive), errors.Is(err, customers.ErrCreditRiskHold), errors.Is(err, customers.ErrCreditOverdue),
 		errors.Is(err, sales.ErrOfflineCredit), errors.Is(err, sales.ErrOfflinePaymentMethod), errors.Is(err, sales.ErrOfflineTaxUnsupported), errors.Is(err, sales.ErrUnsupportedPayment), errors.Is(err, devices.ErrNotActive), errors.Is(err, devices.ErrOfflineDisabled), errors.Is(err, devices.ErrMobileCreditUnsupported), errors.Is(err, devices.ErrAllocationExceeded), errors.Is(err, devices.ErrOfflineLimit), errors.Is(err, devices.ErrOfflineLeaseExpired), errors.Is(err, devices.ErrStaleMasterData), errors.Is(err, devices.ErrInvalidTimeZone), errors.Is(err, devices.ErrInvalidStatusTransition):
 		status, code = http.StatusUnprocessableEntity, "business_rule_violation"
 	case errors.Is(err, sales.ErrInvalidCommand), errors.Is(err, sales.ErrInvalidLine), errors.Is(err, sales.ErrDuplicateProductLine), errors.Is(err, sales.ErrInvalidSaleKind), errors.Is(err, sales.ErrPaymentMethodRequired):

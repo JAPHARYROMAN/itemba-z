@@ -3,6 +3,9 @@ import type { components } from "@/generated/itemba-z.v1";
 export type WorkingContext = components["schemas"]["WorkingContext"];
 export type CustomerSummary = components["schemas"]["CustomerSummary"];
 export type CustomerPage = components["schemas"]["CustomerPage"];
+export type CustomerAccountDetail = components["schemas"]["CustomerAccountDetail"];
+export type CreditPolicy = components["schemas"]["CreditPolicy"];
+export type ScheduleCreditPolicyCommand = components["schemas"]["ScheduleCreditPolicyCommand"];
 export type ProductSummary = components["schemas"]["ProductSummary"];
 export type ProductPage = components["schemas"]["ProductPage"];
 export type Sale = components["schemas"]["Sale"];
@@ -64,4 +67,14 @@ export interface DeviceManagementWorkspace {
   devices: MobileDevice[];
   products: ProductSummary[];
   nextCursor: string | null;
+}
+
+export interface CustomerAccountsWorkspace {
+  context: WorkingContext;
+  customers: CustomerSummary[];
+}
+
+export interface CustomerAccountWorkspace {
+  context: WorkingContext;
+  account: CustomerAccountDetail;
 }

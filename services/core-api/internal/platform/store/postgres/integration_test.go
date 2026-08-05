@@ -22,6 +22,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/postgres"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
@@ -39,7 +40,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -59,6 +60,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 		roleID           = "00000000-0000-4000-8000-000000000006"
 		scopeID          = "00000000-0000-4000-8000-000000000007"
 		customerID       = "00000000-0000-4000-8000-0000000000e8"
+		creditCustomerID = "00000000-0000-4000-8000-0000000000e9"
 		productID        = "00000000-0000-4000-8000-0000000000c9"
 		taxID            = "00000000-0000-4000-8000-00000000000a"
 		periodID         = "00000000-0000-4000-8000-00000000000b"
@@ -97,6 +99,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 		{`INSERT INTO user_role_scopes(id,tenant_id,user_id,role_id,company_id,branch_id,warehouse_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, []any{scopeID, tenantID, userID, roleID, companyID, branchID, warehouseID}},
 		{`INSERT INTO user_role_scopes(id,tenant_id,user_id,role_id,company_id,branch_id,warehouse_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, []any{otherScopeID, tenantID, userID, roleID, companyID, otherBranchID, otherWarehouseID}},
 		{`INSERT INTO customer_accounts(id,tenant_id,company_id,code,name,active,is_general) VALUES($1,$2,$3,'GENERAL','General Customer',true,true)`, []any{customerID, tenantID, companyID}},
+		{`INSERT INTO customer_accounts(id,tenant_id,company_id,code,name,active,is_general,credit_enabled,credit_limit_minor) VALUES($1,$2,$3,'CREDIT','Credit Customer',true,false,true,1000000)`, []any{creditCustomerID, tenantID, companyID}},
 		{`INSERT INTO products(id,tenant_id,company_id,sku,name,currency,list_price_minor,standard_cost_minor,tax_code,revenue_account_id,cogs_account_id,inventory_account_id) VALUES($1,$2,$3,'SKU','Product','TZS',10000,6000,'VAT','revenue','cogs','inventory')`, []any{productID, tenantID, companyID}},
 		{`INSERT INTO tax_rules(id,tenant_id,company_id,code,basis_points,effective_from) VALUES($1,$2,$3,'VAT',1800,$4)`, []any{taxID, tenantID, companyID, testTime.AddDate(-1, 0, 0)}},
 		{`INSERT INTO fiscal_periods(id,tenant_id,company_id,starts_at,ends_at,is_open) VALUES($1,$2,$3,$4,$5,true)`, []any{periodID, tenantID, companyID, testTime.AddDate(0, -1, 0), testTime.AddDate(0, 1, 0)}},
@@ -162,6 +165,30 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	productsPage, err := readService.Products(ctx, scope, userID, "SKU", "", "", 10)
 	if err != nil || len(productsPage.Items) != 1 || productsPage.Items[0].AvailableQuantity != 100 || productsPage.Items[0].TaxBasisPoints != 1800 {
 		t.Fatalf("products: %+v %v", productsPage, err)
+	}
+	creditPostingService, err := sales.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	creditSale, err := creditPostingService.Complete(ctx, sales.CompleteCommand{Scope: scope, CustomerID: creditCustomerID, Kind: sales.KindCredit,
+		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, ActorID: userID, IdempotencyKey: "integration-credit-sale"})
+	if err != nil {
+		t.Fatalf("credit sale: %v", err)
+	}
+	receivablesService, err := receivables.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := receivablesService.Account(ctx, scope, userID, creditCustomerID)
+	if err != nil || !account.Aging.Reconciled || account.Aging.CalculatedExposure != creditSale.TotalMinor || len(account.OpenItems) != 1 {
+		t.Fatalf("credit account: %+v err=%v", account, err)
+	}
+	if _, err := creditPostingService.Reverse(ctx, sales.ReverseCommand{Scope: scope, SaleID: creditSale.ID, Reason: "Integration credit return", ActorID: userID, IdempotencyKey: "integration-credit-reversal"}); err != nil {
+		t.Fatalf("credit reversal: %v", err)
+	}
+	account, err = receivablesService.Account(ctx, scope, userID, creditCustomerID)
+	if err != nil || !account.Aging.Reconciled || account.Aging.CalculatedExposure != 0 || len(account.OpenItems) != 0 {
+		t.Fatalf("reversed credit account: %+v err=%v", account, err)
 	}
 	oldSnapshotToken := snapshotToken
 	if _, err := pool.Exec(ctx, `UPDATE `+pgx.Identifier{schema}.Sanitize()+`.products SET name='Published Product' WHERE tenant_id=$1 AND company_id=$2 AND id=$3`, tenantID, companyID, productID); err != nil {
@@ -556,7 +583,7 @@ func TestRestrictedRuntimeRoleEnforcesTenantRLS(t *testing.T) {
 		_, _ = clusterPool.Exec(context.Background(), "DROP ROLE "+pgx.Identifier{apiUser}.Sanitize())
 		_, _ = clusterPool.Exec(context.Background(), "DROP ROLE "+pgx.Identifier{workerUser}.Sanitize())
 	}()
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql"} {
 		applyTestMigration(t, ctx, adminPool, "itembaz", name)
 	}
 	const (

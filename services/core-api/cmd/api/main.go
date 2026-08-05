@@ -17,6 +17,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/memory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/postgres"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 )
 
@@ -90,7 +91,17 @@ func main() {
 		logger.Error("initialize mobile service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLive(salesService, readService, mobileService, logger, authenticator)
+	receivablesRepository, ok := repository.(receivables.Repository)
+	if !ok {
+		logger.Error("repository does not implement customer receivables")
+		os.Exit(1)
+	}
+	receivablesService, err := receivables.NewService(receivablesRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize receivables service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLive(salesService, readService, mobileService, receivablesService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)

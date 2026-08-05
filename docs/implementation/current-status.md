@@ -1,6 +1,6 @@
 # Current implementation status
 
-Updated: 2026-08-04
+Updated: 2026-08-05
 
 This repository is the first executable ITEMBA-Z foundation. It proves the architecture and the internal golden transaction without representing the full production Release 1 acceptance boundary.
 
@@ -19,12 +19,14 @@ This repository is the first executable ITEMBA-Z foundation. It proves the archi
 - Offline posting now records distinct immutable `document_at`, `received_at`, and `accounting_at` values. An effective-dated, append-only company policy fixes accounting to authoritative server receipt time, bounds future device-clock skew, and requires document and accounting receipt to belong to the same fiscal period. Clock-skew and cross-period commands create governed reconciliation cases with no stock or accounting effects.
 - The bilingual Control Center now includes a live, permission-aware reconciliation register and evidence detail workflow. Operators can inspect exact retained commands and record only controlled, confirmed dispositions; the UI never implies that a disposition posts accounting.
 - Exact-scope device operators now have a bilingual live governance workspace backed by separate read/manage permissions. Idempotent, reason-required suspension ends current offline authorization; reactivation requires a fresh acknowledgement before offline work resumes. Allocation commands retain append-only before/after/consumed evidence and reject reductions below synchronized use or reservations above live warehouse stock.
+- Customer receivables now retain invoice-level, append-only items and allocations, reconcile them to the customer ledger, and expose current/30/60/90+ ageing. Effective-dated credit policies govern limits, payment terms, overdue tolerance, and `STANDARD`/`WATCH`/`HOLD` risk state; General Customer credit remains prohibited. Credit sales create due-dated invoices atomically, linked reversals create and allocate credit notes, and unreconciled or overdue accounts fail closed.
+- The bilingual Control Center now provides a live customer-account register, authoritative exposure and ageing detail, open-document evidence, and a permission-separated policy scheduling workflow with preserved idempotency across ambiguous responses. Online mobile synchronization may submit credit sales through the same server policy; offline credit remains prohibited and the Flutter entry flow is still pending.
 - A reproducible local application profile plus PostgreSQL-backed CI verifies migration, development seed, API startup, an allocated offline cash sale, duplicate replay/conflict behavior, General Customer credit rejection, and linked reversal through HTTP.
 
 ## Remaining before Release 1 can be claimed
 
 - Complete live APIs and posting rules for customer/supplier master data, purchasing, returns, stock operations and costing, AR/AP, cash/bank, budgeting, assets, treasury, intercompany, consolidation, HR, attendance, leave, loans, payroll, reports, and settings.
-- Complete authoritative receivable aging and effective credit policy (overdue amount, due date, risk/approval state, and expected post-sale exposure) before enabling mobile credit-sale entry; the current POS intentionally fails closed.
+- Complete the Flutter online credit-sale entry and customer-account cache UX; the server contract and online synchronization path are authoritative, while offline credit intentionally remains fail-closed.
 - Select and integrate the production identity provider and login/session lifecycle; deploy the API and clients behind managed TLS, provision production devices, and add governed queue-support workflows.
 - Implement and professionally validate TRA EFD/VFD, payment, banking-import, email, WhatsApp, payroll/statutory, privacy, hosting, and cross-border-transfer integrations.
 - Add effective-dated Tanzanian configuration only after accountant, tax, payroll, and legal approval; no statutory values may be hardcoded.

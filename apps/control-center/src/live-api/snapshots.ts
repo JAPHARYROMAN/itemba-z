@@ -3,9 +3,29 @@ import "server-only";
 import { createServerRepository } from "@/live-api/server-repository";
 import { publicProblem } from "@/live-api/errors";
 import type {
-  DeviceManagementWorkspace, LiveSnapshot, MobileReconciliationStatus, ReconciliationDetailWorkspace,
+  CustomerAccountWorkspace, CustomerAccountsWorkspace, DeviceManagementWorkspace, LiveSnapshot, MobileReconciliationStatus, ReconciliationDetailWorkspace,
   ReconciliationWorkspace, SaleDetailWorkspace, SalesBootstrap, SalesWorkspace,
 } from "@/live-api/types";
+
+export async function loadCustomerAccounts(): Promise<LiveSnapshot<CustomerAccountsWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const [context, customers] = await Promise.all([repository.getWorkingContext(), repository.listCustomers()]);
+    return { state: "ready", data: { context, customers: customers.items } };
+  } catch (error) {
+    return { state: "unavailable", problem: publicProblem(error) };
+  }
+}
+
+export async function loadCustomerAccount(customerId: string): Promise<LiveSnapshot<CustomerAccountWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const [context, account] = await Promise.all([repository.getWorkingContext(), repository.getCustomerAccount(customerId)]);
+    return { state: "ready", data: { context, account } };
+  } catch (error) {
+    return { state: "unavailable", problem: publicProblem(error) };
+  }
+}
 
 export async function loadSalesBootstrap(): Promise<LiveSnapshot<SalesBootstrap>> {
   try {

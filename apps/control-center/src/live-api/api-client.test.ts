@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ItembaApiClient, LiveApiError } from "@/live-api/api-client";
-import type { CompleteSaleCommand } from "@/live-api/types";
+import type { CompleteSaleCommand, ScheduleCreditPolicyCommand } from "@/live-api/types";
 
 const bearerIdentity = { kind: "bearer" as const, token: "server-only-token" };
 const correlationId = "00000000-0000-4000-8000-000000000099";
@@ -45,6 +45,23 @@ describe("ItembaApiClient", () => {
     expect(urls).toContain("http://core-api:8080/v1/products?page_size=200");
     expect(urls.join(" ")).not.toContain("company_id");
     expect(urls.join(" ")).not.toContain("warehouse_id");
+  });
+
+  it("uses customer-scoped receivables URLs and preserves the policy idempotency key", async () => {
+    const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      void input; void init;
+      return Response.json({ id: "policy-id" }, { status: 201 });
+    });
+    const client = new ItembaApiClient({ baseUrl: "http://core-api:8080", identity: bearerIdentity, fetchImplementation, createCorrelationId: () => correlationId });
+    const command: ScheduleCreditPolicyCommand = {
+      credit_enabled: true, credit_limit_minor: 5_000_000, payment_terms_days: 30, max_overdue_days: 7,
+      risk_status: "WATCH", reason: "Approved after finance review", effective_from: "2026-08-06T09:00:00Z",
+    };
+    await client.scheduleCustomerCreditPolicy("customer/id", command, "credit-policy-request-0001");
+    const [url, request] = fetchImplementation.mock.calls[0] ?? [];
+    expect(String(url)).toBe("http://core-api:8080/v1/customers/customer%2Fid/credit-policies");
+    expect(new Headers(request?.headers).get("Idempotency-Key")).toBe("credit-policy-request-0001");
+    expect(JSON.parse(String(request?.body))).toEqual(command);
   });
 
   it("rejects an invalid idempotency key before making a network request", async () => {

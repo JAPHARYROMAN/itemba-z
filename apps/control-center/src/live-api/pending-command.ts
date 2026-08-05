@@ -78,6 +78,10 @@ export function deviceAllocationPendingScope(context: PendingCommandOwnerContext
   return `mobile:device:allocation:${commandOwnerScope(context)}:device=${encodeURIComponent(deviceId)}`;
 }
 
+export function customerCreditPolicyPendingScope(context: PendingCommandOwnerContext, customerId: string): string {
+  return `customers:credit-policy:${commandOwnerScope(context)}:customer=${encodeURIComponent(customerId)}`;
+}
+
 export function pendingCommandStorageKey(scope: string): string {
   return `${STORAGE_PREFIX}${scope}`;
 }

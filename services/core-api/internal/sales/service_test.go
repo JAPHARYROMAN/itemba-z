@@ -365,6 +365,7 @@ func TestCrossTenantIsolation(t *testing.T) {
 
 func TestReversalRestoresStockReceivableAndFinance(t *testing.T) {
 	f := newFixture(t)
+	f.store.SeedPermission(f.scope, "manager-1", "customers.accounts.read")
 	command := f.cashCommand("credit-sale")
 	command.CustomerID, command.Kind, command.PaymentMethod = "customer-1", sales.KindCredit, ""
 	original, err := f.service.Complete(context.Background(), command)
@@ -395,6 +396,13 @@ func TestReversalRestoresStockReceivableAndFinance(t *testing.T) {
 	if exposure != 0 {
 		t.Fatalf("receivable was not reversed: %d", exposure)
 	}
+	account, err := f.store.CustomerAccountDetail(context.Background(), f.scope, "manager-1", "customer-1", testTime)
+	if err != nil {
+		t.Fatalf("account detail: %v", err)
+	}
+	if !account.Aging.Reconciled || account.Aging.CalculatedExposure != 0 || len(account.OpenItems) != 0 {
+		t.Fatalf("reversal did not settle invoice evidence: %+v", account)
+	}
 	for _, journal := range snapshot.Journals {
 		if err := journal.Validate(); err != nil {
 			t.Fatalf("unbalanced journal: %v", err)
@@ -418,6 +426,28 @@ func TestReversalRestoresStockReceivableAndFinance(t *testing.T) {
 	repeated, err := f.service.Reverse(context.Background(), sales.ReverseCommand{Scope: f.scope, SaleID: original.ID, Reason: "Customer returned goods", ActorID: "manager-1", IdempotencyKey: "reverse-credit-sale"})
 	if err != nil || repeated.ID != reversal.ID {
 		t.Fatalf("reversal was not idempotent: %+v %v", repeated, err)
+	}
+}
+
+func TestOverdueReceivableBlocksFurtherCredit(t *testing.T) {
+	f := newFixture(t)
+	f.store.SeedCreditPolicy(customers.CreditPolicy{
+		ID: "short-terms", Scope: f.scope, CustomerID: "customer-1", CreditEnabled: true,
+		CreditLimitMinor: 1_000_000, PaymentTermsDays: 0, MaxOverdueDays: 0,
+		RiskStatus: customers.CreditRiskStandard, EffectiveFrom: testTime.Add(-time.Hour),
+	})
+	command := f.cashCommand("first-credit")
+	command.CustomerID, command.Kind, command.PaymentMethod = "customer-1", sales.KindCredit, ""
+	if _, err := f.service.Complete(context.Background(), command); err != nil {
+		t.Fatalf("first credit: %v", err)
+	}
+	laterService, err := sales.NewService(f.store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(24 * time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.IdempotencyKey = "second-credit"
+	if _, err := laterService.Complete(context.Background(), command); !errors.Is(err, customers.ErrCreditOverdue) {
+		t.Fatalf("expected overdue rejection, got %v", err)
 	}
 }
 

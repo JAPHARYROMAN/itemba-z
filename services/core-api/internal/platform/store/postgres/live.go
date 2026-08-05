@@ -275,20 +275,44 @@ func (s *Store) ListCustomers(ctx context.Context, scope tenancy.Scope, actorID 
 		}
 		rows, err := tx.tx.Query(ctx, `
 			SELECT c.id, c.code, c.name, CASE WHEN c.active THEN 'active' ELSE 'inactive' END,
-			       c.is_general, c.credit_enabled, c.credit_limit_minor, exposure.amount_minor,
-			       c.credit_limit_minor - exposure.amount_minor
+			       c.is_general, policy.credit_enabled, policy.credit_limit_minor, exposure.amount_minor,
+			       policy.credit_limit_minor - exposure.amount_minor
 			FROM customer_accounts c
+			JOIN legal_companies company ON company.tenant_id=c.tenant_id AND company.id=c.company_id
+			JOIN LATERAL (
+				SELECT p.credit_enabled,p.credit_limit_minor,p.max_overdue_days,p.risk_status
+				FROM customer_credit_policies p
+				WHERE p.tenant_id=c.tenant_id AND p.company_id=c.company_id AND p.customer_id=c.id
+				  AND p.effective_from <= CURRENT_TIMESTAMP
+				ORDER BY p.effective_from DESC LIMIT 1
+			) policy ON true
 			LEFT JOIN LATERAL (
 				SELECT COALESCE(sum(cl.amount_minor), 0)::bigint AS amount_minor
 				FROM customer_ledger cl
 				WHERE cl.tenant_id = c.tenant_id AND cl.company_id = c.company_id AND cl.customer_id = c.id
 			) exposure ON true
+			LEFT JOIN LATERAL (
+				SELECT COALESCE(max(
+					(CURRENT_TIMESTAMP AT TIME ZONE company.business_timezone)::date -
+					(item.due_at AT TIME ZONE company.business_timezone)::date
+				),0)::bigint AS oldest_days
+				FROM customer_receivable_items item
+				LEFT JOIN LATERAL (
+					SELECT COALESCE(sum(a.amount_minor),0)::bigint amount_minor
+					FROM customer_receivable_allocations a
+					WHERE a.tenant_id=item.tenant_id AND a.company_id=item.company_id AND a.debit_item_id=item.id
+				) allocated ON true
+				WHERE item.tenant_id=c.tenant_id AND item.company_id=c.company_id AND item.customer_id=c.id
+				  AND item.kind='INVOICE' AND item.amount_minor-allocated.amount_minor > 0
+				  AND item.due_at < CURRENT_TIMESTAMP
+			) overdue ON true
 			WHERE c.tenant_id = $1 AND c.company_id = $2
 			  AND ($3 = '' OR c.code ILIKE '%' || $3 || '%' OR c.name ILIKE '%' || $3 || '%')
 			  AND ($4 = '' OR c.id > NULLIF($4, '')::uuid)
 			  AND ($5::boolean IS NULL OR
-			      (c.active AND NOT c.is_general AND c.credit_enabled
-			       AND c.credit_limit_minor - exposure.amount_minor > 0) = $5)
+			      (c.active AND NOT c.is_general AND policy.credit_enabled AND policy.risk_status <> 'HOLD'
+			       AND overdue.oldest_days <= policy.max_overdue_days
+			       AND policy.credit_limit_minor - exposure.amount_minor > 0) = $5)
 			ORDER BY c.id LIMIT $6`, scope.TenantID, scope.CompanyID, options.Query,
 			options.AfterID, options.CreditEligible, options.Limit+1)
 		if err != nil {

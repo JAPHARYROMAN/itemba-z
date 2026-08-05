@@ -168,9 +168,6 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 			if customer.General {
 				return ErrGeneralCustomerCredit
 			}
-			if !customer.CreditEnabled {
-				return ErrCustomerCreditDisabled
-			}
 		}
 		open, err := tx.FiscalPeriodOpen(ctx, command.Scope, now)
 		if err != nil {
@@ -363,15 +360,41 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 			if err := tx.LockCustomerCredit(ctx, command.Scope, customer.ID); err != nil {
 				return err
 			}
+			policy, err := tx.CustomerCreditPolicy(ctx, command.Scope, customer.ID, now)
+			if err != nil {
+				if errors.Is(err, customers.ErrCreditPolicyMissing) {
+					return ErrCustomerCreditDisabled
+				}
+				return err
+			}
+			if !policy.CreditEnabled {
+				return ErrCustomerCreditDisabled
+			}
+			if policy.RiskStatus == customers.CreditRiskHold {
+				return customers.ErrCreditRiskHold
+			}
+			aging, err := tx.CustomerReceivableAging(ctx, command.Scope, customer.ID, now)
+			if err != nil {
+				return err
+			}
+			if !aging.Reconciled {
+				return customers.ErrReceivablesUnbalanced
+			}
+			if aging.OldestOverdueDays > policy.MaxOverdueDays {
+				return customers.ErrCreditOverdue
+			}
 			exposure, err := tx.CreditExposure(ctx, command.Scope, customer.ID)
 			if err != nil {
 				return err
+			}
+			if exposure != aging.LedgerBalanceMinor {
+				return customers.ErrReceivablesUnbalanced
 			}
 			newExposure, err := checkedAdd(exposure, sale.TotalMinor)
 			if err != nil {
 				return err
 			}
-			if newExposure > customer.CreditLimitMinor {
+			if newExposure > policy.CreditLimitMinor {
 				return ErrCreditLimitExceeded
 			}
 			journalEntries = append([]finance.JournalEntry{{AccountID: posting.ReceivableAccountID, DebitMinor: sale.TotalMinor, Memo: "Customer receivable"}}, journalEntries...)
@@ -383,6 +406,19 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 				ID: entryID, TenantID: command.Scope.TenantID, CompanyID: command.Scope.CompanyID,
 				CustomerID: customer.ID, SourceType: string(RecordSale), SourceID: sale.ID,
 				AmountMinor: sale.TotalMinor, Currency: sale.Currency, OccurredAt: now,
+			}); err != nil {
+				return err
+			}
+			itemID, err := s.ids.New()
+			if err != nil {
+				return err
+			}
+			dueAt := sale.DocumentAt.AddDate(0, 0, int(policy.PaymentTermsDays))
+			if err := tx.AppendReceivableItem(ctx, customers.ReceivableItem{
+				ID: itemID, TenantID: command.Scope.TenantID, CompanyID: command.Scope.CompanyID,
+				CustomerID: customer.ID, Kind: customers.ReceivableInvoice, SourceType: string(RecordSale),
+				SourceID: sale.ID, AmountMinor: sale.TotalMinor, OutstandingMinor: sale.TotalMinor,
+				Currency: sale.Currency, DocumentAt: sale.DocumentAt, DueAt: &dueAt, OccurredAt: now,
 			}); err != nil {
 				return err
 			}
@@ -564,6 +600,43 @@ func (s *Service) Reverse(ctx context.Context, command ReverseCommand) (Sale, er
 			originalEntry.OccurredAt = now
 			if err := tx.AppendCustomerLedgerEntry(ctx, originalEntry); err != nil {
 				return err
+			}
+		}
+		if len(ledgerEntries) > 0 {
+			invoice, err := tx.ReceivableItemBySource(ctx, command.Scope, string(RecordSale), original.ID)
+			if err != nil {
+				return err
+			}
+			creditID, err := s.ids.New()
+			if err != nil {
+				return err
+			}
+			credit := customers.ReceivableItem{
+				ID: creditID, TenantID: command.Scope.TenantID, CompanyID: command.Scope.CompanyID,
+				CustomerID: original.CustomerID, Kind: customers.ReceivableCreditNote,
+				SourceType: string(RecordReversal), SourceID: reversal.ID, AmountMinor: reversal.TotalMinor,
+				OutstandingMinor: reversal.TotalMinor, Currency: reversal.Currency,
+				DocumentAt: reversal.DocumentAt, OccurredAt: now,
+			}
+			if err := tx.AppendReceivableItem(ctx, credit); err != nil {
+				return err
+			}
+			allocated := invoice.OutstandingMinor
+			if allocated > credit.AmountMinor {
+				allocated = credit.AmountMinor
+			}
+			if allocated > 0 {
+				allocationID, err := s.ids.New()
+				if err != nil {
+					return err
+				}
+				if err := tx.AppendReceivableAllocation(ctx, customers.ReceivableAllocation{
+					ID: allocationID, TenantID: command.Scope.TenantID, CompanyID: command.Scope.CompanyID,
+					CustomerID: original.CustomerID, DebitItemID: invoice.ID, CreditItemID: credit.ID,
+					AmountMinor: allocated, OccurredAt: now,
+				}); err != nil {
+					return err
+				}
 			}
 		}
 		payments, err := tx.PaymentsBySale(ctx, command.Scope, original.ID)

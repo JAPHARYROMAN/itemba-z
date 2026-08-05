@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ModulePageView } from "@/components/module-page-view";
 import { getModule, isModuleKey, moduleKeys } from "@/data/erp-repository";
 
-export function generateStaticParams() { return moduleKeys.filter((module) => module !== "sales").map((module) => ({ module })); }
+export function generateStaticParams() { return moduleKeys.filter((module) => module !== "sales" && module !== "customers").map((module) => ({ module })); }
 
 export async function generateMetadata({ params }: { params: Promise<{ module: string }> }): Promise<Metadata> {
   const { module } = await params;

@@ -89,6 +89,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/customers/{customer_id}/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a customer account, effective credit policy, and receivables ageing */
+        get: operations["getCustomerAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/customers/{customer_id}/credit-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Schedule an append-only customer credit policy */
+        post: operations["scheduleCustomerCreditPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/products": {
         parameters: {
             query?: never;
@@ -371,6 +405,103 @@ export interface components {
             catalog_snapshot_token: string;
             master_data_version: components["schemas"]["SafePositiveInteger"];
             price_version: components["schemas"]["SafePositiveInteger"];
+        };
+        CustomerAccount: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            /** Format: uuid */
+            tenant_id: string;
+            /** Format: uuid */
+            company_id: string;
+            name: string;
+            active: boolean;
+            is_general_customer: boolean;
+            /** @deprecated */
+            legacy_credit_enabled: boolean;
+            /** @deprecated */
+            legacy_credit_limit_minor: components["schemas"]["SafeNonNegativeInteger"];
+        };
+        /** @enum {string} */
+        CreditRiskStatus: "STANDARD" | "WATCH" | "HOLD";
+        CreditPolicy: {
+            /** Format: uuid */
+            id: string;
+            scope: components["schemas"]["Scope"];
+            /** Format: uuid */
+            customer_id: string;
+            credit_enabled: boolean;
+            credit_limit_minor: components["schemas"]["SafeNonNegativeInteger"];
+            payment_terms_days: number;
+            max_overdue_days: number;
+            risk_status: components["schemas"]["CreditRiskStatus"];
+            reason: string;
+            /** Format: date-time */
+            effective_from: string;
+            /** @description UUID of the approving actor, or SYSTEM for migration and account-creation defaults. */
+            approved_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            correlation_id: string;
+        };
+        ScheduleCreditPolicyCommand: {
+            credit_enabled: boolean;
+            credit_limit_minor: components["schemas"]["SafeNonNegativeInteger"];
+            payment_terms_days: number;
+            max_overdue_days: number;
+            risk_status: components["schemas"]["CreditRiskStatus"];
+            reason: string;
+            /** Format: date-time */
+            effective_from: string;
+        };
+        AgingBuckets: {
+            current_minor: components["schemas"]["SafeNonNegativeInteger"];
+            days_1_30_minor: components["schemas"]["SafeNonNegativeInteger"];
+            days_31_60_minor: components["schemas"]["SafeNonNegativeInteger"];
+            days_61_90_minor: components["schemas"]["SafeNonNegativeInteger"];
+            days_over_90_minor: components["schemas"]["SafeNonNegativeInteger"];
+        };
+        ReceivableAging: {
+            ledger_balance_minor: components["schemas"]["SafeInteger"];
+            open_invoice_minor: components["schemas"]["SafeNonNegativeInteger"];
+            unapplied_credit_minor: components["schemas"]["SafeNonNegativeInteger"];
+            calculated_exposure_minor: components["schemas"]["SafeInteger"];
+            overdue_minor: components["schemas"]["SafeNonNegativeInteger"];
+            oldest_overdue_days: number;
+            reconciled: boolean;
+            buckets: components["schemas"]["AgingBuckets"];
+        };
+        ReceivableItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tenant_id: string;
+            /** Format: uuid */
+            company_id: string;
+            /** Format: uuid */
+            customer_id: string;
+            /** @enum {string} */
+            kind: "INVOICE" | "CREDIT_NOTE" | "RECEIPT";
+            source_type: string;
+            /** Format: uuid */
+            source_id: string;
+            amount_minor: components["schemas"]["SafeNonNegativeInteger"];
+            outstanding_minor: components["schemas"]["SafeNonNegativeInteger"];
+            currency: string;
+            /** Format: date-time */
+            document_at: string;
+            /** Format: date-time */
+            due_at?: string | null;
+            /** Format: date-time */
+            occurred_at: string;
+        };
+        CustomerAccountDetail: {
+            customer: components["schemas"]["CustomerAccount"];
+            active_policy: components["schemas"]["CreditPolicy"];
+            scheduled_policies: components["schemas"]["CreditPolicy"][];
+            aging: components["schemas"]["ReceivableAging"];
+            open_items: components["schemas"]["ReceivableItem"][];
         };
         ProductSummary: {
             /** Format: uuid */
@@ -940,6 +1071,67 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getCustomerAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authoritative customer account explanation as of the request time. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerAccountDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    scheduleCustomerCreditPolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path: {
+                customer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleCreditPolicyCommand"];
+            };
+        };
+        responses: {
+            /** @description Policy scheduled, or the original idempotent result returned. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     listProducts: {

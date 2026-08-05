@@ -31,6 +31,8 @@ type Transaction interface {
 	Customer(ctx context.Context, scope tenancy.Scope, customerID string) (customers.Account, error)
 	OfflineCatalogCustomer(ctx context.Context, scope tenancy.Scope, catalogSnapshotToken, customerID string) (customers.Account, error)
 	LockCustomerCredit(ctx context.Context, scope tenancy.Scope, customerID string) error
+	CustomerCreditPolicy(ctx context.Context, scope tenancy.Scope, customerID string, at time.Time) (customers.CreditPolicy, error)
+	CustomerReceivableAging(ctx context.Context, scope tenancy.Scope, customerID string, at time.Time) (customers.ReceivableAging, error)
 	Product(ctx context.Context, scope tenancy.Scope, productID string) (catalog.Product, error)
 	OfflineCatalogProduct(ctx context.Context, scope tenancy.Scope, catalogSnapshotToken, productID string, at time.Time) (catalog.Product, int64, error)
 	TaxRateBasisPoints(ctx context.Context, scope tenancy.Scope, taxCode string, at time.Time) (int64, error)
@@ -52,6 +54,9 @@ type Transaction interface {
 	StockMovementsBySource(ctx context.Context, scope tenancy.Scope, sourceType, sourceID string) ([]inventory.Movement, error)
 	AppendCustomerLedgerEntry(ctx context.Context, entry customers.LedgerEntry) error
 	CustomerLedgerBySource(ctx context.Context, scope tenancy.Scope, sourceType, sourceID string) ([]customers.LedgerEntry, error)
+	AppendReceivableItem(ctx context.Context, item customers.ReceivableItem) error
+	ReceivableItemBySource(ctx context.Context, scope tenancy.Scope, sourceType, sourceID string) (customers.ReceivableItem, error)
+	AppendReceivableAllocation(ctx context.Context, allocation customers.ReceivableAllocation) error
 	CreatePayment(ctx context.Context, payment Payment) error
 	PaymentsBySale(ctx context.Context, scope tenancy.Scope, saleID string) ([]Payment, error)
 	CreateJournal(ctx context.Context, journal finance.Journal) error

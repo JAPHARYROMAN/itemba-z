@@ -158,13 +158,6 @@ func (s *Service) SyncSale(ctx context.Context, scope tenancy.Scope, actorID, co
 			return SyncResult{}, sales.ErrInvalidCommand
 		}
 	}
-	// Credit remains a Control Center-only workflow until mobile can obtain and
-	// prove an authoritative AR-aging and approval decision. Being online is not
-	// sufficient: forwarding the command would let the generic posting service
-	// apply only its basic customer-limit checks.
-	if command.Kind == sales.KindCredit {
-		return SyncResult{}, devices.ErrMobileCreditUnsupported
-	}
 	created, err := s.sales.Complete(ctx, sales.CompleteCommand{Scope: scope, CustomerID: command.CustomerID, Kind: command.Kind, PaymentMethod: command.PaymentMethod, Lines: command.Lines, ActorID: actorID, CorrelationID: correlationID, IdempotencyKey: command.DeviceID + "::" + command.ClientTransactionID, DeviceID: command.DeviceID, ClientTransactionID: command.ClientTransactionID, ClientTimestamp: command.ClientTimestamp, AppVersion: command.AppVersion, MasterDataVersion: command.MasterDataVersion, PriceVersion: command.PriceVersion, CatalogSnapshotToken: command.CatalogSnapshotToken, SyncAttempt: command.SyncAttempt, Offline: command.Offline})
 	if err != nil {
 		failureCode := reconciliationFailureCode(err)

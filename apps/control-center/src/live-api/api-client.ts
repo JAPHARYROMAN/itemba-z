@@ -1,10 +1,10 @@
 import type { BackendIdentity } from "@/live-api/auth";
 import { buildIdentityHeaders } from "@/live-api/auth";
 import type {
-  ChangeMobileDeviceAllocationCommand, ChangeMobileDeviceStatusCommand, CompleteSaleCommand, CustomerPage,
+  ChangeMobileDeviceAllocationCommand, ChangeMobileDeviceStatusCommand, CompleteSaleCommand, CustomerAccountDetail, CustomerPage,
   MobileDevice, MobileDevicePage, MobileReconciliationCase, MobileReconciliationPage,
   MobileReconciliationStatus, ProductPage, PublicProblem, ResolveMobileReconciliationCommand,
-  ReverseSaleCommand, Sale, SalePage, WorkingContext,
+  ReverseSaleCommand, Sale, SalePage, ScheduleCreditPolicyCommand, CreditPolicy, WorkingContext,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -174,6 +174,16 @@ export class ItembaApiClient {
 
   listCustomers(): Promise<CustomerPage> {
     return this.request("/v1/customers?page_size=200");
+  }
+
+  getCustomerAccount(customerId: string): Promise<CustomerAccountDetail> {
+    return this.request(`/v1/customers/${encodeURIComponent(customerId)}/account`);
+  }
+
+  scheduleCustomerCreditPolicy(customerId: string, command: ScheduleCreditPolicyCommand, idempotencyKey: string): Promise<CreditPolicy> {
+    return this.request(`/v1/customers/${encodeURIComponent(customerId)}/credit-policies`, {
+      method: "POST", body: command, idempotencyKey,
+    });
   }
 
   listProducts(): Promise<ProductPage> {

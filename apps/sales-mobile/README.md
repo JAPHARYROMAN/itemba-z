@@ -44,12 +44,11 @@ corrupt or truncated success response is treated as ambiguous/manual-review and 
 queued command. Exhausted transport retries move the controller to offline mode
 before another sale can be attempted.
 
-Credit remains unavailable and currently fails closed in both the mobile UI and
-the mobile synchronization API because the live milestone does not yet expose
-authoritative AR-aging/overdue policy.
-The app never assumes a missing overdue amount is zero. Full POS credit is
-deferred to that policy slice; cash sales and allocated offline cash with
-compatible authoritative facts remain the accepted live milestone flow.
+Credit remains unavailable in the current Flutter entry UI. The online mobile
+synchronization API now applies authoritative effective policy, reconciled ageing,
+overdue tolerance, risk state, and expected exposure; offline credit remains
+unconditionally prohibited. The app never assumes a missing overdue amount is
+zero. Completing the online credit-entry UX is the next mobile slice.
 
 ## Encrypted local persistence
 

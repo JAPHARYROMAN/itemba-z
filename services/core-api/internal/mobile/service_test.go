@@ -389,7 +389,7 @@ func TestOfflineRejectsNonCashSettlementWithoutEffects(t *testing.T) {
 	assertNoMobileSaleEffects(t, store)
 }
 
-func TestOnlineMobileCreditIsRejectedWithoutEffects(t *testing.T) {
+func TestOnlineMobileCreditUsesAuthoritativeReceivablesPolicy(t *testing.T) {
 	at := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
 	store, service := fixture(t, at)
 	creditCustomerID := "20000000-0000-4000-8000-000000000030"
@@ -410,13 +410,16 @@ func TestOnlineMobileCreditIsRejectedWithoutEffects(t *testing.T) {
 		ClientTransactionID: "20000000-0000-4000-8000-000000000031", ClientTimestamp: at,
 		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1, CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: false,
 	}
-	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", command); !errors.Is(err, devices.ErrMobileCreditUnsupported) {
+	result, err := service.SyncSale(context.Background(), testScope, actorID, "", command)
+	if err != nil {
 		t.Fatalf("online mobile credit error=%v", err)
 	}
-	assertNoMobileSaleEffects(t, store)
+	if result.Sale.Kind != sales.KindCredit || result.Sale.TotalMinor <= 0 {
+		t.Fatalf("unexpected credit sale: %+v", result.Sale)
+	}
 	snapshot := store.Snapshot()
-	if len(snapshot.Ledger) != 0 || len(snapshot.Audits) != 0 {
-		t.Fatalf("rejected online mobile credit left ledger or audit effects: %+v", snapshot)
+	if len(snapshot.Ledger) != 1 || len(snapshot.Audits) != 1 {
+		t.Fatalf("online mobile credit did not post atomically: %+v", snapshot)
 	}
 }
 

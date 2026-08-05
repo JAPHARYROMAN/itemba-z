@@ -65,6 +65,9 @@ type state struct {
 	sales                     map[string]sales.Sale
 	movements                 []inventory.Movement
 	ledger                    []customers.LedgerEntry
+	creditPolicies            []customers.CreditPolicy
+	receivableItems           map[string]customers.ReceivableItem
+	receivableAllocations     []customers.ReceivableAllocation
 	payments                  []sales.Payment
 	journals                  []finance.Journal
 	audits                    []audit.Event
@@ -88,6 +91,7 @@ func newState() *state {
 		idempotencies: make(map[string]idempotency),
 		contexts:      make(map[string]readmodel.WorkingContext), devices: make(map[string]devices.Device),
 		allocations:               make(map[string]int64),
+		receivableItems:           make(map[string]customers.ReceivableItem),
 		publications:              make(map[string]catalogPublication),
 		reconciliationCases:       make(map[string]mobile.ReconciliationCase),
 		reconciliationByCommand:   make(map[string]string),
@@ -123,6 +127,29 @@ func (s *Store) SeedCustomer(value customers.Account) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.state.customers[companyEntityKey(value.TenantID, value.CompanyID, value.ID)] = value
+	found := false
+	for _, policy := range s.state.creditPolicies {
+		if policy.Scope.TenantID == value.TenantID && policy.Scope.CompanyID == value.CompanyID && policy.CustomerID == value.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.state.creditPolicies = append(s.state.creditPolicies, customers.CreditPolicy{
+			ID:    "seed-policy:" + value.ID,
+			Scope: tenancy.Scope{TenantID: value.TenantID, CompanyID: value.CompanyID}, CustomerID: value.ID,
+			CreditEnabled: value.CreditEnabled, CreditLimitMinor: value.CreditLimitMinor,
+			PaymentTermsDays: 30, MaxOverdueDays: 0, RiskStatus: customers.CreditRiskStandard,
+			Reason: "Seeded customer account policy", EffectiveFrom: time.Unix(0, 0).UTC(), CreatedAt: time.Unix(0, 0).UTC(),
+			ApprovedBy: "SYSTEM",
+		})
+	}
+}
+
+func (s *Store) SeedCreditPolicy(value customers.CreditPolicy) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.creditPolicies = append(s.state.creditPolicies, value)
 }
 
 func (s *Store) SeedPermission(scope tenancy.Scope, actorID, permission string) {
@@ -661,6 +688,11 @@ func cloneState(source *state) *state {
 	}
 	result.movements = append([]inventory.Movement(nil), source.movements...)
 	result.ledger = append([]customers.LedgerEntry(nil), source.ledger...)
+	result.creditPolicies = append([]customers.CreditPolicy(nil), source.creditPolicies...)
+	for key, value := range source.receivableItems {
+		result.receivableItems[key] = value
+	}
+	result.receivableAllocations = append([]customers.ReceivableAllocation(nil), source.receivableAllocations...)
 	result.payments = append([]sales.Payment(nil), source.payments...)
 	for _, value := range source.journals {
 		result.journals = append(result.journals, cloneJournal(value))

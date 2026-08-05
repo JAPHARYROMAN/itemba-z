@@ -128,12 +128,13 @@ historical cache data, and professional TRA validation.
 
 ## Credit safety boundary
 
-The current server-side sale slice blocks General Customer credit, requires an
-enabled credit account, and enforces current exposure against the configured
-limit. It does not yet provide authoritative invoice aging, overdue balances,
-or effective-dated credit policy. POS credit therefore remains fail-closed and
-is deferred to the AR-aging/effective credit-policy slice; clients must not
-infer that a missing overdue amount is zero.
+The server blocks General Customer credit and evaluates registered customers
+against an append-only, effective-dated policy containing limit, payment terms,
+overdue tolerance, and risk state. Invoice-level receivable items and allocations
+must reconcile to the append-only customer ledger. Credit completion creates a
+due-dated invoice in the same transaction; reversal creates and allocates a linked
+credit note. Online mobile synchronization uses this same gate. Offline credit is
+always rejected, and clients must never infer that a missing overdue amount is zero.
 
 Only the exact `ITEMBA_ENV=development` value permits the in-memory repository
 or development header authenticator. Unset, misspelled, staging, production,

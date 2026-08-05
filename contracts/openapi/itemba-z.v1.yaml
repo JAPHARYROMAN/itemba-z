@@ -134,6 +134,57 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /v1/customers/{customer_id}/account:
+    get:
+      summary: Get a customer account, effective credit policy, and receivables ageing
+      operationId: getCustomerAccount
+      tags: [Customers]
+      x-implementation-status: implemented
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Authoritative customer account explanation as of the request time.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerAccountDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/customers/{customer_id}/credit-policies:
+    post:
+      summary: Schedule an append-only customer credit policy
+      operationId: scheduleCustomerCreditPolicy
+      tags: [Customers]
+      x-implementation-status: implemented
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScheduleCreditPolicyCommand' }
+      responses:
+        '201':
+          description: Policy scheduled, or the original idempotent result returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreditPolicy' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /v1/products:
     get:
       summary: List scoped products and availability
@@ -642,6 +693,104 @@ components:
         catalog_snapshot_token: { type: string, format: uuid }
         master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
         price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+    CustomerAccount:
+      type: object
+      additionalProperties: false
+      required: [id, code, tenant_id, company_id, name, active, is_general_customer, legacy_credit_enabled, legacy_credit_limit_minor]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        tenant_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        name: { type: string }
+        active: { type: boolean }
+        is_general_customer: { type: boolean }
+        legacy_credit_enabled: { type: boolean, deprecated: true }
+        legacy_credit_limit_minor: { allOf: [{ $ref: '#/components/schemas/SafeNonNegativeInteger' }], deprecated: true }
+    CreditRiskStatus:
+      type: string
+      enum: [STANDARD, WATCH, HOLD]
+    CreditPolicy:
+      type: object
+      additionalProperties: false
+      required: [id, scope, customer_id, credit_enabled, credit_limit_minor, payment_terms_days, max_overdue_days, risk_status, reason, effective_from, approved_by, created_at, correlation_id]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        customer_id: { type: string, format: uuid }
+        credit_enabled: { type: boolean }
+        credit_limit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        payment_terms_days: { type: integer, minimum: 0, maximum: 365 }
+        max_overdue_days: { type: integer, minimum: 0, maximum: 3650 }
+        risk_status: { $ref: '#/components/schemas/CreditRiskStatus' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        effective_from: { type: string, format: date-time }
+        approved_by: { type: string, description: "UUID of the approving actor, or SYSTEM for migration and account-creation defaults." }
+        created_at: { type: string, format: date-time }
+        correlation_id: { type: string, format: uuid }
+    ScheduleCreditPolicyCommand:
+      type: object
+      additionalProperties: false
+      required: [credit_enabled, credit_limit_minor, payment_terms_days, max_overdue_days, risk_status, reason, effective_from]
+      properties:
+        credit_enabled: { type: boolean }
+        credit_limit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        payment_terms_days: { type: integer, minimum: 0, maximum: 365 }
+        max_overdue_days: { type: integer, minimum: 0, maximum: 3650 }
+        risk_status: { $ref: '#/components/schemas/CreditRiskStatus' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        effective_from: { type: string, format: date-time }
+    AgingBuckets:
+      type: object
+      additionalProperties: false
+      required: [current_minor, days_1_30_minor, days_31_60_minor, days_61_90_minor, days_over_90_minor]
+      properties:
+        current_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        days_1_30_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        days_31_60_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        days_61_90_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        days_over_90_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+    ReceivableAging:
+      type: object
+      additionalProperties: false
+      required: [ledger_balance_minor, open_invoice_minor, unapplied_credit_minor, calculated_exposure_minor, overdue_minor, oldest_overdue_days, reconciled, buckets]
+      properties:
+        ledger_balance_minor: { $ref: '#/components/schemas/SafeInteger' }
+        open_invoice_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        unapplied_credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        calculated_exposure_minor: { $ref: '#/components/schemas/SafeInteger' }
+        overdue_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        oldest_overdue_days: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        reconciled: { type: boolean }
+        buckets: { $ref: '#/components/schemas/AgingBuckets' }
+    ReceivableItem:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, company_id, customer_id, kind, source_type, source_id, amount_minor, outstanding_minor, currency, document_at, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        kind: { type: string, enum: [INVOICE, CREDIT_NOTE, RECEIPT] }
+        source_type: { type: string }
+        source_id: { type: string, format: uuid }
+        amount_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        outstanding_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        document_at: { type: string, format: date-time }
+        due_at: { type: [string, 'null'], format: date-time }
+        occurred_at: { type: string, format: date-time }
+    CustomerAccountDetail:
+      type: object
+      additionalProperties: false
+      required: [customer, active_policy, scheduled_policies, aging, open_items]
+      properties:
+        customer: { $ref: '#/components/schemas/CustomerAccount' }
+        active_policy: { $ref: '#/components/schemas/CreditPolicy' }
+        scheduled_policies: { type: array, items: { $ref: '#/components/schemas/CreditPolicy' } }
+        aging: { $ref: '#/components/schemas/ReceivableAging' }
+        open_items: { type: array, items: { $ref: '#/components/schemas/ReceivableItem' } }
     ProductSummary:
       type: object
       additionalProperties: false

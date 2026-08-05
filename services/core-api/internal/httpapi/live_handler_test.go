@@ -21,6 +21,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/memory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
@@ -43,7 +44,7 @@ func TestLiveBootstrapEnrollmentAndSyncRoutes(t *testing.T) {
 	at := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
 	scope := tenancy.Scope{TenantID: tenantID, CompanyID: companyID, BranchID: branchID, WarehouseID: warehouseID}
 	store := memory.New()
-	for _, permission := range []string{"sales.complete", "sales.read", "customers.read", "products.read", "mobile.devices.enroll", "mobile.devices.read", "mobile.devices.manage", "mobile.sales.sync", "mobile.reconciliation.read", "mobile.reconciliation.resolve"} {
+	for _, permission := range []string{"sales.complete", "sales.read", "customers.read", "customers.accounts.read", "customers.credit.manage", "products.read", "mobile.devices.enroll", "mobile.devices.read", "mobile.devices.manage", "mobile.sales.sync", "mobile.reconciliation.read", "mobile.reconciliation.resolve"} {
 		store.SeedPermission(scope, actorID, permission)
 	}
 	store.SeedContext(scope, readmodel.WorkingContext{CompanyName: "Company", BranchName: "Branch", WarehouseName: "Warehouse", Currency: "TZS", Locale: "en-TZ", TimeZone: "Africa/Dar_es_Salaam", MasterDataVersion: 1, PriceVersion: 1})
@@ -65,15 +66,19 @@ func TestLiveBootstrapEnrollmentAndSyncRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	receivablesService, err := receivables.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: at})
+	if err != nil {
+		t.Fatal(err)
+	}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	handler, err := NewLive(salesService, readService, mobileService, logger, fixedAuthenticator{principal: Principal{ActorID: actorID, Scope: scope}})
+	handler, err := NewLive(salesService, readService, mobileService, receivablesService, logger, fixedAuthenticator{principal: Principal{ActorID: actorID, Scope: scope}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	routes := handler.Routes()
 
-	for _, path := range []string{"/v1/context", "/v1/customers?page_size=10", "/v1/products?page_size=10", "/v1/sales?page_size=10"} {
+	for _, path := range []string{"/v1/context", "/v1/customers?page_size=10", "/v1/customers/" + customerID + "/account", "/v1/products?page_size=10", "/v1/sales?page_size=10"} {
 		recorder := httptest.NewRecorder()
 		routes.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
 		if recorder.Code != http.StatusOK {
@@ -211,7 +216,7 @@ func TestLiveBootstrapEnrollmentAndSyncRoutes(t *testing.T) {
 	store.SeedPermission(otherScope, actorID, "sales.read")
 	store.SeedPermission(otherScope, actorID, "sales.reverse")
 	store.SeedPermission(otherScope, actorID, "mobile.reconciliation.read")
-	otherHandler, err := NewLive(salesService, readService, mobileService, logger, fixedAuthenticator{principal: Principal{ActorID: actorID, Scope: otherScope}})
+	otherHandler, err := NewLive(salesService, readService, mobileService, receivablesService, logger, fixedAuthenticator{principal: Principal{ActorID: actorID, Scope: otherScope}})
 	if err != nil {
 		t.Fatal(err)
 	}
