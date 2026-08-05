@@ -12,6 +12,7 @@ import (
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/advancedfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/commercial"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/configuration"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
@@ -200,7 +201,17 @@ func main() {
 		logger.Error("initialize configuration service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithConfiguration(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, logger, authenticator)
+	commercialRepository, ok := repository.(commercial.Repository)
+	if !ok {
+		logger.Error("repository does not implement commercial sourcing")
+		os.Exit(1)
+	}
+	commercialService, err := commercial.NewService(commercialRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize commercial service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithCommercial(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, commercialService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)

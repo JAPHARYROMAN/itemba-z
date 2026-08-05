@@ -39,7 +39,105 @@ tags:
     description: Employee, attendance, leave, loan, payroll, and payslip control.
   - name: Settings
     description: Effective-dated policy, integration, template, and numbering configuration.
+  - name: Commercial
+    description: Governed supplier/product masters, RFQs, quotations, comparisons, and awards.
 paths:
+  /v1/commercial:
+    get:
+      summary: Get the governed commercial sourcing workspace
+      operationId: getCommercialWorkspace
+      tags: [Commercial]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Commercial workspace, content: { application/json: { schema: { $ref: '#/components/schemas/CommercialWorkspace' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/master-data/revisions:
+    post:
+      summary: Create a supplier or product master-data revision
+      operationId: createMasterDataRevision
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateMasterRevisionCommand' } } } }
+      responses:
+        '201': { description: Revision created, content: { application/json: { schema: { $ref: '#/components/schemas/MasterRevision' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/master-data/revisions/{revisionID}/transitions:
+    post:
+      summary: Transition a master-data revision
+      operationId: transitionMasterDataRevision
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { name: revisionID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MasterRevisionTransitionCommand' } } } }
+      responses:
+        '200': { description: Revision transitioned, content: { application/json: { schema: { $ref: '#/components/schemas/MasterRevision' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/purchases/rfqs:
+    post:
+      summary: Create a request for quotation
+      operationId: createRFQ
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateRFQCommand' } } } }
+      responses:
+        '201': { description: RFQ created, content: { application/json: { schema: { $ref: '#/components/schemas/RFQ' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/purchases/rfqs/{rfqID}/transitions:
+    post:
+      summary: Submit, approve, or cancel an RFQ
+      operationId: transitionRFQ
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { name: rfqID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RFQTransitionCommand' } } } }
+      responses:
+        '200': { description: RFQ transitioned, content: { application/json: { schema: { $ref: '#/components/schemas/RFQ' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/purchases/supplier-quotes:
+    post:
+      summary: Record a supplier quotation against an approved RFQ
+      operationId: createSupplierQuote
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateSupplierQuoteCommand' } } } }
+      responses:
+        '201': { description: Supplier quotation recorded, content: { application/json: { schema: { $ref: '#/components/schemas/SupplierQuote' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/purchases/supplier-quotes/{quoteID}/submission:
+    post:
+      summary: Submit a supplier quotation for comparison
+      operationId: submitSupplierQuote
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { name: quoteID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReasonCommand' } } } }
+      responses:
+        '200': { description: Supplier quotation submitted, content: { application/json: { schema: { $ref: '#/components/schemas/SupplierQuote' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/purchases/rfqs/{rfqID}/comparison:
+    get:
+      summary: Compare compliant supplier quotations
+      operationId: compareSupplierQuotes
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { name: rfqID, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses:
+        '200': { description: Supplier comparison, content: { application/json: { schema: { $ref: '#/components/schemas/RFQComparison' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/purchases/rfqs/{rfqID}/award:
+    post:
+      summary: Award an RFQ and atomically create a purchase order
+      operationId: awardRFQ
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { name: rfqID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AwardRFQCommand' } } } }
+      responses:
+        '201': { description: Award and purchase order created, content: { application/json: { schema: { $ref: '#/components/schemas/SourcingAward' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
   /healthz:
     get:
       summary: Check process health
@@ -2685,6 +2783,24 @@ components:
       additionalProperties: false
       required: [key, prefix, next_value, padding]
       properties: { key: { type: string }, prefix: { type: string }, next_value: { $ref: '#/components/schemas/SafePositiveInteger' }, padding: { type: integer, minimum: 1, maximum: 18 } }
+    MasterRevisionStatus: { type: string, enum: [DRAFT, SUBMITTED, ACTIVE, REJECTED] }
+    SupplierMasterData: { type: object, additionalProperties: false, required: [code, name, tax_id, email, phone, payment_terms_days, active], properties: { code: { type: string }, name: { type: string }, tax_id: { type: string }, email: { type: string }, phone: { type: string }, payment_terms_days: { type: integer, minimum: 0, maximum: 365 }, active: { type: boolean } } }
+    ProductMasterData: { type: object, additionalProperties: false, required: [sku, name, base_unit_code, currency, list_price_minor, standard_cost_minor, tax_code, revenue_account_id, cogs_account_id, inventory_account_id, active], properties: { sku: { type: string }, name: { type: string }, base_unit_code: { type: string }, currency: { type: string }, list_price_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, standard_cost_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, tax_code: { type: string }, revenue_account_id: { type: string }, cogs_account_id: { type: string }, inventory_account_id: { type: string }, active: { type: boolean } } }
+    MasterRevision: { type: object, additionalProperties: true, required: [id, entity_type, entity_id, status, reason, created_by, created_at], properties: { id: { type: string, format: uuid }, entity_type: { type: string, enum: [SUPPLIER, PRODUCT] }, entity_id: { type: string, format: uuid }, status: { $ref: '#/components/schemas/MasterRevisionStatus' }, supplier: { $ref: '#/components/schemas/SupplierMasterData' }, product: { $ref: '#/components/schemas/ProductMasterData' }, reason: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time }, approved_by: { type: string } } }
+    CreateMasterRevisionCommand: { type: object, additionalProperties: false, required: [entity_type, reason], properties: { entity_type: { type: string, enum: [SUPPLIER, PRODUCT] }, entity_id: { type: string, format: uuid }, supplier: { $ref: '#/components/schemas/SupplierMasterData' }, product: { $ref: '#/components/schemas/ProductMasterData' }, reason: { type: string } } }
+    MasterRevisionTransitionCommand: { type: object, additionalProperties: false, required: [status, reason], properties: { status: { $ref: '#/components/schemas/MasterRevisionStatus' }, reason: { type: string } } }
+    RFQStatus: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, CLOSED, CANCELLED] }
+    RFQLine: { type: object, additionalProperties: false, required: [id, product_id, quantity], properties: { id: { type: string, format: uuid }, product_id: { type: string, format: uuid }, quantity: { $ref: '#/components/schemas/SafePositiveInteger' } } }
+    RFQ: { type: object, additionalProperties: true, required: [id, number, status, currency, response_due_at, reason, created_by, created_at, lines], properties: { id: { type: string, format: uuid }, number: { type: string }, status: { $ref: '#/components/schemas/RFQStatus' }, currency: { type: string }, response_due_at: { type: string, format: date-time }, reason: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time }, lines: { type: array, items: { $ref: '#/components/schemas/RFQLine' } } } }
+    CreateRFQCommand: { type: object, additionalProperties: false, required: [currency, response_due_at, reason, lines], properties: { currency: { type: string }, response_due_at: { type: string, format: date-time }, reason: { type: string }, lines: { type: array, minItems: 1, items: { type: object, required: [product_id, quantity], properties: { product_id: { type: string, format: uuid }, quantity: { $ref: '#/components/schemas/SafePositiveInteger' } } } } } }
+    RFQTransitionCommand: { type: object, additionalProperties: false, required: [status, reason], properties: { status: { $ref: '#/components/schemas/RFQStatus' }, reason: { type: string } } }
+    SupplierQuote: { type: object, additionalProperties: true, required: [id, rfq_id, supplier_id, reference, status, currency, delivery_days, payment_terms_days, valid_until, total_minor, reason, lines], properties: { id: { type: string, format: uuid }, rfq_id: { type: string, format: uuid }, supplier_id: { type: string, format: uuid }, reference: { type: string }, status: { type: string, enum: [DRAFT, SUBMITTED, SELECTED, REJECTED] }, currency: { type: string }, delivery_days: { type: integer }, payment_terms_days: { type: integer }, valid_until: { type: string, format: date-time }, total_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, reason: { type: string }, lines: { type: array, items: { type: object, additionalProperties: true } } } }
+    CreateSupplierQuoteCommand: { type: object, additionalProperties: false, required: [rfq_id, supplier_id, reference, currency, delivery_days, payment_terms_days, valid_until, reason, lines], properties: { rfq_id: { type: string, format: uuid }, supplier_id: { type: string, format: uuid }, reference: { type: string }, currency: { type: string }, delivery_days: { type: integer }, payment_terms_days: { type: integer }, valid_until: { type: string, format: date-time }, reason: { type: string }, lines: { type: array, minItems: 1, items: { type: object, required: [product_id, quantity, unit_price_minor], properties: { product_id: { type: string, format: uuid }, quantity: { $ref: '#/components/schemas/SafePositiveInteger' }, unit_price_minor: { $ref: '#/components/schemas/SafePositiveInteger' } } } } } }
+    ReasonCommand: { type: object, additionalProperties: false, required: [reason], properties: { reason: { type: string } } }
+    RFQComparison: { type: object, additionalProperties: true, required: [rfq, quotes], properties: { rfq: { $ref: '#/components/schemas/RFQ' }, quotes: { type: array, items: { type: object, additionalProperties: true } } } }
+    AwardRFQCommand: { type: object, additionalProperties: false, required: [quote_id, reason], properties: { quote_id: { type: string, format: uuid }, reason: { type: string } } }
+    SourcingAward: { type: object, additionalProperties: true, required: [id, rfq_id, quote_id, supplier_id, purchase_order_id, reason, selected_by, selected_at], properties: { id: { type: string, format: uuid }, rfq_id: { type: string, format: uuid }, quote_id: { type: string, format: uuid }, supplier_id: { type: string, format: uuid }, purchase_order_id: { type: string, format: uuid }, reason: { type: string }, selected_by: { type: string }, selected_at: { type: string, format: date-time } } }
+    CommercialWorkspace: { type: object, additionalProperties: false, required: [revisions, rfqs, quotes, awards], properties: { revisions: { type: array, items: { $ref: '#/components/schemas/MasterRevision' } }, rfqs: { type: array, items: { $ref: '#/components/schemas/RFQ' } }, quotes: { type: array, items: { $ref: '#/components/schemas/SupplierQuote' } }, awards: { type: array, items: { $ref: '#/components/schemas/SourcingAward' } } } }
     Problem:
       type: object
       additionalProperties: true

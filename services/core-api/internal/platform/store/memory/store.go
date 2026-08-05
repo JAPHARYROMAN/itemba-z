@@ -14,6 +14,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/catalog"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/commercial"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/configuration"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
@@ -116,6 +117,10 @@ type state struct {
 	configurations            map[string]configuration.Version
 	numberSequences           map[string]configuration.Sequence
 	numberAllocations         map[string]configuration.Allocation
+	masterRevisions           map[string]commercial.Revision
+	rfqs                      map[string]commercial.RFQ
+	supplierQuotes            map[string]commercial.SupplierQuote
+	sourcingAwards            map[string]commercial.Award
 }
 
 func newState() *state {
@@ -155,6 +160,10 @@ func newState() *state {
 		configurations:            make(map[string]configuration.Version),
 		numberSequences:           make(map[string]configuration.Sequence),
 		numberAllocations:         make(map[string]configuration.Allocation),
+		masterRevisions:           make(map[string]commercial.Revision),
+		rfqs:                      make(map[string]commercial.RFQ),
+		supplierQuotes:            make(map[string]commercial.SupplierQuote),
+		sourcingAwards:            make(map[string]commercial.Award),
 	}
 }
 
@@ -943,6 +952,20 @@ func cloneState(source *state) *state {
 	}
 	for key, value := range source.numberAllocations {
 		result.numberAllocations[key] = value
+	}
+	for key, value := range source.masterRevisions {
+		result.masterRevisions[key] = value
+	}
+	for key, value := range source.rfqs {
+		value.Lines = append([]commercial.RFQLine(nil), value.Lines...)
+		result.rfqs[key] = value
+	}
+	for key, value := range source.supplierQuotes {
+		value.Lines = append([]commercial.QuoteLine(nil), value.Lines...)
+		result.supplierQuotes[key] = value
+	}
+	for key, value := range source.sourcingAwards {
+		result.sourcingAwards[key] = value
 	}
 	return result
 }

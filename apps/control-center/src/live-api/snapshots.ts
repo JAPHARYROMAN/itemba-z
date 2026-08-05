@@ -14,6 +14,7 @@ import type {
 	GroupFinanceWorkspace,
 	PeopleWorkspace,
 	ConfigurationWorkspace,
+	CommercialWorkspace,
 } from "@/live-api/types";
 
 export async function loadPeopleWorkspace(): Promise<LiveSnapshot<PeopleWorkspace>> {
@@ -27,6 +28,11 @@ export async function loadPeopleWorkspace(): Promise<LiveSnapshot<PeopleWorkspac
 export async function loadConfigurationWorkspace(): Promise<LiveSnapshot<ConfigurationWorkspace>> {
   try { const repository = await createServerRepository(); const [context, configuration] = await Promise.all([repository.getWorkingContext(), repository.getConfigurationSnapshot()]); return { state: "ready", data: { context, configuration } }; }
   catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
+}
+
+export async function loadCommercialWorkspace(): Promise<LiveSnapshot<CommercialWorkspace>> {
+	try { const repository=await createServerRepository(); const [context,commercial,products,suppliers]=await Promise.all([repository.getWorkingContext(),repository.getCommercialSnapshot(),repository.listProducts(),repository.listSuppliers()]); return {state:"ready",data:{context,commercial,products:products.items,suppliers:suppliers.items}}; }
+	catch(error){return {state:"unavailable",problem:publicProblem(error)};}
 }
 
 export async function loadGroupFinanceWorkspace(): Promise<LiveSnapshot<GroupFinanceWorkspace>> {

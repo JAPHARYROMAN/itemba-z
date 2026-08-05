@@ -16,6 +16,7 @@ import (
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/advancedfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/commercial"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/configuration"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
@@ -50,6 +51,7 @@ type Handler struct {
 	groupfinance    *groupfinance.Service
 	people          *people.Service
 	configuration   *configuration.Service
+	commercial      *commercial.Service
 	logger          *slog.Logger
 	authenticator   Authenticator
 }
@@ -187,6 +189,18 @@ func NewLiveWithConfiguration(salesService *sales.Service, readService *readmode
 	return handler, nil
 }
 
+func NewLiveWithCommercial(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, bankingService *banking.Service, financialService *financialops.Service, reportingService *reporting.Service, advancedService *advancedfinance.Service, treasuryService *treasury.Service, groupService *groupfinance.Service, peopleService *people.Service, configurationService *configuration.Service, commercialService *commercial.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLiveWithConfiguration(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if commercialService == nil {
+		return nil, errors.New("commercial service is required")
+	}
+	handler.commercial = commercialService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
@@ -279,6 +293,17 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("POST /v1/settings/configurations/{configurationID}/transitions", h.transitionConfiguration)
 		mux.HandleFunc("POST /v1/settings/number-sequences", h.createNumberSequence)
 		mux.HandleFunc("POST /v1/settings/number-sequences/{sequenceID}/allocations", h.allocateNumber)
+	}
+	if h.commercial != nil {
+		mux.HandleFunc("GET /v1/commercial", h.commercialWorkspace)
+		mux.HandleFunc("POST /v1/master-data/revisions", h.createMasterRevision)
+		mux.HandleFunc("POST /v1/master-data/revisions/{revisionID}/transitions", h.transitionMasterRevision)
+		mux.HandleFunc("POST /v1/purchases/rfqs", h.createRFQ)
+		mux.HandleFunc("POST /v1/purchases/rfqs/{rfqID}/transitions", h.transitionRFQ)
+		mux.HandleFunc("POST /v1/purchases/supplier-quotes", h.createSupplierQuote)
+		mux.HandleFunc("POST /v1/purchases/supplier-quotes/{quoteID}/submission", h.submitSupplierQuote)
+		mux.HandleFunc("GET /v1/purchases/rfqs/{rfqID}/comparison", h.rfqComparison)
+		mux.HandleFunc("POST /v1/purchases/rfqs/{rfqID}/award", h.awardRFQ)
 	}
 	if h.mobile != nil {
 		mux.HandleFunc("POST /v1/mobile/devices/enroll", h.enrollDevice)
@@ -1255,6 +1280,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, configuration.ErrInvalidTransition), errors.Is(err, configuration.ErrSeparationOfDuties), errors.Is(err, configuration.ErrEffectiveOverlap):
 		status, code = http.StatusConflict, "configuration_conflict"
+	case errors.Is(err, commercial.ErrInvalidCommand):
+		status, code = http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, commercial.ErrInvalidTransition), errors.Is(err, commercial.ErrSeparationOfDuties), errors.Is(err, commercial.ErrSourceMismatch), errors.Is(err, commercial.ErrAwardExists):
+		status, code = http.StatusConflict, "commercial_conflict"
 	}
 	if status == http.StatusInternalServerError {
 		h.logger.ErrorContext(request.Context(), "request failed", "method", request.Method, "path", request.URL.Path, "error", err)

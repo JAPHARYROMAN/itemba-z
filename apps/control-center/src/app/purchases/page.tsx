@@ -1,5 +1,6 @@
 import { OperationsWorkbench } from "@/components/operations/operations-workbench";
+import { SourcingWorkbench } from "@/components/sourcing/sourcing-workbench";
 import { LiveUnavailable } from "@/components/live-sales/live-state";
-import { loadOperationsWorkspace } from "@/live-api/snapshots";
+import { loadCommercialWorkspace, loadOperationsWorkspace } from "@/live-api/snapshots";
 export const dynamic = "force-dynamic";
-export default async function PurchasesPage() { const snapshot = await loadOperationsWorkspace(); if (snapshot.state === "unavailable") return <LiveUnavailable problem={snapshot.problem} />; return <OperationsWorkbench mode="purchases" workspace={snapshot.data} />; }
+export default async function PurchasesPage() { const [operations,commercial]=await Promise.all([loadOperationsWorkspace(),loadCommercialWorkspace()]);if(commercial.state==="unavailable")return <LiveUnavailable problem={commercial.problem}/>;if(operations.state==="unavailable")return <LiveUnavailable problem={operations.problem}/>;return <><SourcingWorkbench workspace={commercial.data}/><OperationsWorkbench mode="purchases" workspace={operations.data}/></>; }

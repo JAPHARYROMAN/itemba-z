@@ -46,6 +46,24 @@ export type ConfigurationTransitionCommand = components["schemas"]["Configuratio
 export type CreateNumberSequenceCommand = components["schemas"]["CreateNumberSequenceCommand"];
 export interface ConfigurationWorkspace { context: WorkingContext; configuration: ConfigurationSnapshot }
 
+export type MasterEntityType = "SUPPLIER" | "PRODUCT";
+export type MasterRevisionStatus = "DRAFT" | "SUBMITTED" | "ACTIVE" | "REJECTED";
+export interface SupplierMasterData { code: string; name: string; tax_id: string; email: string; phone: string; payment_terms_days: number; active: boolean }
+export interface ProductMasterData { sku: string; name: string; base_unit_code: string; currency: string; list_price_minor: number; standard_cost_minor: number; tax_code: string; revenue_account_id: string; cogs_account_id: string; inventory_account_id: string; active: boolean }
+export interface MasterRevision { id: string; entity_type: MasterEntityType; entity_id: string; status: MasterRevisionStatus; supplier?: SupplierMasterData; product?: ProductMasterData; reason: string; created_by: string; approved_by?: string }
+export type RFQStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "CLOSED" | "CANCELLED";
+export interface RFQLine { id: string; product_id: string; quantity: number }
+export interface RFQ { id: string; number: string; status: RFQStatus; currency: string; response_due_at: string; reason: string; created_by: string; lines: RFQLine[] }
+export type SupplierQuoteStatus = "DRAFT" | "SUBMITTED" | "SELECTED" | "REJECTED";
+export interface SupplierQuoteLine { id: string; product_id: string; quantity: number; unit_price_minor: number; amount_minor: number }
+export interface SupplierQuote { id: string; rfq_id: string; supplier_id: string; reference: string; status: SupplierQuoteStatus; currency: string; delivery_days: number; payment_terms_days: number; valid_until: string; total_minor: number; reason: string; lines: SupplierQuoteLine[] }
+export interface SourcingAward { id: string; rfq_id: string; quote_id: string; supplier_id: string; purchase_order_id: string; reason: string; selected_by: string; selected_at: string }
+export interface CommercialSnapshot { revisions: MasterRevision[]; rfqs: RFQ[]; quotes: SupplierQuote[]; awards: SourcingAward[] }
+export interface CommercialWorkspace { context: WorkingContext; commercial: CommercialSnapshot; products: ProductSummary[]; suppliers: SupplierSummary[] }
+export interface CreateMasterRevisionCommand { entity_type: MasterEntityType; entity_id?: string; supplier?: SupplierMasterData; product?: ProductMasterData; reason: string }
+export interface CreateRFQCommand { currency: string; response_due_at: string; reason: string; lines: Array<{ product_id: string; quantity: number }> }
+export interface CreateSupplierQuoteCommand { rfq_id: string; supplier_id: string; reference: string; currency: string; delivery_days: number; payment_terms_days: number; valid_until: string; reason: string; lines: Array<{ product_id: string; quantity: number; unit_price_minor: number }> }
+
 export interface PublicProblem {
   type: string;
   title: string;

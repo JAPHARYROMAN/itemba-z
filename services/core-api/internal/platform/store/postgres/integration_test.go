@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/commercial"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/configuration"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
@@ -50,7 +51,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql", "000024_governed_settings.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql", "000024_governed_settings.up.sql", "000025_commercial_sourcing.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -428,6 +429,60 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	configView, err := configurationService.Get(ctx, scope, approverID)
 	if err != nil || len(configView.Versions) != 1 || len(configView.Sequences) != 1 || configView.Sequences[0].NextValue != 3 {
 		t.Fatalf("configuration snapshot: %+v %v", configView, err)
+	}
+	commercialService, err := commercial.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(120 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activateMaster := func(revision commercial.Revision) commercial.Revision {
+		revision, err = commercialService.TransitionRevision(ctx, commercial.RevisionTransitionCommand{Scope: scope, RevisionID: revision.ID, Status: commercial.Submitted, Reason: "Submit governed master revision", ActorID: userID, IdempotencyKey: "integration-master-submit-" + revision.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		revision, err = commercialService.TransitionRevision(ctx, commercial.RevisionTransitionCommand{Scope: scope, RevisionID: revision.ID, Status: commercial.Active, Reason: "Independent governed master activation", ActorID: approverID, IdempotencyKey: "integration-master-active-" + revision.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return revision
+	}
+	supplierRevision, err := commercialService.CreateRevision(ctx, commercial.RevisionCommand{Scope: scope, EntityType: commercial.SupplierEntity, EntityID: supplierID, Supplier: &commercial.SupplierData{Code: "SUP", Name: "Governed Supplier", TaxID: "TIN-100", Email: "buy@example.test", Phone: "+255700000000", PaymentTermsDays: 30, Active: true}, Reason: "Govern existing supplier through revision", ActorID: userID, IdempotencyKey: "integration-supplier-master"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activateMaster(supplierRevision)
+	productRevision, err := commercialService.CreateRevision(ctx, commercial.RevisionCommand{Scope: scope, EntityType: commercial.ProductEntity, EntityID: productID, Product: &commercial.ProductData{SKU: "SKU", Name: "Governed Product", BaseUnitCode: "EA", Currency: "TZS", ListPriceMinor: 10000, StandardCostMinor: 6000, TaxCode: "VAT", RevenueAccountID: "revenue", COGSAccountID: "cogs", InventoryAccountID: "inventory", Active: true}, Reason: "Govern existing product through revision", ActorID: userID, IdempotencyKey: "integration-product-master1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activateMaster(productRevision)
+	rfq, err := commercialService.CreateRFQ(ctx, commercial.RFQCommand{Scope: scope, Currency: "TZS", ResponseDueAt: testTime.Add(72 * time.Hour), Reason: "Competitive replenishment sourcing request", ActorID: userID, IdempotencyKey: "integration-rfq-create01", Lines: []commercial.RFQCommandLine{{ProductID: productID, Quantity: 5}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rfq, err = commercialService.TransitionRFQ(ctx, commercial.RFQTransitionCommand{Scope: scope, RFQID: rfq.ID, Status: commercial.RFQSubmitted, Reason: "Submit competitive request for approval", ActorID: userID, IdempotencyKey: "integration-rfq-submit01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rfq, err = commercialService.TransitionRFQ(ctx, commercial.RFQTransitionCommand{Scope: scope, RFQID: rfq.ID, Status: commercial.RFQApproved, Reason: "Independent competitive request approval", ActorID: approverID, IdempotencyKey: "integration-rfq-approve1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quote, err := commercialService.CreateQuote(ctx, commercial.QuoteCommand{Scope: scope, RFQID: rfq.ID, SupplierID: supplierID, Reference: "Q-INTEGRATION", Currency: "TZS", DeliveryDays: 3, PaymentTermsDays: 30, ValidUntil: testTime.Add(10 * 24 * time.Hour), Reason: "Record comparable supplier quotation", ActorID: userID, IdempotencyKey: "integration-quote-create1", Lines: []commercial.QuoteCommandLine{{ProductID: productID, Quantity: 5, UnitPriceMinor: 5500}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quote, err = commercialService.SubmitQuote(ctx, commercial.QuoteSubmitCommand{Scope: scope, QuoteID: quote.ID, Reason: "Submit quotation for governed comparison", ActorID: userID, IdempotencyKey: "integration-quote-submit1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	award, err := commercialService.Award(ctx, commercial.AwardCommand{Scope: scope, RFQID: rfq.ID, QuoteID: quote.ID, Reason: "Select best evaluated compliant quotation", ActorID: approverID, IdempotencyKey: "integration-rfq-award001"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var poType, poStatus string
+	var poTotal int64
+	if err = store.Pool().QueryRow(ctx, `SELECT document_type,status,total_minor FROM `+pgx.Identifier{schema}.Sanitize()+`.operation_documents WHERE id=$1`, award.PurchaseOrderID).Scan(&poType, &poStatus, &poTotal); err != nil || poType != "PURCHASE_ORDER" || poStatus != "DRAFT" || poTotal != 27500 {
+		t.Fatalf("sourcing purchase order type=%s status=%s total=%d err=%v", poType, poStatus, poTotal, err)
 	}
 	closeRequest, err := financialService.RequestPeriodAction(ctx, financialops.PeriodCommand{Scope: scope, PeriodID: periodID, Action: financialops.ClosePeriod, Reason: "Integration reconciliations ready for close", ActorID: userID, IdempotencyKey: "integration-period-close-01"})
 	if err != nil {
@@ -925,7 +980,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 1 || salesCount != 7 || journalCount != 28 || outboxCount != 105 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 28 || outboxCount != 117 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }

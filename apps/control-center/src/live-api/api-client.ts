@@ -17,6 +17,7 @@ import type {
 	CreateIntercompanyCommand, GroupConsolidation, IntercompanyPage, IntercompanyTransaction, IntercompanyTransitionCommand,
 	Attendance, AttendanceCommand, CreateEmployeeCommand, Employee, EmployeeLoan, LeaveCommand, LeaveRequest, LeaveType, LeaveTypeCommand, LoanCommand, PayrollCommand, PayrollRun, PeopleSnapshot, PeopleTransitionCommand,
 	ConfigurationSnapshot, ConfigurationVersion, ConfigurationTransitionCommand, CreateConfigurationCommand, CreateNumberSequenceCommand, NumberAllocation, NumberSequence,
+	CommercialSnapshot, CreateMasterRevisionCommand, MasterRevision, MasterRevisionStatus, CreateRFQCommand, RFQ, RFQStatus, CreateSupplierQuoteCommand, SupplierQuote, SourcingAward,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -295,6 +296,14 @@ export class ItembaApiClient {
   createPayroll(command: PayrollCommand, key: string): Promise<PayrollRun> { return this.request("/v1/hr/payroll-runs", { method: "POST", body: command, idempotencyKey: key }); }
   transitionPayroll(id: string, command: PeopleTransitionCommand, key: string): Promise<PayrollRun> { return this.request(`/v1/hr/payroll-runs/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey: key }); }
   getConfigurationSnapshot(): Promise<ConfigurationSnapshot> { return this.request("/v1/settings"); }
+	getCommercialSnapshot(): Promise<CommercialSnapshot> { return this.request("/v1/commercial"); }
+	createMasterRevision(command: CreateMasterRevisionCommand,key:string):Promise<MasterRevision>{return this.request("/v1/master-data/revisions",{method:"POST",body:command,idempotencyKey:key});}
+	transitionMasterRevision(id:string,status:MasterRevisionStatus,reason:string,key:string):Promise<MasterRevision>{return this.request(`/v1/master-data/revisions/${id}/transitions`,{method:"POST",body:{status,reason},idempotencyKey:key});}
+	createRFQ(command:CreateRFQCommand,key:string):Promise<RFQ>{return this.request("/v1/purchases/rfqs",{method:"POST",body:command,idempotencyKey:key});}
+	transitionRFQ(id:string,status:RFQStatus,reason:string,key:string):Promise<RFQ>{return this.request(`/v1/purchases/rfqs/${id}/transitions`,{method:"POST",body:{status,reason},idempotencyKey:key});}
+	createSupplierQuote(command:CreateSupplierQuoteCommand,key:string):Promise<SupplierQuote>{return this.request("/v1/purchases/supplier-quotes",{method:"POST",body:command,idempotencyKey:key});}
+	submitSupplierQuote(id:string,reason:string,key:string):Promise<SupplierQuote>{return this.request(`/v1/purchases/supplier-quotes/${id}/submission`,{method:"POST",body:{reason},idempotencyKey:key});}
+	awardRFQ(rfqId:string,quoteId:string,reason:string,key:string):Promise<SourcingAward>{return this.request(`/v1/purchases/rfqs/${rfqId}/award`,{method:"POST",body:{quote_id:quoteId,reason},idempotencyKey:key});}
   createConfiguration(command: CreateConfigurationCommand, key: string): Promise<ConfigurationVersion> { return this.request("/v1/settings/configurations", { method: "POST", body: command, idempotencyKey: key }); }
   transitionConfiguration(id: string, command: ConfigurationTransitionCommand, key: string): Promise<ConfigurationVersion> { return this.request(`/v1/settings/configurations/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey: key }); }
   createNumberSequence(command: CreateNumberSequenceCommand, key: string): Promise<NumberSequence> { return this.request("/v1/settings/number-sequences", { method: "POST", body: command, idempotencyKey: key }); }

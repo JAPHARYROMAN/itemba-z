@@ -4,6 +4,159 @@
  */
 
 export interface paths {
+    "/v1/commercial": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the governed commercial sourcing workspace */
+        get: operations["getCommercialWorkspace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/master-data/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a supplier or product master-data revision */
+        post: operations["createMasterDataRevision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/master-data/revisions/{revisionID}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transition a master-data revision */
+        post: operations["transitionMasterDataRevision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/purchases/rfqs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a request for quotation */
+        post: operations["createRFQ"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/purchases/rfqs/{rfqID}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit, approve, or cancel an RFQ */
+        post: operations["transitionRFQ"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/purchases/supplier-quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a supplier quotation against an approved RFQ */
+        post: operations["createSupplierQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/purchases/supplier-quotes/{quoteID}/submission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit a supplier quotation for comparison */
+        post: operations["submitSupplierQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/purchases/rfqs/{rfqID}/comparison": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compare compliant supplier quotations */
+        get: operations["compareSupplierQuotes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/purchases/rfqs/{rfqID}/award": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Award an RFQ and atomically create a purchase order */
+        post: operations["awardRFQ"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -2976,6 +3129,183 @@ export interface components {
             next_value: components["schemas"]["SafePositiveInteger"];
             padding: number;
         };
+        /** @enum {string} */
+        MasterRevisionStatus: "DRAFT" | "SUBMITTED" | "ACTIVE" | "REJECTED";
+        SupplierMasterData: {
+            code: string;
+            name: string;
+            tax_id: string;
+            email: string;
+            phone: string;
+            payment_terms_days: number;
+            active: boolean;
+        };
+        ProductMasterData: {
+            sku: string;
+            name: string;
+            base_unit_code: string;
+            currency: string;
+            list_price_minor: components["schemas"]["SafePositiveInteger"];
+            standard_cost_minor: components["schemas"]["SafeNonNegativeInteger"];
+            tax_code: string;
+            revenue_account_id: string;
+            cogs_account_id: string;
+            inventory_account_id: string;
+            active: boolean;
+        };
+        MasterRevision: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            entity_type: "SUPPLIER" | "PRODUCT";
+            /** Format: uuid */
+            entity_id: string;
+            status: components["schemas"]["MasterRevisionStatus"];
+            supplier?: components["schemas"]["SupplierMasterData"];
+            product?: components["schemas"]["ProductMasterData"];
+            reason: string;
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            approved_by?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CreateMasterRevisionCommand: {
+            /** @enum {string} */
+            entity_type: "SUPPLIER" | "PRODUCT";
+            /** Format: uuid */
+            entity_id?: string;
+            supplier?: components["schemas"]["SupplierMasterData"];
+            product?: components["schemas"]["ProductMasterData"];
+            reason: string;
+        };
+        MasterRevisionTransitionCommand: {
+            status: components["schemas"]["MasterRevisionStatus"];
+            reason: string;
+        };
+        /** @enum {string} */
+        RFQStatus: "DRAFT" | "SUBMITTED" | "APPROVED" | "CLOSED" | "CANCELLED";
+        RFQLine: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            product_id: string;
+            quantity: components["schemas"]["SafePositiveInteger"];
+        };
+        RFQ: {
+            /** Format: uuid */
+            id: string;
+            number: string;
+            status: components["schemas"]["RFQStatus"];
+            currency: string;
+            /** Format: date-time */
+            response_due_at: string;
+            reason: string;
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            lines: components["schemas"]["RFQLine"][];
+        } & {
+            [key: string]: unknown;
+        };
+        CreateRFQCommand: {
+            currency: string;
+            /** Format: date-time */
+            response_due_at: string;
+            reason: string;
+            lines: {
+                /** Format: uuid */
+                product_id: string;
+                quantity: components["schemas"]["SafePositiveInteger"];
+            }[];
+        };
+        RFQTransitionCommand: {
+            status: components["schemas"]["RFQStatus"];
+            reason: string;
+        };
+        SupplierQuote: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            rfq_id: string;
+            /** Format: uuid */
+            supplier_id: string;
+            reference: string;
+            /** @enum {string} */
+            status: "DRAFT" | "SUBMITTED" | "SELECTED" | "REJECTED";
+            currency: string;
+            delivery_days: number;
+            payment_terms_days: number;
+            /** Format: date-time */
+            valid_until: string;
+            total_minor: components["schemas"]["SafePositiveInteger"];
+            reason: string;
+            lines: {
+                [key: string]: unknown;
+            }[];
+        } & {
+            [key: string]: unknown;
+        };
+        CreateSupplierQuoteCommand: {
+            /** Format: uuid */
+            rfq_id: string;
+            /** Format: uuid */
+            supplier_id: string;
+            reference: string;
+            currency: string;
+            delivery_days: number;
+            payment_terms_days: number;
+            /** Format: date-time */
+            valid_until: string;
+            reason: string;
+            lines: {
+                /** Format: uuid */
+                product_id: string;
+                quantity: components["schemas"]["SafePositiveInteger"];
+                unit_price_minor: components["schemas"]["SafePositiveInteger"];
+            }[];
+        };
+        ReasonCommand: {
+            reason: string;
+        };
+        RFQComparison: {
+            rfq: components["schemas"]["RFQ"];
+            quotes: {
+                [key: string]: unknown;
+            }[];
+        } & {
+            [key: string]: unknown;
+        };
+        AwardRFQCommand: {
+            /** Format: uuid */
+            quote_id: string;
+            reason: string;
+        };
+        SourcingAward: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            rfq_id: string;
+            /** Format: uuid */
+            quote_id: string;
+            /** Format: uuid */
+            supplier_id: string;
+            /** Format: uuid */
+            purchase_order_id: string;
+            reason: string;
+            selected_by: string;
+            /** Format: date-time */
+            selected_at: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CommercialWorkspace: {
+            revisions: components["schemas"]["MasterRevision"][];
+            rfqs: components["schemas"]["RFQ"][];
+            quotes: components["schemas"]["SupplierQuote"][];
+            awards: components["schemas"]["SourcingAward"][];
+        };
         Problem: {
             /** Format: uri-reference */
             type: string;
@@ -3070,6 +3400,247 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getCommercialWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Commercial workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommercialWorkspace"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createMasterDataRevision: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMasterRevisionCommand"];
+            };
+        };
+        responses: {
+            /** @description Revision created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MasterRevision"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    transitionMasterDataRevision: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                revisionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MasterRevisionTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Revision transitioned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MasterRevision"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createRFQ: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRFQCommand"];
+            };
+        };
+        responses: {
+            /** @description RFQ created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RFQ"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    transitionRFQ: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                rfqID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RFQTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description RFQ transitioned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RFQ"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createSupplierQuote: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSupplierQuoteCommand"];
+            };
+        };
+        responses: {
+            /** @description Supplier quotation recorded */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierQuote"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    submitSupplierQuote: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                quoteID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReasonCommand"];
+            };
+        };
+        responses: {
+            /** @description Supplier quotation submitted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierQuote"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    compareSupplierQuotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rfqID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Supplier comparison */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RFQComparison"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    awardRFQ: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                rfqID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AwardRFQCommand"];
+            };
+        };
+        responses: {
+            /** @description Award and purchase order created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourcingAward"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
     getHealth: {
         parameters: {
             query?: never;
