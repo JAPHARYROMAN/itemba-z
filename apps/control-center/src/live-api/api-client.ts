@@ -8,6 +8,7 @@ import type {
 	CreateOperationCommand, OperationDocument, OperationDocumentType, OperationPage, TransitionOperationCommand,
 	SupplierPage,
 	CustomerCollection, ReceiveCustomerCollectionCommand,
+	BankAccountPage, BankStatement, BankStatementPage, ImportBankStatementCommand, MatchBankStatementLineCommand, ReconcileBankStatementCommand,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -231,6 +232,13 @@ export class ItembaApiClient {
   transitionOperationDocument(documentId: string, command: TransitionOperationCommand, idempotencyKey: string): Promise<OperationDocument> {
     return this.request(`/v1/operations/documents/${encodeURIComponent(documentId)}/transitions`, { method: "POST", body: command, idempotencyKey });
   }
+
+  listBankAccounts(): Promise<BankAccountPage> { return this.request("/v1/banking/accounts"); }
+  listBankStatements(cursor?: string): Promise<BankStatementPage> { const query = new URLSearchParams({ page_size: "100" }); if (cursor) query.set("cursor", cursor); return this.request(`/v1/banking/statements?${query.toString()}`); }
+  getBankStatement(statementId: string): Promise<BankStatement> { return this.request(`/v1/banking/statements/${encodeURIComponent(statementId)}`); }
+  importBankStatement(command: ImportBankStatementCommand, idempotencyKey: string): Promise<BankStatement> { return this.request("/v1/banking/statements", { method: "POST", body: command, idempotencyKey }); }
+  matchBankStatementLine(statementId: string, lineId: string, command: MatchBankStatementLineCommand, idempotencyKey: string): Promise<BankStatement> { return this.request(`/v1/banking/statements/${encodeURIComponent(statementId)}/lines/${encodeURIComponent(lineId)}/matches`, { method: "POST", body: command, idempotencyKey }); }
+  reconcileBankStatement(statementId: string, command: ReconcileBankStatementCommand, idempotencyKey: string): Promise<BankStatement> { return this.request(`/v1/banking/statements/${encodeURIComponent(statementId)}/reconciliation`, { method: "POST", body: command, idempotencyKey }); }
 
   listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
     const query = new URLSearchParams({ page_size: "100" });

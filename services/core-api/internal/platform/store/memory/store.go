@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/catalog"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
@@ -87,6 +88,8 @@ type state struct {
 	suppliers                 map[string]operations.Supplier
 	collections               map[string]receivables.Collection
 	reservations              []inventory.Movement
+	bankAccounts              map[string]banking.Account
+	bankStatements            map[string]banking.Statement
 }
 
 func newState() *state {
@@ -105,6 +108,8 @@ func newState() *state {
 		operationDocuments:        make(map[string]operations.Document),
 		suppliers:                 make(map[string]operations.Supplier),
 		collections:               make(map[string]receivables.Collection),
+		bankAccounts:              make(map[string]banking.Account),
+		bankStatements:            make(map[string]banking.Statement),
 	}
 }
 
@@ -446,7 +451,10 @@ func (t *transaction) FulfillSalesOrder(_ context.Context, scope tenancy.Scope, 
 	}
 	quantities := make(map[string]int64, len(document.Lines))
 	for _, line := range document.Lines {
-		product,ok:=t.state.products[companyEntityKey(scope.TenantID,scope.CompanyID,line.ProductID)];if !ok||product.ListPriceMinor!=line.UnitPriceMinor{return operations.ErrSourceMismatch}
+		product, ok := t.state.products[companyEntityKey(scope.TenantID, scope.CompanyID, line.ProductID)]
+		if !ok || product.ListPriceMinor != line.UnitPriceMinor {
+			return operations.ErrSourceMismatch
+		}
 		quantities[line.ProductID] = line.Quantity
 	}
 	for _, line := range lines {
@@ -799,6 +807,12 @@ func cloneState(source *state) *state {
 	for key, value := range source.collections {
 		result.collections[key] = value
 	}
+	for key, value := range source.bankAccounts {
+		result.bankAccounts[key] = value
+	}
+	for key, value := range source.bankStatements {
+		result.bankStatements[key] = cloneBankStatement(value)
+	}
 	return result
 }
 
@@ -823,6 +837,18 @@ func cloneReconciliationCase(value mobile.ReconciliationCase) mobile.Reconciliat
 	if value.Resolution != nil {
 		resolution := *value.Resolution
 		value.Resolution = &resolution
+	}
+	return value
+}
+
+func cloneBankStatement(value banking.Statement) banking.Statement {
+	value.Lines = append([]banking.StatementLine(nil), value.Lines...)
+	for index := range value.Lines {
+		value.Lines[index].Candidates = append([]banking.Candidate(nil), value.Lines[index].Candidates...)
+		if value.Lines[index].Match != nil {
+			match := *value.Lines[index].Match
+			value.Lines[index].Match = &match
+		}
 	}
 	return value
 }

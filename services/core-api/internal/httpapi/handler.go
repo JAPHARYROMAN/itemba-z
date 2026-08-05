@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
@@ -34,6 +35,7 @@ type Handler struct {
 	mobile        *mobile.Service
 	receivables   *receivables.Service
 	operations    *operations.Service
+	banking       *banking.Service
 	logger        *slog.Logger
 	authenticator Authenticator
 }
@@ -75,6 +77,18 @@ func NewLiveWithOperations(salesService *sales.Service, readService *readmodel.S
 	return handler, nil
 }
 
+func NewLiveWithModules(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, bankingService *banking.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLiveWithOperations(salesService, readService, mobileService, receivablesService, operationsService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if bankingService == nil {
+		return nil, errors.New("banking service is required")
+	}
+	handler.banking = bankingService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
@@ -86,6 +100,14 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("GET /v1/operations/documents/{documentID}", h.getOperationDocument)
 		mux.HandleFunc("POST /v1/operations/documents/{documentID}/transitions", h.transitionOperationDocument)
 		mux.HandleFunc("GET /v1/suppliers", h.listSuppliers)
+	}
+	if h.banking != nil {
+		mux.HandleFunc("GET /v1/banking/accounts", h.listBankAccounts)
+		mux.HandleFunc("GET /v1/banking/statements", h.listBankStatements)
+		mux.HandleFunc("POST /v1/banking/statements", h.importBankStatement)
+		mux.HandleFunc("GET /v1/banking/statements/{statementID}", h.getBankStatement)
+		mux.HandleFunc("POST /v1/banking/statements/{statementID}/lines/{lineID}/matches", h.matchBankStatementLine)
+		mux.HandleFunc("POST /v1/banking/statements/{statementID}/reconciliation", h.reconcileBankStatement)
 	}
 	if h.read != nil {
 		mux.HandleFunc("GET /v1/context", h.workingContext)
@@ -116,6 +138,180 @@ type receiveCustomerCollectionRequest struct {
 	Method        string `json:"method"`
 	AmountMinor   int64  `json:"amount_minor"`
 	Currency      string `json:"currency"`
+}
+
+type importBankStatementLineRequest struct {
+	TransactionAt     string `json:"transaction_at"`
+	ExternalReference string `json:"external_reference"`
+	Description       string `json:"description"`
+	AmountMinor       int64  `json:"amount_minor"`
+}
+type importBankStatementRequest struct {
+	AccountID         string                           `json:"account_id"`
+	ExternalReference string                           `json:"external_reference"`
+	Currency          string                           `json:"currency"`
+	PeriodStart       string                           `json:"period_start"`
+	PeriodEnd         string                           `json:"period_end"`
+	OpeningMinor      int64                            `json:"opening_minor"`
+	ClosingMinor      int64                            `json:"closing_minor"`
+	Lines             []importBankStatementLineRequest `json:"lines"`
+}
+
+func (h *Handler) listBankAccounts(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	result, err := h.banking.Accounts(request.Context(), principal.Scope, principal.ActorID)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"items": result})
+}
+func (h *Handler) listBankStatements(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	limit, ok := parsePageSize(writer, request)
+	if !ok {
+		return
+	}
+	result, err := h.banking.Statements(request.Context(), principal.Scope, principal.ActorID, request.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+func (h *Handler) getBankStatement(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	id, err := identity.CanonicalUUID(request.PathValue("statementID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "statementID must be a UUID")
+		return
+	}
+	result, err := h.banking.Statement(request.Context(), principal.Scope, principal.ActorID, id)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+func (h *Handler) importBankStatement(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	idem, ok := requireIdempotencyKey(writer, request)
+	if !ok {
+		return
+	}
+	var body importBankStatementRequest
+	if !decodeJSON(writer, request, &body) {
+		return
+	}
+	accountID, err := identity.CanonicalUUID(body.AccountID)
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "account_id must be a UUID")
+		return
+	}
+	start, err := time.Parse(time.RFC3339, strings.TrimSpace(body.PeriodStart))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "period_start must be RFC 3339")
+		return
+	}
+	end, err := time.Parse(time.RFC3339, strings.TrimSpace(body.PeriodEnd))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "period_end must be RFC 3339")
+		return
+	}
+	command := banking.ImportCommand{Scope: principal.Scope, AccountID: accountID, ExternalReference: body.ExternalReference, Currency: body.Currency, PeriodStart: start, PeriodEnd: end, OpeningMinor: body.OpeningMinor, ClosingMinor: body.ClosingMinor, ActorID: principal.ActorID, IdempotencyKey: idem, CorrelationID: correlationID(writer)}
+	for _, line := range body.Lines {
+		at, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(line.TransactionAt))
+		if parseErr != nil {
+			writeProblem(writer, http.StatusBadRequest, "invalid_request", "line transaction_at must be RFC 3339")
+			return
+		}
+		command.Lines = append(command.Lines, banking.ImportLine{TransactionAt: at, ExternalReference: line.ExternalReference, Description: line.Description, AmountMinor: line.AmountMinor})
+	}
+	result, err := h.banking.Import(request.Context(), command)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writer.Header().Set("Location", "/v1/banking/statements/"+result.ID)
+	writeJSON(writer, http.StatusCreated, result)
+}
+
+type matchBankStatementRequest struct {
+	JournalLineID string `json:"journal_line_id"`
+	Reason        string `json:"reason"`
+}
+
+func (h *Handler) matchBankStatementLine(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	idem, ok := requireIdempotencyKey(writer, request)
+	if !ok {
+		return
+	}
+	statementID, err := identity.CanonicalUUID(request.PathValue("statementID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "statementID must be a UUID")
+		return
+	}
+	lineID, err := identity.CanonicalUUID(request.PathValue("lineID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "lineID must be a UUID")
+		return
+	}
+	var body matchBankStatementRequest
+	if !decodeJSON(writer, request, &body) {
+		return
+	}
+	result, err := h.banking.Match(request.Context(), banking.MatchCommand{Scope: principal.Scope, StatementID: statementID, LineID: lineID, JournalLineID: body.JournalLineID, Reason: body.Reason, ActorID: principal.ActorID, IdempotencyKey: idem, CorrelationID: correlationID(writer)})
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, result)
+}
+
+type reconcileBankStatementRequest struct {
+	Reason string `json:"reason"`
+}
+
+func (h *Handler) reconcileBankStatement(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	idem, ok := requireIdempotencyKey(writer, request)
+	if !ok {
+		return
+	}
+	statementID, err := identity.CanonicalUUID(request.PathValue("statementID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "statementID must be a UUID")
+		return
+	}
+	var body reconcileBankStatementRequest
+	if !decodeJSON(writer, request, &body) {
+		return
+	}
+	result, err := h.banking.Reconcile(request.Context(), banking.ReconcileCommand{Scope: principal.Scope, StatementID: statementID, Reason: body.Reason, ActorID: principal.ActorID, IdempotencyKey: idem, CorrelationID: correlationID(writer)})
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, result)
 }
 
 func (h *Handler) receiveCustomerCollection(writer http.ResponseWriter, request *http.Request) {
@@ -849,6 +1045,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusConflict, "insufficient_stock"
 	case errors.Is(err, operations.ErrInsufficientStock), errors.Is(err, operations.ErrOverReceipt), errors.Is(err, operations.ErrOverInvoice), errors.Is(err, operations.ErrPayableExceeded), errors.Is(err, operations.ErrInvalidTransition), errors.Is(err, operations.ErrSeparationOfDuties):
 		status, code = http.StatusConflict, "operations_conflict"
+	case errors.Is(err, banking.ErrStatementImbalance), errors.Is(err, banking.ErrDuplicateStatement), errors.Is(err, banking.ErrMatchMismatch), errors.Is(err, banking.ErrAlreadyMatched), errors.Is(err, banking.ErrUnmatchedLines), errors.Is(err, banking.ErrSeparationOfDuties), errors.Is(err, banking.ErrAlreadyReconciled):
+		status, code = http.StatusConflict, "bank_reconciliation_conflict"
+	case errors.Is(err, banking.ErrInactiveAccount):
+		status, code = http.StatusUnprocessableEntity, "business_rule_violation"
 	case errors.Is(err, sales.ErrFiscalPeriodClosed):
 		status, code = http.StatusConflict, "fiscal_period_closed"
 	case errors.Is(err, sales.ErrAlreadyReversed):
@@ -862,7 +1062,7 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 	case errors.Is(err, sales.ErrGeneralCustomerCredit), errors.Is(err, sales.ErrCustomerCreditDisabled), errors.Is(err, sales.ErrCreditLimitExceeded), errors.Is(err, sales.ErrCustomerInactive), errors.Is(err, sales.ErrProductInactive), errors.Is(err, customers.ErrCreditRiskHold), errors.Is(err, customers.ErrCreditOverdue),
 		errors.Is(err, sales.ErrOfflineCredit), errors.Is(err, sales.ErrOfflinePaymentMethod), errors.Is(err, sales.ErrOfflineTaxUnsupported), errors.Is(err, sales.ErrUnsupportedPayment), errors.Is(err, devices.ErrNotActive), errors.Is(err, devices.ErrOfflineDisabled), errors.Is(err, devices.ErrMobileCreditUnsupported), errors.Is(err, devices.ErrAllocationExceeded), errors.Is(err, devices.ErrOfflineLimit), errors.Is(err, devices.ErrOfflineLeaseExpired), errors.Is(err, devices.ErrStaleMasterData), errors.Is(err, devices.ErrInvalidTimeZone), errors.Is(err, devices.ErrInvalidStatusTransition):
 		status, code = http.StatusUnprocessableEntity, "business_rule_violation"
-	case errors.Is(err, sales.ErrInvalidCommand), errors.Is(err, sales.ErrInvalidLine), errors.Is(err, sales.ErrDuplicateProductLine), errors.Is(err, sales.ErrInvalidSaleKind), errors.Is(err, sales.ErrPaymentMethodRequired), errors.Is(err, operations.ErrInvalidCommand):
+	case errors.Is(err, sales.ErrInvalidCommand), errors.Is(err, sales.ErrInvalidLine), errors.Is(err, sales.ErrDuplicateProductLine), errors.Is(err, sales.ErrInvalidSaleKind), errors.Is(err, sales.ErrPaymentMethodRequired), errors.Is(err, operations.ErrInvalidCommand), errors.Is(err, banking.ErrInvalidCommand):
 		status, code = http.StatusBadRequest, "invalid_request"
 	}
 	if status == http.StatusInternalServerError {

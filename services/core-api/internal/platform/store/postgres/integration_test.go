@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
@@ -41,7 +42,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -73,6 +74,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 		approverID       = "00000000-0000-4000-8000-000000000011"
 		approverScopeID  = "00000000-0000-4000-8000-000000000012"
 		supplierID       = "00000000-0000-4000-8000-000000000013"
+		bankAccountID    = "00000000-0000-4000-8000-000000000014"
 	)
 	var testTime time.Time
 	if err := pool.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&testTime); err != nil {
@@ -113,6 +115,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 		{`INSERT INTO offline_posting_policies(id,tenant_id,company_id,accounting_time_basis,maximum_future_skew_seconds,require_same_fiscal_period,effective_from,created_by,created_at) VALUES(gen_random_uuid(),$1,$2,'SERVER_RECEIPT',14400,true,$3,$4,$5)`, []any{tenantID, companyID, testTime.AddDate(-1, 0, 0), userID, testTime}},
 		{`INSERT INTO sales_posting_config(tenant_id,company_id,receivable_account_id,tax_payable_account_id,cash_accounts) VALUES($1,$2,'receivable','tax-payable','{"CASH":"cash"}')`, []any{tenantID, companyID}},
 		{`INSERT INTO procurement_posting_config(tenant_id,company_id,grni_account_id,payable_account_id,inventory_adjustment_account_id,stock_in_transit_account_id,cash_accounts) VALUES($1,$2,'grni','payable','inventory-adjustment','stock-in-transit','{"CASH":"cash"}')`, []any{tenantID, companyID}},
+		{`INSERT INTO bank_accounts(id,tenant_id,company_id,branch_id,warehouse_id,code,name,account_type,currency,gl_account_id,active) VALUES($1,$2,$3,$4,$5,'CASH','Till cash','CASH','TZS','cash',true)`, []any{bankAccountID, tenantID, companyID, branchID, warehouseID}},
 		{`INSERT INTO inventory_stock_ledger(id,tenant_id,company_id,branch_id,warehouse_id,product_id,source_type,source_id,quantity,occurred_at) VALUES($1,$2,$3,$4,$5,$6,'OPENING',$7,100,$8)`, []any{stockID, tenantID, companyID, branchID, warehouseID, productID, openingID, testTime.Add(-time.Hour)}},
 	}
 	for _, statement := range statements {
@@ -150,6 +153,25 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 		ActorID: userID, IdempotencyKey: "integration-cross-branch-reversal",
 	}); !errors.Is(err, sales.ErrNotFound) {
 		t.Fatalf("cross-branch PostgreSQL reversal error=%v", err)
+	}
+	bankingService, err := banking.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(30 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement, err := bankingService.Import(ctx, banking.ImportCommand{Scope: scope, AccountID: bankAccountID, ExternalReference: "INTEGRATION-CASH-DAY", Currency: "TZS", PeriodStart: testTime.Add(-time.Hour), PeriodEnd: testTime.Add(time.Hour), OpeningMinor: 0, ClosingMinor: created.TotalMinor, Lines: []banking.ImportLine{{TransactionAt: testTime, ExternalReference: created.ID, Description: "Golden sale cash receipt", AmountMinor: created.TotalMinor}}, ActorID: userID, IdempotencyKey: "integration-bank-import-001"})
+	if err != nil {
+		t.Fatalf("import bank statement: %v", err)
+	}
+	detail, err := bankingService.Statement(ctx, scope, userID, statement.ID)
+	if err != nil || len(detail.Lines) != 1 || len(detail.Lines[0].Candidates) != 1 {
+		t.Fatalf("bank candidates: %+v %v", detail, err)
+	}
+	matched, err := bankingService.Match(ctx, banking.MatchCommand{Scope: scope, StatementID: statement.ID, LineID: detail.Lines[0].ID, JournalLineID: detail.Lines[0].Candidates[0].JournalLineID, Reason: "Verified against golden sale", ActorID: userID, IdempotencyKey: "integration-bank-match-0001"})
+	if err != nil || matched.Lines[0].Match == nil {
+		t.Fatalf("match bank statement: %+v %v", matched, err)
+	}
+	if _, err := bankingService.Reconcile(ctx, banking.ReconcileCommand{Scope: scope, StatementID: statement.ID, Reason: "Independent finance approval", ActorID: approverID, IdempotencyKey: "integration-bank-reconcile-1"}); err != nil {
+		t.Fatalf("reconcile bank statement: %v", err)
 	}
 	reversal, err := service.Reverse(ctx, sales.ReverseCommand{Scope: scope, SaleID: created.ID, Reason: "Integration return", ActorID: userID, IdempotencyKey: "integration-reversal-key"})
 	if err != nil || reversal.ReversalOf != created.ID {
@@ -617,7 +639,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 1 || salesCount != 7 || journalCount != 15 || outboxCount != 52 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 15 || outboxCount != 55 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }

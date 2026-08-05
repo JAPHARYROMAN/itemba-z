@@ -91,3 +91,11 @@ export interface SupplierPage { items: SupplierSummary[]; next_cursor: string | 
 export interface OperationsWorkspace { context: WorkingContext; customers: CustomerSummary[]; products: ProductSummary[]; suppliers: SupplierSummary[]; documents: OperationDocument[]; nextCursor: string | null }
 export interface ReceiveCustomerCollectionCommand { invoice_sale_id: string; method: PaymentMethod; amount_minor: number; currency: string }
 export interface CustomerCollection { id: string; customer_id: string; invoice_sale_id: string; method: PaymentMethod; account_id: string; amount_minor: number; currency: string; occurred_at: string; correlation_id: string }
+export type BankAccount = components["schemas"]["BankAccount"];
+export type BankAccountPage = components["schemas"]["BankAccountPage"];
+export type BankStatement = components["schemas"]["BankStatement"];
+export type BankStatementPage = components["schemas"]["BankStatementPage"];
+export type ImportBankStatementCommand = components["schemas"]["ImportBankStatementCommand"];
+export type MatchBankStatementLineCommand = components["schemas"]["MatchBankStatementLineCommand"];
+export type ReconcileBankStatementCommand = components["schemas"]["ReconcileBankStatementCommand"];
+export interface BankingWorkspace { context: WorkingContext; accounts: BankAccount[]; statements: BankStatement[]; nextCursor: string | null }

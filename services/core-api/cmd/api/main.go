@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/httpapi"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
@@ -112,7 +113,17 @@ func main() {
 		logger.Error("initialize operations service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithOperations(salesService, readService, mobileService, receivablesService, operationsService, logger, authenticator)
+	bankingRepository, ok := repository.(banking.Repository)
+	if !ok {
+		logger.Error("repository does not implement cash and bank reconciliation")
+		os.Exit(1)
+	}
+	bankingService, err := banking.NewService(bankingRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize banking service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithModules(salesService, readService, mobileService, receivablesService, operationsService, bankingService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)

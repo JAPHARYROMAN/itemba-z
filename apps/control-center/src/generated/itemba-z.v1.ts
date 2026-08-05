@@ -226,6 +226,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/banking/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List scoped cash and bank accounts */
+        get: operations["listBankAccounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/banking/statements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List scoped imported bank statements */
+        get: operations["listBankStatements"];
+        put?: never;
+        /** Import an immutable balanced bank statement */
+        post: operations["importBankStatement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/banking/statements/{statement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get statement evidence and exact ledger candidates */
+        get: operations["getBankStatement"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/banking/statements/{statement_id}/lines/{line_id}/matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Match a statement line to one exact general-ledger cash entry */
+        post: operations["matchBankStatementLine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/banking/statements/{statement_id}/reconciliation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Independently approve a fully matched reconciliation */
+        post: operations["reconcileBankStatement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sales": {
         parameters: {
             query?: never;
@@ -809,6 +895,110 @@ export interface components {
         SupplierPage: {
             items: components["schemas"]["Supplier"][];
             next_cursor: string | null;
+        };
+        BankAccount: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            name: string;
+            /** @enum {string} */
+            type: "BANK" | "CASH" | "MOBILE_MONEY";
+            currency: string;
+            gl_account_id: string;
+            active: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        BankAccountPage: {
+            items: components["schemas"]["BankAccount"][];
+        };
+        ImportBankStatementLine: {
+            /** Format: date-time */
+            transaction_at: string;
+            external_reference: string;
+            description: string;
+            amount_minor: components["schemas"]["SafeInteger"];
+        };
+        ImportBankStatementCommand: {
+            /** Format: uuid */
+            account_id: string;
+            external_reference: string;
+            currency: string;
+            /** Format: date-time */
+            period_start: string;
+            /** Format: date-time */
+            period_end: string;
+            opening_minor: components["schemas"]["SafeInteger"];
+            closing_minor: components["schemas"]["SafeInteger"];
+            lines: components["schemas"]["ImportBankStatementLine"][];
+        };
+        BankLedgerCandidate: {
+            journal_line_id: string;
+            /** Format: uuid */
+            journal_id: string;
+            source_type: string;
+            /** Format: uuid */
+            source_id: string;
+            amount_minor: components["schemas"]["SafeInteger"];
+            /** Format: date-time */
+            occurred_at: string;
+            memo: string;
+        };
+        BankStatementMatch: {
+            /** Format: uuid */
+            id: string;
+            journal_line_id: string;
+            /** Format: uuid */
+            actor_id: string;
+            reason: string;
+            /** Format: date-time */
+            occurred_at: string;
+        };
+        BankStatementLine: components["schemas"]["ImportBankStatementLine"] & {
+            /** Format: uuid */
+            id: string;
+            match?: components["schemas"]["BankStatementMatch"];
+            candidates: components["schemas"]["BankLedgerCandidate"][];
+        };
+        BankStatement: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            account_id: string;
+            external_reference: string;
+            currency: string;
+            /** Format: date-time */
+            period_start: string;
+            /** Format: date-time */
+            period_end: string;
+            opening_minor: components["schemas"]["SafeInteger"];
+            closing_minor: components["schemas"]["SafeInteger"];
+            /** @enum {string} */
+            status: "IMPORTED" | "RECONCILED";
+            /** Format: uuid */
+            imported_by: string;
+            /** Format: date-time */
+            imported_at: string;
+            /** Format: uuid */
+            reconciled_by?: string;
+            /** Format: date-time */
+            reconciled_at?: string;
+            /** Format: uuid */
+            correlation_id: string;
+            lines: components["schemas"]["BankStatementLine"][];
+        } & {
+            [key: string]: unknown;
+        };
+        BankStatementPage: {
+            items: components["schemas"]["BankStatement"][];
+            next_cursor: string | null;
+        };
+        MatchBankStatementLineCommand: {
+            journal_line_id: string;
+            reason: string;
+        };
+        ReconcileBankStatementCommand: {
+            reason: string;
         };
         ReceiveCustomerCollectionCommand: {
             /** Format: uuid */
@@ -1409,6 +1599,7 @@ export interface operations {
                     "application/json": components["schemas"]["SupplierPage"];
                 };
             };
+            403: components["responses"]["Forbidden"];
         };
     };
     listOperationDocuments: {
@@ -1514,6 +1705,166 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OperationDocument"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listBankAccounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active and inactive accounts visible in the exact working scope. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAccountPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listBankStatements: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                page_size?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Imported and reconciled statements. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankStatementPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    importBankStatement: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportBankStatementCommand"];
+            };
+        };
+        responses: {
+            /** @description Balanced statement imported exactly once. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankStatement"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getBankStatement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                statement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Statement lines, matches, and unused exact-value candidates. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankStatement"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    matchBankStatementLine: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path: {
+                statement_id: string;
+                line_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchBankStatementLineCommand"];
+            };
+        };
+        responses: {
+            /** @description Append-only one-to-one match recorded. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankStatement"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    reconcileBankStatement: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path: {
+                statement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconcileBankStatementCommand"];
+            };
+        };
+        responses: {
+            /** @description Reconciliation approval recorded without mutating source evidence. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankStatement"];
                 };
             };
             409: components["responses"]["Conflict"];

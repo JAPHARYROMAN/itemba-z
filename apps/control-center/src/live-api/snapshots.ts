@@ -6,6 +6,7 @@ import type {
   CustomerAccountWorkspace, CustomerAccountsWorkspace, DeviceManagementWorkspace, LiveSnapshot, MobileReconciliationStatus, ReconciliationDetailWorkspace,
   ReconciliationWorkspace, SaleDetailWorkspace, SalesBootstrap, SalesWorkspace,
 	OperationsWorkspace,
+	BankingWorkspace,
 } from "@/live-api/types";
 
 export async function loadCustomerAccounts(): Promise<LiveSnapshot<CustomerAccountsWorkspace>> {
@@ -16,6 +17,14 @@ export async function loadCustomerAccounts(): Promise<LiveSnapshot<CustomerAccou
   } catch (error) {
     return { state: "unavailable", problem: publicProblem(error) };
   }
+}
+
+export async function loadBankingWorkspace(cursor?: string): Promise<LiveSnapshot<BankingWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const [context, accounts, statements] = await Promise.all([repository.getWorkingContext(), repository.listBankAccounts(), repository.listBankStatements(cursor)]);
+    return { state: "ready", data: { context, accounts: accounts.items, statements: statements.items, nextCursor: statements.next_cursor ?? null } };
+  } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
 }
 
 export async function loadOperationsWorkspace(): Promise<LiveSnapshot<OperationsWorkspace>> {
