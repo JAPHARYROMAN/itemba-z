@@ -62,6 +62,9 @@ type Repository interface {
 	ListReconciliationCases(ctx context.Context, scope tenancy.Scope, actorID string, status ReconciliationStatus, afterID string, limit int) ([]ReconciliationCase, error)
 	ReconciliationCase(ctx context.Context, scope tenancy.Scope, actorID, caseID string) (ReconciliationCase, error)
 	ResolveReconciliationCase(ctx context.Context, scope tenancy.Scope, actorID string, resolution ReconciliationResolution, resolutionAudit audit.Event, resolutionEvent outbox.Event) (ReconciliationCase, error)
+	ListManagedDevices(ctx context.Context, scope tenancy.Scope, actorID, afterID string, limit int) ([]devices.Device, error)
+	ChangeManagedDeviceStatus(ctx context.Context, change DeviceStatusChange, changeAudit audit.Event, changeEvent outbox.Event) (devices.Device, error)
+	ChangeManagedDeviceAllocation(ctx context.Context, change DeviceAllocationChange, changeAudit audit.Event, changeEvent outbox.Event) (devices.Device, error)
 }
 
 type Service struct {

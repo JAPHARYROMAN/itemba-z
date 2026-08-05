@@ -1,7 +1,8 @@
 import type { BackendIdentity } from "@/live-api/auth";
 import { buildIdentityHeaders } from "@/live-api/auth";
 import type {
-  CompleteSaleCommand, CustomerPage, MobileReconciliationCase, MobileReconciliationPage,
+  ChangeMobileDeviceAllocationCommand, ChangeMobileDeviceStatusCommand, CompleteSaleCommand, CustomerPage,
+  MobileDevice, MobileDevicePage, MobileReconciliationCase, MobileReconciliationPage,
   MobileReconciliationStatus, ProductPage, PublicProblem, ResolveMobileReconciliationCommand,
   ReverseSaleCommand, Sale, SalePage, WorkingContext,
 } from "@/live-api/types";
@@ -217,6 +218,24 @@ export class ItembaApiClient {
       method: "POST",
       body: command,
       idempotencyKey,
+    });
+  }
+
+  listManagedDevices(cursor?: string): Promise<MobileDevicePage> {
+    const query = new URLSearchParams({ page_size: "100" });
+    if (cursor) query.set("cursor", cursor);
+    return this.request(`/v1/mobile/devices?${query.toString()}`);
+  }
+
+  changeManagedDeviceStatus(deviceId: string, command: ChangeMobileDeviceStatusCommand, idempotencyKey: string): Promise<MobileDevice> {
+    return this.request(`/v1/mobile/devices/${encodeURIComponent(deviceId)}/status-changes`, {
+      method: "POST", body: command, idempotencyKey,
+    });
+  }
+
+  changeManagedDeviceAllocation(deviceId: string, command: ChangeMobileDeviceAllocationCommand, idempotencyKey: string): Promise<MobileDevice> {
+    return this.request(`/v1/mobile/devices/${encodeURIComponent(deviceId)}/allocation-changes`, {
+      method: "POST", body: command, idempotencyKey,
     });
   }
 }

@@ -60,6 +60,9 @@ effects while preserving the original transaction and its audit history.
 | Duplicate web command | Repeating the same idempotency key and body returns the original sale; a changed body conflicts. |
 | Duplicate mobile synchronization | Repeating `device_id + client_transaction_id` returns the original server sale and cannot post twice. |
 | Unauthorized device | An unbound, disabled, actor-mismatched, or scope-mismatched device cannot synchronize. |
+| Device suspension | A separately authorized, reasoned, idempotent command changes ACTIVE to SUSPENDED, ends current offline authorization, and appends audit/outbox/change evidence. A repeated command cannot duplicate evidence. |
+| Device reactivation | SUSPENDED can return to ACTIVE with separate evidence, but offline sales remain unavailable until the device successfully acknowledges its installation and receives a fresh lease. REVOKED is never reactivated. |
+| Offline allocation change | An exact-scope operator sets an absolute product allocation with a reason. The command rejects quantities below synchronized consumption and total remaining reservations above live warehouse stock. |
 | Offline cash sale | The encrypted queue survives restart and synchronizes exactly once from the acknowledged immutable publication, including after later customer, product, price, cost, posting-account, or tax configuration drift. This milestone accepts physical CASH and publication-owned zero-rated lines only. |
 | Catalog snapshot download | Every customer and product page echoes the requested immutable token and identical version metadata; token drift aborts the download before installation. |
 | Cache acknowledgement | Installed and available token/version triples are distinct; stale acknowledgements fail, while retry after a lost response is idempotent. |

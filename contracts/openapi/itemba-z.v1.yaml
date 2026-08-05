@@ -346,6 +346,79 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /v1/mobile/devices:
+    get:
+      summary: List governed POS devices in the exact working scope
+      operationId: listManagedMobileDevices
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Scoped device page with authoritative policy and remaining allocations.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileDevicePage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/mobile/devices/{device_id}/status-changes:
+    post:
+      summary: Suspend or reactivate a governed POS device
+      description: Suspension immediately ends the device's current offline authorization. Reactivation requires a fresh device acknowledgement before offline sales can resume.
+      operationId: changeManagedMobileDeviceStatus
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeMobileDeviceStatusCommand' }
+      responses:
+        '200':
+          description: Current authoritative device state after the recorded change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileDeviceEnrollment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /v1/mobile/devices/{device_id}/allocation-changes:
+    post:
+      summary: Change one governed offline stock allocation
+      description: The absolute allocation cannot fall below synchronized consumption or cause remaining device reservations to exceed live warehouse stock.
+      operationId: changeManagedMobileDeviceAllocation
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeMobileDeviceAllocationCommand' }
+      responses:
+        '200':
+          description: Current authoritative device state and allocations.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileDeviceEnrollment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /v1/mobile/reconciliation-cases:
     get:
       summary: List governed offline-sale reconciliation cases
@@ -469,6 +542,11 @@ components:
       schema: { type: string, format: uuid }
     ReconciliationCaseId:
       name: case_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DeviceId:
+      name: device_id
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -797,6 +875,30 @@ components:
         stock_allocations:
           type: array
           items: { $ref: '#/components/schemas/MobileStockAllocation' }
+    MobileDevicePage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MobileDeviceEnrollment' }
+        next_cursor: { type: [string, 'null'] }
+    ChangeMobileDeviceStatusCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties:
+        status: { type: string, enum: [ACTIVE, SUSPENDED] }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    ChangeMobileDeviceAllocationCommand:
+      type: object
+      additionalProperties: false
+      required: [product_id, allocated_quantity, reason]
+      properties:
+        product_id: { type: string, format: uuid }
+        allocated_quantity: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
     MobileSaleSyncCommand:
       type: object
       additionalProperties: false

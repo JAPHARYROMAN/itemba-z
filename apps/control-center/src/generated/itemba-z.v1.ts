@@ -198,6 +198,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/mobile/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List governed POS devices in the exact working scope */
+        get: operations["listManagedMobileDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mobile/devices/{device_id}/status-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend or reactivate a governed POS device
+         * @description Suspension immediately ends the device's current offline authorization. Reactivation requires a fresh device acknowledgement before offline sales can resume.
+         */
+        post: operations["changeManagedMobileDeviceStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mobile/devices/{device_id}/allocation-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change one governed offline stock allocation
+         * @description The absolute allocation cannot fall below synchronized consumption or cause remaining device reservations to exceed live warehouse stock.
+         */
+        post: operations["changeManagedMobileDeviceAllocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/mobile/reconciliation-cases": {
         parameters: {
             query?: never;
@@ -524,6 +581,21 @@ export interface components {
             last_seen_at: string;
             stock_allocations: components["schemas"]["MobileStockAllocation"][];
         };
+        MobileDevicePage: {
+            items: components["schemas"]["MobileDeviceEnrollment"][];
+            next_cursor: string | null;
+        };
+        ChangeMobileDeviceStatusCommand: {
+            /** @enum {string} */
+            status: "ACTIVE" | "SUSPENDED";
+            reason: string;
+        };
+        ChangeMobileDeviceAllocationCommand: {
+            /** Format: uuid */
+            product_id: string;
+            allocated_quantity: components["schemas"]["SafeNonNegativeInteger"];
+            reason: string;
+        };
         MobileSaleSyncCommand: {
             /** Format: uuid */
             customer_id: string;
@@ -742,6 +814,7 @@ export interface components {
         CorrelationId: string;
         SaleId: string;
         ReconciliationCaseId: string;
+        DeviceId: string;
     };
     requestBodies: never;
     headers: never;
@@ -1075,6 +1148,102 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listManagedMobileDevices: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                page_size?: components["parameters"]["PageSize"];
+            };
+            header?: {
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scoped device page with authoritative policy and remaining allocations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileDevicePage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    changeManagedMobileDeviceStatus: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path: {
+                device_id: components["parameters"]["DeviceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeMobileDeviceStatusCommand"];
+            };
+        };
+        responses: {
+            /** @description Current authoritative device state after the recorded change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileDeviceEnrollment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    changeManagedMobileDeviceAllocation: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path: {
+                device_id: components["parameters"]["DeviceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeMobileDeviceAllocationCommand"];
+            };
+        };
+        responses: {
+            /** @description Current authoritative device state and allocations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileDeviceEnrollment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
         };
     };

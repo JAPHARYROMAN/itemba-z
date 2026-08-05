@@ -39,7 +39,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -200,6 +200,24 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err != nil || enrollment.MasterDataVersion != masterVersion || enrollment.PriceVersion != priceVersion || enrollment.CatalogSnapshotToken != snapshotToken {
 		t.Fatalf("enrollment acknowledgement: %+v %v", enrollment, err)
 	}
+	managedPage, err := mobileService.ManagedDevices(ctx, scope, userID, "", 10)
+	if err != nil || len(managedPage.Items) != 1 || managedPage.Items[0].ID != deviceID {
+		t.Fatalf("managed device list: %+v err=%v", managedPage, err)
+	}
+	suspended, err := mobileService.ChangeDeviceStatus(ctx, mobile.ChangeDeviceStatusCommand{
+		Scope: scope, ActorID: userID, DeviceID: deviceID, Status: devices.StatusSuspended,
+		Reason: "Integration custody investigation", IdempotencyKey: "postgres-device-suspend-0001",
+	})
+	if err != nil || suspended.Status != devices.StatusSuspended {
+		t.Fatalf("managed device suspension: %+v err=%v", suspended, err)
+	}
+	active, err := mobileService.ChangeDeviceStatus(ctx, mobile.ChangeDeviceStatusCommand{
+		Scope: scope, ActorID: userID, DeviceID: deviceID, Status: devices.StatusActive,
+		Reason: "Integration custody verified", IdempotencyKey: "postgres-device-reactivate-01",
+	})
+	if err != nil || active.Status != devices.StatusActive {
+		t.Fatalf("managed device reactivation: %+v err=%v", active, err)
+	}
 	syncCommand := mobile.SyncCommand{
 		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: "CASH",
 		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
@@ -234,10 +252,12 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 		WHERE tenant_id=$1 AND id=$2`, tenantID, deviceID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO `+pgx.Identifier{schema}.Sanitize()+`.mobile_device_stock_allocations
-			(tenant_id,company_id,branch_id,warehouse_id,device_id,product_id,allocated_quantity)
-		VALUES ($1,$2,$3,$4,$5,$6,10)`, tenantID, companyID, branchID, warehouseID, deviceID, productID); err != nil {
-		t.Fatal(err)
+	allocated, err := mobileService.ChangeDeviceAllocation(ctx, mobile.ChangeDeviceAllocationCommand{
+		Scope: scope, ActorID: userID, DeviceID: deviceID, ProductID: productID,
+		AllocatedQuantity: 10, Reason: "Integration route allocation", IdempotencyKey: "postgres-device-allocation-001",
+	})
+	if err != nil || len(allocated.StockAllocations) != 1 || allocated.StockAllocations[0].AllocatedQuantity != 10 {
+		t.Fatalf("managed device allocation: %+v err=%v", allocated, err)
 	}
 	leased, err := mobileService.Enroll(ctx, mobile.EnrollCommand{
 		Scope: scope, ActorID: userID, DeviceID: deviceID, DeviceName: "Integration POS", AppVersion: "1.0.0",
@@ -330,7 +350,11 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 
 	expiredAt := testTime.Add(time.Minute).Add(devices.OfflineSalesLeaseDuration).Add(time.Second)
-	renewalService, err := mobile.NewService(store, service, identity.UUIDGenerator{}, clock.Fixed{Time: expiredAt})
+	renewalSalesService, err := sales.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: expiredAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewalService, err := mobile.NewService(store, renewalSalesService, identity.UUIDGenerator{}, clock.Fixed{Time: expiredAt})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -492,7 +516,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 0 || salesCount != 5 || journalCount != 5 || outboxCount != 12 || processedCount != 1 {
+	if stock != 0 || salesCount != 5 || journalCount != 5 || outboxCount != 15 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }
@@ -532,7 +556,7 @@ func TestRestrictedRuntimeRoleEnforcesTenantRLS(t *testing.T) {
 		_, _ = clusterPool.Exec(context.Background(), "DROP ROLE "+pgx.Identifier{apiUser}.Sanitize())
 		_, _ = clusterPool.Exec(context.Background(), "DROP ROLE "+pgx.Identifier{workerUser}.Sanitize())
 	}()
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql"} {
 		applyTestMigration(t, ctx, adminPool, "itembaz", name)
 	}
 	const (
@@ -610,6 +634,26 @@ func TestRestrictedRuntimeRoleEnforcesTenantRLS(t *testing.T) {
 	if !apiCaseSelect || !apiCaseInsert || apiCaseUpdate || apiCaseDelete || workerCaseSelect {
 		t.Fatalf("unsafe reconciliation capabilities api(select=%v insert=%v update=%v delete=%v) worker_select=%v",
 			apiCaseSelect, apiCaseInsert, apiCaseUpdate, apiCaseDelete, workerCaseSelect)
+	}
+	var apiDeviceChangeSelect, apiDeviceChangeInsert, apiDeviceChangeUpdate, apiDeviceChangeDelete bool
+	var workerDeviceChangeSelect, apiDeviceStatusUpdate, apiAllocationUpdate bool
+	if err := adminPool.QueryRow(ctx, `
+		SELECT has_table_privilege($1, 'itembaz.mobile_device_status_changes', 'SELECT'),
+		       has_table_privilege($1, 'itembaz.mobile_device_status_changes', 'INSERT'),
+		       has_table_privilege($1, 'itembaz.mobile_device_status_changes', 'UPDATE'),
+		       has_table_privilege($1, 'itembaz.mobile_device_status_changes', 'DELETE'),
+		       has_table_privilege($2, 'itembaz.mobile_device_status_changes', 'SELECT'),
+		       has_column_privilege($1, 'itembaz.mobile_devices', 'status', 'UPDATE'),
+		       has_column_privilege($1, 'itembaz.mobile_device_stock_allocations', 'allocated_quantity', 'UPDATE')`,
+		apiUser, workerUser).Scan(&apiDeviceChangeSelect, &apiDeviceChangeInsert, &apiDeviceChangeUpdate,
+		&apiDeviceChangeDelete, &workerDeviceChangeSelect, &apiDeviceStatusUpdate, &apiAllocationUpdate); err != nil {
+		t.Fatal(err)
+	}
+	if !apiDeviceChangeSelect || !apiDeviceChangeInsert || !apiDeviceStatusUpdate || !apiAllocationUpdate ||
+		apiDeviceChangeUpdate || apiDeviceChangeDelete || workerDeviceChangeSelect {
+		t.Fatalf("unsafe device governance capabilities api(select=%v insert=%v update=%v delete=%v status_update=%v allocation_update=%v) worker_select=%v",
+			apiDeviceChangeSelect, apiDeviceChangeInsert, apiDeviceChangeUpdate, apiDeviceChangeDelete,
+			apiDeviceStatusUpdate, apiAllocationUpdate, workerDeviceChangeSelect)
 	}
 	var futureACL string
 	var apiFutureExecute bool

@@ -204,6 +204,9 @@ func (s *Store) SeedDevice(value devices.Device) {
 	if value.AvailableCatalogSnapshotToken == "" {
 		value.AvailableCatalogSnapshotToken = value.CatalogSnapshotToken
 	}
+	if value.AuthorizationEpoch == "" {
+		value.AuthorizationEpoch = "seed:" + value.ID
+	}
 	if value.CatalogSnapshotToken != devices.UnacknowledgedCatalogSnapshotToken {
 		captureCatalogPublication(s.state, value.Scope, value.CatalogSnapshotToken)
 	}
@@ -213,6 +216,7 @@ func (s *Store) SeedDevice(value devices.Device) {
 			Scope: value.Scope, DeviceID: value.ID, AppVersion: value.AppVersion,
 			MasterDataVersion: value.MasterDataVersion, PriceVersion: value.PriceVersion,
 			CatalogSnapshotToken: value.CatalogSnapshotToken,
+			AuthorizationEpoch:   value.AuthorizationEpoch,
 			ValidFrom:            value.OfflineSalesValidFrom, ValidUntil: value.OfflineSalesValidUntil,
 		})
 	}

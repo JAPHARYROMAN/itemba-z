@@ -36,6 +36,7 @@ type Device struct {
 	AvailablePriceVersion         int64             `json:"available_price_version"`
 	CatalogSnapshotToken          string            `json:"catalog_snapshot_token"`
 	AvailableCatalogSnapshotToken string            `json:"available_catalog_snapshot_token"`
+	AuthorizationEpoch            string            `json:"-"`
 	OfflineSalesValidFrom         time.Time         `json:"-"`
 	OfflineSalesValidUntil        time.Time         `json:"offline_sales_valid_until"`
 	TimeZone                      string            `json:"timezone"`
@@ -65,6 +66,7 @@ type OfflineLease struct {
 	MasterDataVersion    int64
 	PriceVersion         int64
 	CatalogSnapshotToken string
+	AuthorizationEpoch   string
 	ValidFrom            time.Time
 	ValidUntil           time.Time
 }
@@ -104,4 +106,8 @@ var (
 	ErrStaleMasterData         = errors.New("mobile sale uses stale app, master data, or price versions")
 	ErrInvalidTimeZone         = errors.New("legal company business timezone is invalid")
 	ErrOfflineLeaseExpired     = errors.New("offline sale was created outside the server-issued cache validity lease")
+	ErrInvalidStatusTransition = errors.New("mobile device status transition is not allowed")
+	ErrStatusUnchanged         = errors.New("mobile device already has the requested status")
+	ErrAllocationBelowConsumed = errors.New("offline stock allocation cannot be lower than already synchronized consumption")
+	ErrAllocationOvercommitted = errors.New("offline stock allocations would reserve more than available warehouse stock")
 )

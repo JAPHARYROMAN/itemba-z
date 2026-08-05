@@ -42,7 +42,7 @@ var (
 func fixture(t *testing.T, at time.Time) (*memory.Store, *mobile.Service) {
 	t.Helper()
 	store := memory.New()
-	for _, permission := range []string{"sales.complete", "sales.read", "mobile.devices.enroll", "mobile.sales.sync", "mobile.reconciliation.read", "mobile.reconciliation.resolve", "customers.read", "products.read"} {
+	for _, permission := range []string{"sales.complete", "sales.read", "mobile.devices.enroll", "mobile.devices.read", "mobile.devices.manage", "mobile.sales.sync", "mobile.reconciliation.read", "mobile.reconciliation.resolve", "customers.read", "products.read"} {
 		store.SeedPermission(testScope, actorID, permission)
 	}
 	store.SeedContext(testScope, readmodel.WorkingContext{
@@ -522,6 +522,12 @@ func TestOfflineSaleRecordsDocumentReceiptAndAccountingTimes(t *testing.T) {
 	if err != nil || !replay.IdempotentReplay || replay.Sale.ID != result.Sale.ID {
 		t.Fatalf("committed result must replay after period changes: %+v err=%v", replay, err)
 	}
+	if _, err := service.ChangeDeviceAllocation(context.Background(), mobile.ChangeDeviceAllocationCommand{
+		Scope: testScope, ActorID: actorID, DeviceID: deviceID, ProductID: productID,
+		AllocatedQuantity: 0, Reason: "Attempt to clear consumed route stock", IdempotencyKey: "allocation-below-use-0001",
+	}); !errors.Is(err, devices.ErrAllocationBelowConsumed) {
+		t.Fatalf("allocation below synchronized consumption error=%v", err)
+	}
 }
 
 func TestOfflineClockSkewRoutesExactCommandToReconciliation(t *testing.T) {
@@ -585,6 +591,107 @@ func TestOfflineCrossPeriodDocumentRoutesToReconciliation(t *testing.T) {
 	cases := store.Snapshot().ReconciliationCases
 	if len(cases) != 1 || cases[0].FailureCode != "offline_fiscal_period_reconciliation_required" {
 		t.Fatalf("period reconciliation evidence=%+v", cases)
+	}
+}
+
+func TestManagedDeviceSuspensionIsIdempotentAndStopsSynchronization(t *testing.T) {
+	at := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
+	store, service := fixture(t, at)
+	store.SeedTaxRate(memory.TaxRate{TenantID: tenantID, CompanyID: companyID, Code: "VAT", BasisPoints: 0, EffectiveFrom: at.Add(-time.Minute)})
+	store.SeedDevice(offlineDevice(at))
+	store.SeedOfflineAllocation(testScope, deviceID, productID, 10)
+	command := mobile.ChangeDeviceStatusCommand{
+		Scope: testScope, ActorID: actorID, DeviceID: deviceID, Status: devices.StatusSuspended,
+		Reason: "Device reported missing by branch manager", IdempotencyKey: "suspend-device-00000001",
+	}
+	suspended, err := service.ChangeDeviceStatus(context.Background(), command)
+	if err != nil || suspended.Status != devices.StatusSuspended || suspended.OfflineSalesValidUntil.After(at) {
+		t.Fatalf("suspension=%+v err=%v", suspended, err)
+	}
+	replayed, err := service.ChangeDeviceStatus(context.Background(), command)
+	if err != nil || replayed.Status != devices.StatusSuspended {
+		t.Fatalf("suspension replay=%+v err=%v", replayed, err)
+	}
+	if snapshot := store.Snapshot(); len(snapshot.Audits) != 1 || snapshot.Audits[0].Action != "mobile.device.status_changed" || len(snapshot.Outbox) != 1 {
+		t.Fatalf("suspension evidence=%+v", snapshot)
+	}
+	conflict := command
+	conflict.Status = devices.StatusActive
+	conflict.Reason = "Conflicting command with reused identity"
+	if _, err := service.ChangeDeviceStatus(context.Background(), conflict); !errors.Is(err, sales.ErrIdempotencyConflict) {
+		t.Fatalf("changed status command reused identity error=%v", err)
+	}
+	_, err = service.SyncSale(context.Background(), testScope, actorID, "", mobile.SyncCommand{
+		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash,
+		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
+		ClientTransactionID: "20000000-0000-4000-8000-000000000050", ClientTimestamp: at,
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1,
+		CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: true,
+	})
+	if !errors.Is(err, devices.ErrNotActive) {
+		t.Fatalf("suspended synchronization error=%v", err)
+	}
+	command.Status = devices.StatusActive
+	command.Reason = "Branch manager recovered and verified device"
+	command.IdempotencyKey = "reactivate-device-00001"
+	active, err := service.ChangeDeviceStatus(context.Background(), command)
+	if err != nil || active.Status != devices.StatusActive {
+		t.Fatalf("reactivation=%+v err=%v", active, err)
+	}
+	queued := mobile.SyncCommand{
+		CustomerID: customerID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash,
+		Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, DeviceID: deviceID,
+		ClientTransactionID: "20000000-0000-4000-8000-000000000052", ClientTimestamp: at,
+		AppVersion: "1", MasterDataVersion: 1, PriceVersion: 1,
+		CatalogSnapshotToken: catalogSnapshotTokenV1, SyncAttempt: 1, Offline: true,
+	}
+	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", queued); !errors.Is(err, devices.ErrOfflineLeaseExpired) {
+		t.Fatalf("pre-suspension lease survived reactivation: %v", err)
+	}
+	one := int64(1)
+	acknowledged, err := service.Enroll(context.Background(), mobile.EnrollCommand{
+		Scope: testScope, ActorID: actorID, DeviceID: deviceID, DeviceName: "POS 1", AppVersion: "1",
+		InstalledMasterDataVersion: &one, InstalledPriceVersion: &one,
+		InstalledCatalogSnapshotToken: &catalogSnapshotTokenV1,
+	})
+	if err != nil || !acknowledged.OfflineSalesValidUntil.After(at) {
+		t.Fatalf("fresh post-reactivation acknowledgement=%+v err=%v", acknowledged, err)
+	}
+	queued.SyncAttempt = 2
+	if _, err := service.SyncSale(context.Background(), testScope, actorID, "", queued); err != nil {
+		t.Fatalf("fresh authorization did not restore offline sync: %v", err)
+	}
+}
+
+func TestManagedAllocationPreventsWarehouseOvercommit(t *testing.T) {
+	at := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
+	store, service := fixture(t, at)
+	first := offlineDevice(at)
+	store.SeedDevice(first)
+	result, err := service.ChangeDeviceAllocation(context.Background(), mobile.ChangeDeviceAllocationCommand{
+		Scope: testScope, ActorID: actorID, DeviceID: first.ID, ProductID: productID,
+		AllocatedQuantity: 80, Reason: "Approved stock route for northern territory", IdempotencyKey: "allocation-device-000001",
+	})
+	if err != nil || len(result.StockAllocations) != 1 || result.StockAllocations[0].AllocatedQuantity != 80 {
+		t.Fatalf("allocation=%+v err=%v", result, err)
+	}
+	second := offlineDevice(at)
+	second.ID = "20000000-0000-4000-8000-000000000051"
+	store.SeedDevice(second)
+	_, err = service.ChangeDeviceAllocation(context.Background(), mobile.ChangeDeviceAllocationCommand{
+		Scope: testScope, ActorID: actorID, DeviceID: second.ID, ProductID: productID,
+		AllocatedQuantity: 21, Reason: "Requested stock route for southern territory", IdempotencyKey: "allocation-device-000002",
+	})
+	if !errors.Is(err, devices.ErrAllocationOvercommitted) {
+		t.Fatalf("overcommit error=%v", err)
+	}
+	page, err := service.ManagedDevices(context.Background(), testScope, actorID, "", 10)
+	if err != nil || len(page.Items) != 2 {
+		t.Fatalf("managed device list=%+v err=%v", page, err)
+	}
+	snapshot := store.Snapshot()
+	if len(snapshot.Audits) != 1 || snapshot.Audits[0].Action != "mobile.device.allocation_changed" || len(snapshot.Outbox) != 1 {
+		t.Fatalf("allocation evidence=%+v", snapshot)
 	}
 }
 

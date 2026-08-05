@@ -3,7 +3,7 @@ import "server-only";
 import { createServerRepository } from "@/live-api/server-repository";
 import { publicProblem } from "@/live-api/errors";
 import type {
-  LiveSnapshot, MobileReconciliationStatus, ReconciliationDetailWorkspace,
+  DeviceManagementWorkspace, LiveSnapshot, MobileReconciliationStatus, ReconciliationDetailWorkspace,
   ReconciliationWorkspace, SaleDetailWorkspace, SalesBootstrap, SalesWorkspace,
 } from "@/live-api/types";
 
@@ -13,6 +13,18 @@ export async function loadSalesBootstrap(): Promise<LiveSnapshot<SalesBootstrap>
     const context = await repository.getWorkingContext();
     const [customers, products] = await Promise.all([repository.listCustomers(), repository.listProducts()]);
     return { state: "ready", data: { context, customers: customers.items, products: products.items } };
+  } catch (error) {
+    return { state: "unavailable", problem: publicProblem(error) };
+  }
+}
+
+export async function loadDeviceManagementWorkspace(cursor?: string): Promise<LiveSnapshot<DeviceManagementWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const [context, devices, products] = await Promise.all([
+      repository.getWorkingContext(), repository.listManagedDevices(cursor), repository.listProducts(),
+    ]);
+    return { state: "ready", data: { context, devices: devices.items, products: products.items, nextCursor: devices.next_cursor ?? null } };
   } catch (error) {
     return { state: "unavailable", problem: publicProblem(error) };
   }

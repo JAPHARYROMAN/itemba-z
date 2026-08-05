@@ -71,6 +71,9 @@ func (h *Handler) Routes() http.Handler {
 	}
 	if h.mobile != nil {
 		mux.HandleFunc("POST /v1/mobile/devices/enroll", h.enrollDevice)
+		mux.HandleFunc("GET /v1/mobile/devices", h.listManagedDevices)
+		mux.HandleFunc("POST /v1/mobile/devices/{deviceID}/status-changes", h.changeManagedDeviceStatus)
+		mux.HandleFunc("POST /v1/mobile/devices/{deviceID}/allocation-changes", h.changeManagedDeviceAllocation)
 		mux.HandleFunc("POST /v1/mobile/sync/sales", h.syncMobileSale)
 		mux.HandleFunc("GET /v1/mobile/reconciliation-cases", h.listMobileReconciliationCases)
 		mux.HandleFunc("GET /v1/mobile/reconciliation-cases/{caseID}", h.getMobileReconciliationCase)
@@ -79,6 +82,108 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/sales/{saleID}", h.getSale)
 	mux.HandleFunc("POST /v1/sales/{saleID}/reversals", h.reverseSale)
 	return securityHeaders(correlationIDs(identity.UUIDGenerator{}, h.observe(mux)))
+}
+
+func (h *Handler) listManagedDevices(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	pageSize, ok := parsePageSize(writer, request)
+	if !ok {
+		return
+	}
+	result, err := h.mobile.ManagedDevices(request.Context(), principal.Scope, principal.ActorID, request.URL.Query().Get("cursor"), pageSize)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+
+type changeManagedDeviceStatusRequest struct {
+	Status devices.Status `json:"status"`
+	Reason string         `json:"reason"`
+}
+
+func (h *Handler) changeManagedDeviceStatus(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	idempotencyKey, ok := requireIdempotencyKey(writer, request)
+	if !ok {
+		return
+	}
+	deviceID, err := identity.CanonicalUUID(request.PathValue("deviceID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "deviceID must be a UUID")
+		return
+	}
+	var body changeManagedDeviceStatusRequest
+	if !decodeJSON(writer, request, &body) {
+		return
+	}
+	result, err := h.mobile.ChangeDeviceStatus(request.Context(), mobile.ChangeDeviceStatusCommand{
+		Scope: principal.Scope, ActorID: principal.ActorID, DeviceID: deviceID,
+		Status: body.Status, Reason: body.Reason, IdempotencyKey: idempotencyKey,
+		CorrelationID: correlationID(writer),
+	})
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+
+type changeManagedDeviceAllocationRequest struct {
+	ProductID         string `json:"product_id"`
+	AllocatedQuantity int64  `json:"allocated_quantity"`
+	Reason            string `json:"reason"`
+}
+
+func (h *Handler) changeManagedDeviceAllocation(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	idempotencyKey, ok := requireIdempotencyKey(writer, request)
+	if !ok {
+		return
+	}
+	deviceID, err := identity.CanonicalUUID(request.PathValue("deviceID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "deviceID must be a UUID")
+		return
+	}
+	var body changeManagedDeviceAllocationRequest
+	if !decodeJSON(writer, request, &body) {
+		return
+	}
+	productID, err := identity.CanonicalUUID(body.ProductID)
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "product_id must be a UUID")
+		return
+	}
+	result, err := h.mobile.ChangeDeviceAllocation(request.Context(), mobile.ChangeDeviceAllocationCommand{
+		Scope: principal.Scope, ActorID: principal.ActorID, DeviceID: deviceID, ProductID: productID,
+		AllocatedQuantity: body.AllocatedQuantity, Reason: body.Reason,
+		IdempotencyKey: idempotencyKey, CorrelationID: correlationID(writer),
+	})
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+
+func requireIdempotencyKey(writer http.ResponseWriter, request *http.Request) (string, bool) {
+	value := strings.TrimSpace(request.Header.Get("Idempotency-Key"))
+	if len(value) < 16 || len(value) > 128 {
+		writeProblem(writer, http.StatusBadRequest, "idempotency_key_required", "Idempotency-Key header must contain 16 to 128 characters")
+		return "", false
+	}
+	return value, true
 }
 
 func (h *Handler) health(writer http.ResponseWriter, _ *http.Request) {
@@ -477,6 +582,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusConflict, "idempotency_conflict"
 	case errors.Is(err, mobile.ErrReconciliationResolved):
 		status, code = http.StatusConflict, "reconciliation_already_resolved"
+	case errors.Is(err, devices.ErrStatusUnchanged):
+		status, code = http.StatusConflict, "device_status_unchanged"
+	case errors.Is(err, devices.ErrAllocationBelowConsumed), errors.Is(err, devices.ErrAllocationOvercommitted):
+		status, code = http.StatusConflict, "allocation_conflict"
 	case errors.Is(err, sales.ErrInsufficientStock):
 		status, code = http.StatusConflict, "insufficient_stock"
 	case errors.Is(err, sales.ErrFiscalPeriodClosed):
@@ -490,7 +599,7 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		errors.Is(err, sales.ErrOfflineClockReconciliation):
 		status, code = http.StatusConflict, "offline_reconciliation_required"
 	case errors.Is(err, sales.ErrGeneralCustomerCredit), errors.Is(err, sales.ErrCustomerCreditDisabled), errors.Is(err, sales.ErrCreditLimitExceeded), errors.Is(err, sales.ErrCustomerInactive), errors.Is(err, sales.ErrProductInactive),
-		errors.Is(err, sales.ErrOfflineCredit), errors.Is(err, sales.ErrOfflinePaymentMethod), errors.Is(err, sales.ErrOfflineTaxUnsupported), errors.Is(err, sales.ErrUnsupportedPayment), errors.Is(err, devices.ErrNotActive), errors.Is(err, devices.ErrOfflineDisabled), errors.Is(err, devices.ErrMobileCreditUnsupported), errors.Is(err, devices.ErrAllocationExceeded), errors.Is(err, devices.ErrOfflineLimit), errors.Is(err, devices.ErrOfflineLeaseExpired), errors.Is(err, devices.ErrStaleMasterData), errors.Is(err, devices.ErrInvalidTimeZone):
+		errors.Is(err, sales.ErrOfflineCredit), errors.Is(err, sales.ErrOfflinePaymentMethod), errors.Is(err, sales.ErrOfflineTaxUnsupported), errors.Is(err, sales.ErrUnsupportedPayment), errors.Is(err, devices.ErrNotActive), errors.Is(err, devices.ErrOfflineDisabled), errors.Is(err, devices.ErrMobileCreditUnsupported), errors.Is(err, devices.ErrAllocationExceeded), errors.Is(err, devices.ErrOfflineLimit), errors.Is(err, devices.ErrOfflineLeaseExpired), errors.Is(err, devices.ErrStaleMasterData), errors.Is(err, devices.ErrInvalidTimeZone), errors.Is(err, devices.ErrInvalidStatusTransition):
 		status, code = http.StatusUnprocessableEntity, "business_rule_violation"
 	case errors.Is(err, sales.ErrInvalidCommand), errors.Is(err, sales.ErrInvalidLine), errors.Is(err, sales.ErrDuplicateProductLine), errors.Is(err, sales.ErrInvalidSaleKind), errors.Is(err, sales.ErrPaymentMethodRequired):
 		status, code = http.StatusBadRequest, "invalid_request"

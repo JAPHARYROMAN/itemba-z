@@ -22,3 +22,9 @@ Offline-sale exception access is split into `mobile.reconciliation.read` and
 `mobile.reconciliation.resolve`. Production role assignment must preserve this
 separation where policy requires investigation and disposition by different
 people; neither permission grants sale posting or ledger mutation authority.
+
+Device operations are separately split into `mobile.devices.read` and
+`mobile.devices.manage`. Management permits reasoned suspension/reactivation
+and allocation commands only inside the operator's exact assigned scope. It
+does not permit device enrollment, mobile sale synchronization, stock-ledger
+adjustment, or mutation of append-only change evidence.

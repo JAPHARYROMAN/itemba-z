@@ -102,7 +102,7 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 			existing.CatalogSnapshotToken = acknowledgement.CatalogSnapshotToken
 			existing.OfflineSalesValidFrom = value.LastSeenAt
 			existing.OfflineSalesValidUntil = value.LastSeenAt
-			if existing.OfflineEnabled {
+			if existing.OfflineEnabled && existing.Status == devices.StatusActive {
 				existing.OfflineSalesValidUntil = leaseUntil
 			}
 			err = tx.tx.QueryRow(ctx, `
@@ -131,7 +131,7 @@ func (s *Store) EnrollDevice(ctx context.Context, value devices.Device, acknowle
 			if err := tx.AppendOutboxEvent(ctx, enrollmentEvent); err != nil {
 				return err
 			}
-			if existing.OfflineEnabled {
+			if existing.OfflineEnabled && existing.Status == devices.StatusActive {
 				if err := tx.appendOfflineLease(ctx, devices.OfflineLease{
 					Scope: existing.Scope, DeviceID: existing.ID, AppVersion: existing.AppVersion,
 					MasterDataVersion: existing.MasterDataVersion, PriceVersion: existing.PriceVersion,
@@ -208,8 +208,9 @@ func (t *transaction) appendOfflineLease(ctx context.Context, lease devices.Offl
 	_, err := t.tx.Exec(ctx, `
 		INSERT INTO mobile_device_offline_leases (
 			tenant_id, company_id, branch_id, warehouse_id, device_id, app_version,
-			master_data_version, price_version, catalog_snapshot_token, valid_from, valid_until
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+			master_data_version, price_version, catalog_snapshot_token, authorization_epoch, valid_from, valid_until
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,
+			(SELECT authorization_epoch FROM mobile_devices WHERE tenant_id=$1 AND id=$5),$10,$11)
 		ON CONFLICT DO NOTHING`, lease.Scope.TenantID, lease.Scope.CompanyID, lease.Scope.BranchID,
 		lease.Scope.WarehouseID, lease.DeviceID, lease.AppVersion, lease.MasterDataVersion,
 		lease.PriceVersion, lease.CatalogSnapshotToken, lease.ValidFrom, lease.ValidUntil)
@@ -505,7 +506,7 @@ func (t *transaction) MobileDevice(ctx context.Context, scope tenancy.Scope, act
 	var value devices.Device
 	err := t.tx.QueryRow(ctx, `
 		SELECT d.id, d.status, d.actor_id, d.tenant_id, d.company_id, d.branch_id, d.warehouse_id,
-		       d.device_name, d.app_version, d.master_data_version, d.price_version, d.catalog_snapshot_token, d.offline_enabled,
+		       d.device_name, d.app_version, d.master_data_version, d.price_version, d.catalog_snapshot_token, d.authorization_epoch, d.offline_enabled,
 		       d.offline_transaction_limit_minor, d.offline_daily_limit_minor,
 		       d.offline_sales_valid_from, d.offline_sales_valid_until, d.enrolled_at, d.last_seen_at,
 		       c.business_timezone
@@ -514,7 +515,7 @@ func (t *transaction) MobileDevice(ctx context.Context, scope tenancy.Scope, act
 		WHERE d.tenant_id = $1 AND d.id = $2 FOR UPDATE OF d`, scope.TenantID, deviceID).Scan(
 		&value.ID, &value.Status, &value.ActorID, &value.Scope.TenantID, &value.Scope.CompanyID,
 		&value.Scope.BranchID, &value.Scope.WarehouseID, &value.Name, &value.AppVersion,
-		&value.MasterDataVersion, &value.PriceVersion, &value.CatalogSnapshotToken, &value.OfflineEnabled,
+		&value.MasterDataVersion, &value.PriceVersion, &value.CatalogSnapshotToken, &value.AuthorizationEpoch, &value.OfflineEnabled,
 		&value.OfflineTransactionLimitMinor, &value.OfflineDailyLimitMinor,
 		&value.OfflineSalesValidFrom, &value.OfflineSalesValidUntil,
 		&value.EnrolledAt, &value.LastSeenAt, &value.TimeZone)
@@ -594,10 +595,12 @@ func (t *transaction) OfflineLeaseValid(ctx context.Context, lease devices.Offli
 	var valid bool
 	err := t.tx.QueryRow(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM mobile_device_offline_leases
-			WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4
-			  AND device_id=$5 AND app_version=$6 AND master_data_version=$7 AND price_version=$8
-			  AND catalog_snapshot_token=$9 AND valid_from <= $10 AND $10 < valid_until
+			SELECT 1 FROM mobile_device_offline_leases lease
+			JOIN mobile_devices device ON device.tenant_id=lease.tenant_id AND device.id=lease.device_id
+			WHERE lease.tenant_id=$1 AND lease.company_id=$2 AND lease.branch_id=$3 AND lease.warehouse_id=$4
+			  AND lease.device_id=$5 AND lease.app_version=$6 AND lease.master_data_version=$7 AND lease.price_version=$8
+			  AND lease.catalog_snapshot_token=$9 AND lease.authorization_epoch=device.authorization_epoch
+			  AND lease.valid_from <= $10 AND $10 < lease.valid_until
 		)`, lease.Scope.TenantID, lease.Scope.CompanyID, lease.Scope.BranchID, lease.Scope.WarehouseID,
 		lease.DeviceID, lease.AppVersion, lease.MasterDataVersion, lease.PriceVersion, lease.CatalogSnapshotToken, clientTimestamp).Scan(&valid)
 	return valid, normalizeError(err)

@@ -14,6 +14,10 @@ export type MobileReconciliationCase = components["schemas"]["MobileReconciliati
 export type MobileReconciliationPage = components["schemas"]["MobileReconciliationPage"];
 export type MobileReconciliationStatus = components["schemas"]["MobileReconciliationStatus"];
 export type ResolveMobileReconciliationCommand = components["schemas"]["ResolveMobileReconciliationCommand"];
+export type MobileDevice = components["schemas"]["MobileDeviceEnrollment"];
+export type MobileDevicePage = components["schemas"]["MobileDevicePage"];
+export type ChangeMobileDeviceStatusCommand = components["schemas"]["ChangeMobileDeviceStatusCommand"];
+export type ChangeMobileDeviceAllocationCommand = components["schemas"]["ChangeMobileDeviceAllocationCommand"];
 
 export interface PublicProblem {
   type: string;
@@ -53,4 +57,11 @@ export interface ReconciliationWorkspace {
 export interface ReconciliationDetailWorkspace {
   context: WorkingContext;
   reconciliationCase: MobileReconciliationCase;
+}
+
+export interface DeviceManagementWorkspace {
+  context: WorkingContext;
+  devices: MobileDevice[];
+  products: ProductSummary[];
+  nextCursor: string | null;
 }

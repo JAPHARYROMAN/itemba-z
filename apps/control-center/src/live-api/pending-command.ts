@@ -70,6 +70,14 @@ export function reconciliationResolutionPendingScope(context: PendingCommandOwne
   return `mobile:reconciliation:resolve:${commandOwnerScope(context)}:case=${encodeURIComponent(caseId)}`;
 }
 
+export function deviceStatusPendingScope(context: PendingCommandOwnerContext, deviceId: string): string {
+  return `mobile:device:status:${commandOwnerScope(context)}:device=${encodeURIComponent(deviceId)}`;
+}
+
+export function deviceAllocationPendingScope(context: PendingCommandOwnerContext, deviceId: string): string {
+  return `mobile:device:allocation:${commandOwnerScope(context)}:device=${encodeURIComponent(deviceId)}`;
+}
+
 export function pendingCommandStorageKey(scope: string): string {
   return `${STORAGE_PREFIX}${scope}`;
 }

@@ -43,7 +43,7 @@ func TestLiveBootstrapEnrollmentAndSyncRoutes(t *testing.T) {
 	at := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
 	scope := tenancy.Scope{TenantID: tenantID, CompanyID: companyID, BranchID: branchID, WarehouseID: warehouseID}
 	store := memory.New()
-	for _, permission := range []string{"sales.complete", "sales.read", "customers.read", "products.read", "mobile.devices.enroll", "mobile.sales.sync", "mobile.reconciliation.read", "mobile.reconciliation.resolve"} {
+	for _, permission := range []string{"sales.complete", "sales.read", "customers.read", "products.read", "mobile.devices.enroll", "mobile.devices.read", "mobile.devices.manage", "mobile.sales.sync", "mobile.reconciliation.read", "mobile.reconciliation.resolve"} {
 		store.SeedPermission(scope, actorID, permission)
 	}
 	store.SeedContext(scope, readmodel.WorkingContext{CompanyName: "Company", BranchName: "Branch", WarehouseName: "Warehouse", Currency: "TZS", Locale: "en-TZ", TimeZone: "Africa/Dar_es_Salaam", MasterDataVersion: 1, PriceVersion: 1})
@@ -119,6 +119,32 @@ func TestLiveBootstrapEnrollmentAndSyncRoutes(t *testing.T) {
 	routes.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/mobile/devices/enroll", strings.NewReader(enrollmentBody)))
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"master_data_version":1`) {
 		t.Fatalf("cache acknowledgement: %d %s", recorder.Code, recorder.Body.String())
+	}
+	recorder = httptest.NewRecorder()
+	routes.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/mobile/devices?page_size=10", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), deviceID) {
+		t.Fatalf("managed device list: %d %s", recorder.Code, recorder.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/v1/mobile/devices/"+deviceID+"/allocation-changes", strings.NewReader(`{"product_id":"`+productID+`","allocated_quantity":5,"reason":"Approved route allocation"}`))
+	request.Header.Set("Idempotency-Key", "http-device-allocation-0001")
+	recorder = httptest.NewRecorder()
+	routes.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"allocated_quantity":5`) {
+		t.Fatalf("managed allocation: %d %s", recorder.Code, recorder.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/v1/mobile/devices/"+deviceID+"/status-changes", strings.NewReader(`{"status":"SUSPENDED","reason":"Device custody investigation"}`))
+	request.Header.Set("Idempotency-Key", "http-device-suspension-0001")
+	recorder = httptest.NewRecorder()
+	routes.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"status":"SUSPENDED"`) {
+		t.Fatalf("managed suspension: %d %s", recorder.Code, recorder.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/v1/mobile/devices/"+deviceID+"/status-changes", strings.NewReader(`{"status":"ACTIVE","reason":"Custody verified by manager"}`))
+	request.Header.Set("Idempotency-Key", "http-device-reactivation-001")
+	recorder = httptest.NewRecorder()
+	routes.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"status":"ACTIVE"`) {
+		t.Fatalf("managed reactivation: %d %s", recorder.Code, recorder.Body.String())
 	}
 
 	syncBody := map[string]any{

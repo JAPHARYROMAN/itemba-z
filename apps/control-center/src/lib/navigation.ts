@@ -12,7 +12,8 @@ export type NavigationIcon =
   | "people"
   | "reports"
   | "settings"
-  | "reconciliation";
+  | "reconciliation"
+  | "devices";
 
 export interface NavigationItem {
   href: string;
@@ -46,6 +47,7 @@ export const navigationGroups: Array<{
     label: "governance",
     items: [
       { href: "/reconciliation", label: text("Reconciliation", "Upatanisho"), icon: "reconciliation" },
+      { href: "/devices", label: text("POS devices", "Vifaa vya POS"), icon: "devices" },
       { href: "/reports", label: text("Reports", "Ripoti"), icon: "reports", module: "reports" },
       { href: "/settings", label: text("Settings", "Mipangilio"), icon: "settings", module: "settings" },
     ],

@@ -22,6 +22,9 @@ func (s *Store) EnrollDevice(_ context.Context, value devices.Device, acknowledg
 		return devices.Device{}, sales.ErrForbidden
 	}
 	key := deviceKey(value.Scope.TenantID, value.ID)
+	if value.AuthorizationEpoch == "" {
+		value.AuthorizationEpoch = "enrolled:" + value.ID
+	}
 	workingContext, contextFound := s.state.contexts[scopeKey(value.Scope)]
 	if !contextFound {
 		return devices.Device{}, sales.ErrNotFound
@@ -73,12 +76,13 @@ func (s *Store) EnrollDevice(_ context.Context, value devices.Device, acknowledg
 			existing.CatalogSnapshotToken = acknowledgement.CatalogSnapshotToken
 			existing.OfflineSalesValidFrom = value.LastSeenAt
 			existing.OfflineSalesValidUntil = value.LastSeenAt
-			if existing.OfflineEnabled {
+			if existing.OfflineEnabled && existing.Status == devices.StatusActive {
 				existing.OfflineSalesValidUntil = leaseUntil
 				appendOfflineLease(s.state, devices.OfflineLease{
 					Scope: existing.Scope, DeviceID: existing.ID, AppVersion: existing.AppVersion,
 					MasterDataVersion: existing.MasterDataVersion, PriceVersion: existing.PriceVersion,
 					CatalogSnapshotToken: existing.CatalogSnapshotToken,
+					AuthorizationEpoch:   existing.AuthorizationEpoch,
 					ValidFrom:            existing.OfflineSalesValidFrom, ValidUntil: existing.OfflineSalesValidUntil,
 				})
 			}
@@ -123,6 +127,7 @@ func (s *Store) EnrollDevice(_ context.Context, value devices.Device, acknowledg
 				Scope: value.Scope, DeviceID: value.ID, AppVersion: value.AppVersion,
 				MasterDataVersion: value.MasterDataVersion, PriceVersion: value.PriceVersion,
 				CatalogSnapshotToken: value.CatalogSnapshotToken,
+				AuthorizationEpoch:   value.AuthorizationEpoch,
 				ValidFrom:            value.OfflineSalesValidFrom, ValidUntil: value.OfflineSalesValidUntil,
 			})
 		}
@@ -347,10 +352,15 @@ func (t *transaction) MobileDevice(_ context.Context, scope tenancy.Scope, actor
 }
 
 func (t *transaction) OfflineLeaseValid(_ context.Context, lease devices.OfflineLease, clientTimestamp time.Time) (bool, error) {
+	device, ok := t.state.devices[deviceKey(lease.Scope.TenantID, lease.DeviceID)]
+	if !ok || device.Scope != lease.Scope {
+		return false, nil
+	}
 	for _, existing := range t.state.offlineLeases {
 		if existing.Scope == lease.Scope && existing.DeviceID == lease.DeviceID &&
 			existing.AppVersion == lease.AppVersion && existing.MasterDataVersion == lease.MasterDataVersion &&
-			existing.PriceVersion == lease.PriceVersion && existing.CatalogSnapshotToken == lease.CatalogSnapshotToken && !clientTimestamp.Before(existing.ValidFrom) &&
+			existing.PriceVersion == lease.PriceVersion && existing.CatalogSnapshotToken == lease.CatalogSnapshotToken &&
+			existing.AuthorizationEpoch == device.AuthorizationEpoch && !clientTimestamp.Before(existing.ValidFrom) &&
 			clientTimestamp.Before(existing.ValidUntil) {
 			return true, nil
 		}
