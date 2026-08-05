@@ -7,6 +7,7 @@ import type {
   ReconciliationWorkspace, SaleDetailWorkspace, SalesBootstrap, SalesWorkspace,
 	OperationsWorkspace,
 	BankingWorkspace,
+	FinanceControlWorkspace,
 } from "@/live-api/types";
 
 export async function loadCustomerAccounts(): Promise<LiveSnapshot<CustomerAccountsWorkspace>> {
@@ -17,6 +18,14 @@ export async function loadCustomerAccounts(): Promise<LiveSnapshot<CustomerAccou
   } catch (error) {
     return { state: "unavailable", problem: publicProblem(error) };
   }
+}
+
+export async function loadFinanceControlWorkspace(): Promise<LiveSnapshot<FinanceControlWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const [context, accounts, documents, periods, periodActions] = await Promise.all([repository.getWorkingContext(), repository.listBankAccounts(), repository.listFinancialDocuments(), repository.listFiscalPeriods(), repository.listFiscalPeriodActions()]);
+    return { state: "ready", data: { context, accounts: accounts.items, documents: documents.items, periods: periods.items, periodActions: periodActions.items } };
+  } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
 }
 
 export async function loadBankingWorkspace(cursor?: string): Promise<LiveSnapshot<BankingWorkspace>> {

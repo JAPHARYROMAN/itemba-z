@@ -9,6 +9,7 @@ import type {
 	SupplierPage,
 	CustomerCollection, ReceiveCustomerCollectionCommand,
 	BankAccountPage, BankStatement, BankStatementPage, ImportBankStatementCommand, MatchBankStatementLineCommand, ReconcileBankStatementCommand,
+	CreateFinancialDocumentCommand, FinancialDocument, FinancialDocumentPage, FiscalPeriodActionCommand, FiscalPeriodActionPage, FiscalPeriodActionRequest, FiscalPeriodPage, TransitionFinancialDocumentCommand,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -239,6 +240,13 @@ export class ItembaApiClient {
   importBankStatement(command: ImportBankStatementCommand, idempotencyKey: string): Promise<BankStatement> { return this.request("/v1/banking/statements", { method: "POST", body: command, idempotencyKey }); }
   matchBankStatementLine(statementId: string, lineId: string, command: MatchBankStatementLineCommand, idempotencyKey: string): Promise<BankStatement> { return this.request(`/v1/banking/statements/${encodeURIComponent(statementId)}/lines/${encodeURIComponent(lineId)}/matches`, { method: "POST", body: command, idempotencyKey }); }
   reconcileBankStatement(statementId: string, command: ReconcileBankStatementCommand, idempotencyKey: string): Promise<BankStatement> { return this.request(`/v1/banking/statements/${encodeURIComponent(statementId)}/reconciliation`, { method: "POST", body: command, idempotencyKey }); }
+  listFinancialDocuments(cursor?: string): Promise<FinancialDocumentPage> { const query = new URLSearchParams({ page_size: "100" }); if (cursor) query.set("cursor", cursor); return this.request(`/v1/finance/documents?${query.toString()}`); }
+  createFinancialDocument(command: CreateFinancialDocumentCommand, idempotencyKey: string): Promise<FinancialDocument> { return this.request("/v1/finance/documents", { method: "POST", body: command, idempotencyKey }); }
+  transitionFinancialDocument(documentId: string, command: TransitionFinancialDocumentCommand, idempotencyKey: string): Promise<FinancialDocument> { return this.request(`/v1/finance/documents/${encodeURIComponent(documentId)}/transitions`, { method: "POST", body: command, idempotencyKey }); }
+  listFiscalPeriods(): Promise<FiscalPeriodPage> { return this.request("/v1/finance/fiscal-periods"); }
+  listFiscalPeriodActions(): Promise<FiscalPeriodActionPage> { return this.request("/v1/finance/fiscal-period-actions"); }
+  requestFiscalPeriodAction(periodId: string, command: FiscalPeriodActionCommand, idempotencyKey: string): Promise<FiscalPeriodActionRequest> { return this.request(`/v1/finance/fiscal-periods/${encodeURIComponent(periodId)}/actions`, { method: "POST", body: command, idempotencyKey }); }
+  approveFiscalPeriodAction(actionId: string, reason: string, idempotencyKey: string): Promise<FiscalPeriodActionRequest> { return this.request(`/v1/finance/fiscal-period-actions/${encodeURIComponent(actionId)}/approval`, { method: "POST", body: { reason }, idempotencyKey }); }
 
   listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
     const query = new URLSearchParams({ page_size: "100" });

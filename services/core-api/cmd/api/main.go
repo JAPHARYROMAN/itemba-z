@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/httpapi"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
@@ -123,7 +124,17 @@ func main() {
 		logger.Error("initialize banking service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithModules(salesService, readService, mobileService, receivablesService, operationsService, bankingService, logger, authenticator)
+	financialRepository, ok := repository.(financialops.Repository)
+	if !ok {
+		logger.Error("repository does not implement governed financial operations")
+		os.Exit(1)
+	}
+	financialService, err := financialops.NewService(financialRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize financial operations service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithFinance(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)

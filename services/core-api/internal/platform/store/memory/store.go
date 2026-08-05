@@ -16,6 +16,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
@@ -90,6 +91,8 @@ type state struct {
 	reservations              []inventory.Movement
 	bankAccounts              map[string]banking.Account
 	bankStatements            map[string]banking.Statement
+	financialDocuments        map[string]financialops.Document
+	periodActions             map[string]financialops.PeriodActionRequest
 }
 
 func newState() *state {
@@ -110,6 +113,8 @@ func newState() *state {
 		collections:               make(map[string]receivables.Collection),
 		bankAccounts:              make(map[string]banking.Account),
 		bankStatements:            make(map[string]banking.Statement),
+		financialDocuments:        make(map[string]financialops.Document),
+		periodActions:             make(map[string]financialops.PeriodActionRequest),
 	}
 }
 
@@ -812,6 +817,13 @@ func cloneState(source *state) *state {
 	}
 	for key, value := range source.bankStatements {
 		result.bankStatements[key] = cloneBankStatement(value)
+	}
+	for key, value := range source.financialDocuments {
+		value.Lines = append([]finance.JournalEntry(nil), value.Lines...)
+		result.financialDocuments[key] = value
+	}
+	for key, value := range source.periodActions {
+		result.periodActions[key] = value
 	}
 	return result
 }

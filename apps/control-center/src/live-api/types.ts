@@ -99,3 +99,13 @@ export type ImportBankStatementCommand = components["schemas"]["ImportBankStatem
 export type MatchBankStatementLineCommand = components["schemas"]["MatchBankStatementLineCommand"];
 export type ReconcileBankStatementCommand = components["schemas"]["ReconcileBankStatementCommand"];
 export interface BankingWorkspace { context: WorkingContext; accounts: BankAccount[]; statements: BankStatement[]; nextCursor: string | null }
+export type FinancialDocument = components["schemas"]["FinancialDocument"];
+export type FinancialDocumentPage = components["schemas"]["FinancialDocumentPage"];
+export type CreateFinancialDocumentCommand = components["schemas"]["CreateFinancialDocumentCommand"];
+export type TransitionFinancialDocumentCommand = components["schemas"]["TransitionFinancialDocumentCommand"];
+export type FiscalPeriod = components["schemas"]["FiscalPeriod"];
+export type FiscalPeriodPage = components["schemas"]["FiscalPeriodPage"];
+export type FiscalPeriodActionCommand = components["schemas"]["FiscalPeriodActionCommand"];
+export type FiscalPeriodActionRequest = components["schemas"]["FiscalPeriodActionRequest"];
+export type FiscalPeriodActionPage = components["schemas"]["FiscalPeriodActionPage"];
+export interface FinanceControlWorkspace { context: WorkingContext; accounts: BankAccount[]; documents: FinancialDocument[]; periods: FiscalPeriod[]; periodActions: FiscalPeriodActionRequest[] }

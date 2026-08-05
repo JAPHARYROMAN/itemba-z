@@ -17,6 +17,8 @@ import (
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
@@ -42,7 +44,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -172,6 +174,47 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	if _, err := bankingService.Reconcile(ctx, banking.ReconcileCommand{Scope: scope, StatementID: statement.ID, Reason: "Independent finance approval", ActorID: approverID, IdempotencyKey: "integration-bank-reconcile-1"}); err != nil {
 		t.Fatalf("reconcile bank statement: %v", err)
+	}
+	financialService, err := financialops.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(45 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	financialDocument, err := financialService.Create(ctx, financialops.CreateCommand{Scope: scope, Type: financialops.ManualJournal, Currency: "TZS", AccountingAt: testTime, Reason: "Integration governed journal correction", ActorID: userID, IdempotencyKey: "integration-finance-create-1", Lines: []finance.JournalEntry{{AccountID: "expense", DebitMinor: 1500, Memo: "Correction"}, {AccountID: "suspense", CreditMinor: 1500, Memo: "Correction"}}})
+	if err != nil {
+		t.Fatalf("create financial document: %v", err)
+	}
+	financialDocument, err = financialService.Transition(ctx, financialops.TransitionCommand{Scope: scope, DocumentID: financialDocument.ID, Status: financialops.Submitted, Reason: "Integration evidence ready for review", ActorID: userID, IdempotencyKey: "integration-finance-submit-1"})
+	if err != nil {
+		t.Fatalf("submit financial document: %v", err)
+	}
+	if _, err = financialService.Transition(ctx, financialops.TransitionCommand{Scope: scope, DocumentID: financialDocument.ID, Status: financialops.Posted, Reason: "Maker attempted own posting approval", ActorID: userID, IdempotencyKey: "integration-finance-selfpost"}); !errors.Is(err, financialops.ErrSeparationOfDuties) {
+		t.Fatalf("financial separation of duties: %v", err)
+	}
+	financialDocument, err = financialService.Transition(ctx, financialops.TransitionCommand{Scope: scope, DocumentID: financialDocument.ID, Status: financialops.Posted, Reason: "Independent posting evidence verified", ActorID: approverID, IdempotencyKey: "integration-finance-post-001"})
+	if err != nil || financialDocument.JournalID == "" {
+		t.Fatalf("post financial document: %+v %v", financialDocument, err)
+	}
+	var debit, credit, evidence int64
+	if err = pool.QueryRow(ctx, `SELECT COALESCE(sum(l.debit_minor),0),COALESCE(sum(l.credit_minor),0),(SELECT count(*) FROM `+pgx.Identifier{schema}.Sanitize()+`.audit_events WHERE entity_id=$1) FROM `+pgx.Identifier{schema}.Sanitize()+`.journal_lines l WHERE l.journal_id=$2`, financialDocument.ID, financialDocument.JournalID).Scan(&debit, &credit, &evidence); err != nil || debit != 1500 || credit != 1500 || evidence < 3 {
+		t.Fatalf("financial journal/evidence debit=%d credit=%d evidence=%d err=%v", debit, credit, evidence, err)
+	}
+	closeRequest, err := financialService.RequestPeriodAction(ctx, financialops.PeriodCommand{Scope: scope, PeriodID: periodID, Action: financialops.ClosePeriod, Reason: "Integration reconciliations ready for close", ActorID: userID, IdempotencyKey: "integration-period-close-01"})
+	if err != nil {
+		t.Fatalf("request period close: %v", err)
+	}
+	actions, err := financialService.PeriodActions(ctx, scope, approverID)
+	if err != nil || len(actions.Items) != 1 || actions.Items[0].ID != closeRequest.ID {
+		t.Fatalf("list period actions: %+v %v", actions, err)
+	}
+	if _, err = financialService.ApprovePeriodAction(ctx, scope, approverID, closeRequest.ID, "Independent period close review completed", "integration-period-approve1"); err != nil {
+		t.Fatalf("approve period close: %v", err)
+	}
+	reopenRequest, err := financialService.RequestPeriodAction(ctx, financialops.PeriodCommand{Scope: scope, PeriodID: periodID, Action: financialops.ReopenPeriod, Reason: "Integration continuation requires controlled reopen", ActorID: approverID, IdempotencyKey: "integration-period-reopen-1"})
+	if err != nil {
+		t.Fatalf("request period reopen: %v", err)
+	}
+	if _, err = financialService.ApprovePeriodAction(ctx, scope, userID, reopenRequest.ID, "Independent period reopen review completed", "integration-period-approve2"); err != nil {
+		t.Fatalf("approve period reopen: %v", err)
 	}
 	reversal, err := service.Reverse(ctx, sales.ReverseCommand{Scope: scope, SaleID: created.ID, Reason: "Integration return", ActorID: userID, IdempotencyKey: "integration-reversal-key"})
 	if err != nil || reversal.ReversalOf != created.ID {
@@ -639,7 +682,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 1 || salesCount != 7 || journalCount != 15 || outboxCount != 55 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 16 || outboxCount != 62 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }

@@ -33,6 +33,8 @@ tags:
     description: Idempotent mobile transaction synchronization.
   - name: Banking
     description: Cash and bank account statement reconciliation.
+  - name: Finance
+    description: Governed journals, transfers, adjustments, reversals, and fiscal-period control.
 paths:
   /healthz:
     get:
@@ -366,6 +368,87 @@ paths:
       responses:
         '201': { description: Reconciliation approval recorded without mutating source evidence., content: { application/json: { schema: { $ref: '#/components/schemas/BankStatement' } } } }
         '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/documents:
+    get:
+      summary: List governed financial documents
+      operationId: listFinancialDocuments
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/PageSize' }]
+      responses:
+        '200': { description: Scoped financial-document register., content: { application/json: { schema: { $ref: '#/components/schemas/FinancialDocumentPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a governed financial document
+      operationId: createFinancialDocument
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/CorrelationId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateFinancialDocumentCommand' } } } }
+      responses:
+        '201': { description: Draft created exactly once., content: { application/json: { schema: { $ref: '#/components/schemas/FinancialDocument' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/documents/{document_id}:
+    get:
+      summary: Get a governed financial document
+      operationId: getFinancialDocument
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: document_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Financial document and immutable posting lines., content: { application/json: { schema: { $ref: '#/components/schemas/FinancialDocument' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/finance/documents/{document_id}/transitions:
+    post:
+      summary: Submit, reject, or independently post a financial document
+      operationId: transitionFinancialDocument
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: document_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/CorrelationId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TransitionFinancialDocumentCommand' } } } }
+      responses:
+        '201': { description: Transition and any balanced posting committed exactly once., content: { application/json: { schema: { $ref: '#/components/schemas/FinancialDocument' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/fiscal-periods:
+    get:
+      summary: List fiscal periods
+      operationId: listFiscalPeriods
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Legal-company fiscal periods., content: { application/json: { schema: { $ref: '#/components/schemas/FiscalPeriodPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/finance/fiscal-periods/{period_id}/actions:
+    post:
+      summary: Request fiscal-period close or reopen
+      operationId: requestFiscalPeriodAction
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: period_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/FiscalPeriodActionCommand' } } } }
+      responses:
+        '201': { description: Close or reopen request recorded., content: { application/json: { schema: { $ref: '#/components/schemas/FiscalPeriodActionRequest' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/fiscal-period-actions/{action_id}/approval:
+    post:
+      summary: Independently approve fiscal-period close or reopen
+      operationId: approveFiscalPeriodAction
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: action_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ApprovalReasonCommand' } } } }
+      responses:
+        '201': { description: Fiscal-period state changed after close gates and separation-of-duties checks., content: { application/json: { schema: { $ref: '#/components/schemas/FiscalPeriodActionRequest' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/fiscal-period-actions:
+    get:
+      summary: List fiscal-period close and reopen requests
+      operationId: listFiscalPeriodActions
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Company fiscal action register including pending maker-checker work., content: { application/json: { schema: { $ref: '#/components/schemas/FiscalPeriodActionPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /v1/sales:
     post:
       summary: Complete and atomically post a sale
@@ -1179,6 +1262,104 @@ components:
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Supplier' } }
         next_cursor: { type: [string, 'null'] }
+    JournalEntry:
+      type: object
+      additionalProperties: false
+      required: [account_id, debit_minor, credit_minor, memo]
+      properties:
+        account_id: { type: string }
+        debit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        memo: { type: string, maxLength: 500 }
+    FinancialDocument:
+      type: object
+      additionalProperties: true
+      required: [id, number, type, status, currency, accounting_at, reason, created_by, created_at, lines]
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        type: { type: string, enum: [MANUAL_JOURNAL, CASH_TRANSFER, BANK_ADJUSTMENT, REVERSAL] }
+        status: { type: string, enum: [DRAFT, SUBMITTED, POSTED, REJECTED] }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        accounting_at: { type: string, format: date-time }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        from_account_id: { type: string, format: uuid }
+        to_account_id: { type: string, format: uuid }
+        reverses_document_id: { type: string, format: uuid }
+        journal_id: { type: string, format: uuid }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        submitted_by: { type: string, format: uuid }
+        posted_by: { type: string, format: uuid }
+        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/JournalEntry' } }
+    FinancialDocumentPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/FinancialDocument' } }
+        next_cursor: { type: [string, 'null'] }
+    CreateFinancialDocumentCommand:
+      type: object
+      additionalProperties: false
+      required: [type, currency, accounting_at, reason, lines]
+      properties:
+        type: { type: string, enum: [MANUAL_JOURNAL, CASH_TRANSFER, BANK_ADJUSTMENT, REVERSAL] }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        accounting_at: { type: string, format: date-time }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        from_account_id: { type: string, format: uuid }
+        to_account_id: { type: string, format: uuid }
+        reverses_document_id: { type: string, format: uuid }
+        lines: { type: array, items: { $ref: '#/components/schemas/JournalEntry' } }
+    TransitionFinancialDocumentCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties:
+        status: { type: string, enum: [SUBMITTED, POSTED, REJECTED] }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    FiscalPeriod:
+      type: object
+      required: [id, tenant_id, company_id, starts_at, ends_at, open]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        open: { type: boolean }
+    FiscalPeriodPage:
+      type: object
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/FiscalPeriod' } } }
+    FiscalPeriodActionCommand:
+      type: object
+      additionalProperties: false
+      required: [action, reason]
+      properties:
+        action: { type: string, enum: [CLOSE, REOPEN] }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    ApprovalReasonCommand:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties: { reason: { type: string, minLength: 8, maxLength: 500 } }
+    FiscalPeriodActionRequest:
+      type: object
+      required: [id, period_id, action, reason, requested_by, requested_at]
+      properties:
+        id: { type: string, format: uuid }
+        period_id: { type: string, format: uuid }
+        action: { type: string, enum: [CLOSE, REOPEN] }
+        reason: { type: string }
+        requested_by: { type: string, format: uuid }
+        requested_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+        approved_at: { type: string, format: date-time }
+    FiscalPeriodActionPage:
+      type: object
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/FiscalPeriodActionRequest' } } }
     BankAccount:
       type: object
       additionalProperties: true

@@ -17,6 +17,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
@@ -36,6 +37,7 @@ type Handler struct {
 	receivables   *receivables.Service
 	operations    *operations.Service
 	banking       *banking.Service
+	financialops  *financialops.Service
 	logger        *slog.Logger
 	authenticator Authenticator
 }
@@ -89,6 +91,18 @@ func NewLiveWithModules(salesService *sales.Service, readService *readmodel.Serv
 	return handler, nil
 }
 
+func NewLiveWithFinance(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, bankingService *banking.Service, financialService *financialops.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLiveWithModules(salesService, readService, mobileService, receivablesService, operationsService, bankingService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if financialService == nil {
+		return nil, errors.New("financial operations service is required")
+	}
+	handler.financialops = financialService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
@@ -108,6 +122,16 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("GET /v1/banking/statements/{statementID}", h.getBankStatement)
 		mux.HandleFunc("POST /v1/banking/statements/{statementID}/lines/{lineID}/matches", h.matchBankStatementLine)
 		mux.HandleFunc("POST /v1/banking/statements/{statementID}/reconciliation", h.reconcileBankStatement)
+	}
+	if h.financialops != nil {
+		mux.HandleFunc("GET /v1/finance/documents", h.listFinancialDocuments)
+		mux.HandleFunc("POST /v1/finance/documents", h.createFinancialDocument)
+		mux.HandleFunc("GET /v1/finance/documents/{documentID}", h.getFinancialDocument)
+		mux.HandleFunc("POST /v1/finance/documents/{documentID}/transitions", h.transitionFinancialDocument)
+		mux.HandleFunc("GET /v1/finance/fiscal-periods", h.listFiscalPeriods)
+		mux.HandleFunc("GET /v1/finance/fiscal-period-actions", h.listFiscalPeriodActions)
+		mux.HandleFunc("POST /v1/finance/fiscal-periods/{periodID}/actions", h.requestFiscalPeriodAction)
+		mux.HandleFunc("POST /v1/finance/fiscal-period-actions/{actionID}/approval", h.approveFiscalPeriodAction)
 	}
 	if h.read != nil {
 		mux.HandleFunc("GET /v1/context", h.workingContext)
@@ -1049,6 +1073,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusConflict, "bank_reconciliation_conflict"
 	case errors.Is(err, banking.ErrInactiveAccount):
 		status, code = http.StatusUnprocessableEntity, "business_rule_violation"
+	case errors.Is(err, financialops.ErrInvalidTransition), errors.Is(err, financialops.ErrSeparationOfDuties), errors.Is(err, financialops.ErrPeriodCloseBlocked), errors.Is(err, financialops.ErrAlreadyReversed):
+		status, code = http.StatusConflict, "financial_control_conflict"
+	case errors.Is(err, financialops.ErrPeriodClosed):
+		status, code = http.StatusConflict, "fiscal_period_closed"
 	case errors.Is(err, sales.ErrFiscalPeriodClosed):
 		status, code = http.StatusConflict, "fiscal_period_closed"
 	case errors.Is(err, sales.ErrAlreadyReversed):
@@ -1062,7 +1090,7 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 	case errors.Is(err, sales.ErrGeneralCustomerCredit), errors.Is(err, sales.ErrCustomerCreditDisabled), errors.Is(err, sales.ErrCreditLimitExceeded), errors.Is(err, sales.ErrCustomerInactive), errors.Is(err, sales.ErrProductInactive), errors.Is(err, customers.ErrCreditRiskHold), errors.Is(err, customers.ErrCreditOverdue),
 		errors.Is(err, sales.ErrOfflineCredit), errors.Is(err, sales.ErrOfflinePaymentMethod), errors.Is(err, sales.ErrOfflineTaxUnsupported), errors.Is(err, sales.ErrUnsupportedPayment), errors.Is(err, devices.ErrNotActive), errors.Is(err, devices.ErrOfflineDisabled), errors.Is(err, devices.ErrMobileCreditUnsupported), errors.Is(err, devices.ErrAllocationExceeded), errors.Is(err, devices.ErrOfflineLimit), errors.Is(err, devices.ErrOfflineLeaseExpired), errors.Is(err, devices.ErrStaleMasterData), errors.Is(err, devices.ErrInvalidTimeZone), errors.Is(err, devices.ErrInvalidStatusTransition):
 		status, code = http.StatusUnprocessableEntity, "business_rule_violation"
-	case errors.Is(err, sales.ErrInvalidCommand), errors.Is(err, sales.ErrInvalidLine), errors.Is(err, sales.ErrDuplicateProductLine), errors.Is(err, sales.ErrInvalidSaleKind), errors.Is(err, sales.ErrPaymentMethodRequired), errors.Is(err, operations.ErrInvalidCommand), errors.Is(err, banking.ErrInvalidCommand):
+	case errors.Is(err, sales.ErrInvalidCommand), errors.Is(err, sales.ErrInvalidLine), errors.Is(err, sales.ErrDuplicateProductLine), errors.Is(err, sales.ErrInvalidSaleKind), errors.Is(err, sales.ErrPaymentMethodRequired), errors.Is(err, operations.ErrInvalidCommand), errors.Is(err, banking.ErrInvalidCommand), errors.Is(err, financialops.ErrInvalidCommand):
 		status, code = http.StatusBadRequest, "invalid_request"
 	}
 	if status == http.StatusInternalServerError {

@@ -312,6 +312,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/finance/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List governed financial documents */
+        get: operations["listFinancialDocuments"];
+        put?: never;
+        /** Create a governed financial document */
+        post: operations["createFinancialDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a governed financial document */
+        get: operations["getFinancialDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/documents/{document_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit, reject, or independently post a financial document */
+        post: operations["transitionFinancialDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/fiscal-periods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List fiscal periods */
+        get: operations["listFiscalPeriods"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/fiscal-periods/{period_id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request fiscal-period close or reopen */
+        post: operations["requestFiscalPeriodAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/fiscal-period-actions/{action_id}/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Independently approve fiscal-period close or reopen */
+        post: operations["approveFiscalPeriodAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/fiscal-period-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List fiscal-period close and reopen requests */
+        get: operations["listFiscalPeriodActions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sales": {
         parameters: {
             query?: never;
@@ -895,6 +1015,112 @@ export interface components {
         SupplierPage: {
             items: components["schemas"]["Supplier"][];
             next_cursor: string | null;
+        };
+        JournalEntry: {
+            account_id: string;
+            debit_minor: components["schemas"]["SafeNonNegativeInteger"];
+            credit_minor: components["schemas"]["SafeNonNegativeInteger"];
+            memo: string;
+        };
+        FinancialDocument: {
+            /** Format: uuid */
+            id: string;
+            number: string;
+            /** @enum {string} */
+            type: "MANUAL_JOURNAL" | "CASH_TRANSFER" | "BANK_ADJUSTMENT" | "REVERSAL";
+            /** @enum {string} */
+            status: "DRAFT" | "SUBMITTED" | "POSTED" | "REJECTED";
+            currency: string;
+            /** Format: date-time */
+            accounting_at: string;
+            reason: string;
+            /** Format: uuid */
+            from_account_id?: string;
+            /** Format: uuid */
+            to_account_id?: string;
+            /** Format: uuid */
+            reverses_document_id?: string;
+            /** Format: uuid */
+            journal_id?: string;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            submitted_by?: string;
+            /** Format: uuid */
+            posted_by?: string;
+            lines: components["schemas"]["JournalEntry"][];
+        } & {
+            [key: string]: unknown;
+        };
+        FinancialDocumentPage: {
+            items: components["schemas"]["FinancialDocument"][];
+            next_cursor: string | null;
+        };
+        CreateFinancialDocumentCommand: {
+            /** @enum {string} */
+            type: "MANUAL_JOURNAL" | "CASH_TRANSFER" | "BANK_ADJUSTMENT" | "REVERSAL";
+            currency: string;
+            /** Format: date-time */
+            accounting_at: string;
+            reason: string;
+            /** Format: uuid */
+            from_account_id?: string;
+            /** Format: uuid */
+            to_account_id?: string;
+            /** Format: uuid */
+            reverses_document_id?: string;
+            lines: components["schemas"]["JournalEntry"][];
+        };
+        TransitionFinancialDocumentCommand: {
+            /** @enum {string} */
+            status: "SUBMITTED" | "POSTED" | "REJECTED";
+            reason: string;
+        };
+        FiscalPeriod: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tenant_id: string;
+            /** Format: uuid */
+            company_id: string;
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            open: boolean;
+        };
+        FiscalPeriodPage: {
+            items: components["schemas"]["FiscalPeriod"][];
+        };
+        FiscalPeriodActionCommand: {
+            /** @enum {string} */
+            action: "CLOSE" | "REOPEN";
+            reason: string;
+        };
+        ApprovalReasonCommand: {
+            reason: string;
+        };
+        FiscalPeriodActionRequest: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            period_id: string;
+            /** @enum {string} */
+            action: "CLOSE" | "REOPEN";
+            reason: string;
+            /** Format: uuid */
+            requested_by: string;
+            /** Format: date-time */
+            requested_at: string;
+            /** Format: uuid */
+            approved_by?: string;
+            /** Format: date-time */
+            approved_at?: string;
+        };
+        FiscalPeriodActionPage: {
+            items: components["schemas"]["FiscalPeriodActionRequest"][];
         };
         BankAccount: {
             /** Format: uuid */
@@ -1868,6 +2094,211 @@ export interface operations {
                 };
             };
             409: components["responses"]["Conflict"];
+        };
+    };
+    listFinancialDocuments: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                page_size?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scoped financial-document register. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinancialDocumentPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createFinancialDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFinancialDocumentCommand"];
+            };
+        };
+        responses: {
+            /** @description Draft created exactly once. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinancialDocument"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getFinancialDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Financial document and immutable posting lines. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinancialDocument"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    transitionFinancialDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionFinancialDocumentCommand"];
+            };
+        };
+        responses: {
+            /** @description Transition and any balanced posting committed exactly once. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinancialDocument"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listFiscalPeriods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Legal-company fiscal periods. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FiscalPeriodPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    requestFiscalPeriodAction: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                period_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FiscalPeriodActionCommand"];
+            };
+        };
+        responses: {
+            /** @description Close or reopen request recorded. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FiscalPeriodActionRequest"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    approveFiscalPeriodAction: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalReasonCommand"];
+            };
+        };
+        responses: {
+            /** @description Fiscal-period state changed after close gates and separation-of-duties checks. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FiscalPeriodActionRequest"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listFiscalPeriodActions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Company fiscal action register including pending maker-checker work. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FiscalPeriodActionPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
         };
     };
     listSales: {
