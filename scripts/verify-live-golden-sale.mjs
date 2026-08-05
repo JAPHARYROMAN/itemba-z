@@ -170,37 +170,47 @@ assert.equal(Date.parse(unacknowledgedUpgradeReadback.offline_sales_valid_until)
 const beforeMobileCreditSales = await request("/v1/sales?page_size=200");
 const beforeMobileCreditProducts = await request(`/v1/products?page_size=200&${snapshotQuery}`);
 const beforeMobileCreditStock = beforeMobileCreditProducts.items.find((product) => product.id === ids.product)?.available_quantity;
+const mobileCreditTransactionId = randomUUID();
+const mobileCreditCommand = {
+  customer_id: ids.creditCustomer,
+  kind: "CREDIT",
+  lines: [{ product_id: ids.product, quantity: 1 }],
+  device_id: ids.device,
+  client_transaction_id: mobileCreditTransactionId,
+  client_timestamp: new Date().toISOString(),
+  app_version: "smoke-1",
+  master_data_version: context.master_data_version,
+  price_version: context.price_version,
+  catalog_snapshot_token: context.catalog_snapshot_token,
+  sync_attempt: 1,
+  offline: false,
+};
 const mobileCredit = await request("/v1/mobile/sync/sales", {
   method: "POST",
-  body: {
-    customer_id: ids.creditCustomer,
-    kind: "CREDIT",
-    lines: [{ product_id: ids.product, quantity: 1 }],
-    device_id: ids.device,
-    client_transaction_id: randomUUID(),
-    client_timestamp: new Date().toISOString(),
-    app_version: "smoke-1",
-    master_data_version: context.master_data_version,
-    price_version: context.price_version,
-    catalog_snapshot_token: context.catalog_snapshot_token,
-    sync_attempt: 1,
-    offline: false,
-  },
-  expected: 422,
+  body: mobileCreditCommand,
 });
-assert.equal(mobileCredit.code, "business_rule_violation");
+assert.equal(mobileCredit.state, "synced");
+assert.equal(mobileCredit.sale.kind, "CREDIT");
+assert.equal(mobileCredit.sale.customer_id, ids.creditCustomer);
+const mobileCreditReplay = await request("/v1/mobile/sync/sales", {
+  method: "POST", body: { ...mobileCreditCommand, sync_attempt: 2 },
+});
+assert.equal(mobileCreditReplay.sale.id, mobileCredit.sale.id);
+assert.equal(mobileCreditReplay.idempotent_replay, true);
 const afterMobileCreditSales = await request("/v1/sales?page_size=200");
 const afterMobileCreditProducts = await request(`/v1/products?page_size=200&${snapshotQuery}`);
-assert.deepEqual(
-  afterMobileCreditSales.items.map((sale) => sale.id),
-  beforeMobileCreditSales.items.map((sale) => sale.id),
-  "rejected online mobile credit must not persist a sale",
-);
+assert.equal(afterMobileCreditSales.items.length, beforeMobileCreditSales.items.length + 1);
 assert.equal(
   afterMobileCreditProducts.items.find((product) => product.id === ids.product)?.available_quantity,
-  beforeMobileCreditStock,
-  "rejected online mobile credit must not consume stock",
+  beforeMobileCreditStock - 1,
+  "authorized online mobile credit must consume stock exactly once",
 );
+const offlineCredit = await request("/v1/mobile/sync/sales", {
+  method: "POST",
+  body: { ...mobileCreditCommand, client_transaction_id: randomUUID(), client_timestamp: new Date().toISOString(), offline: true },
+  expected: 422,
+});
+assert.equal(offlineCredit.code, "business_rule_violation");
 
 const clientTransactionId = randomUUID();
 const mobileCommand = {
