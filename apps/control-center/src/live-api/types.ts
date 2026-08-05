@@ -37,6 +37,14 @@ export type PeopleTransitionCommand = components["schemas"]["PeopleTransitionCom
 export type LoanCommand = components["schemas"]["LoanCommand"];
 export type PayrollCommand = components["schemas"]["PayrollCommand"];
 export interface PeopleWorkspace { context: WorkingContext; people: PeopleSnapshot; accounts: GLAccount[] }
+export type ConfigurationVersion = components["schemas"]["ConfigurationVersion"];
+export type NumberSequence = components["schemas"]["NumberSequence"];
+export type NumberAllocation = components["schemas"]["NumberAllocation"];
+export type ConfigurationSnapshot = components["schemas"]["ConfigurationSnapshot"];
+export type CreateConfigurationCommand = components["schemas"]["CreateConfigurationCommand"];
+export type ConfigurationTransitionCommand = components["schemas"]["ConfigurationTransitionCommand"];
+export type CreateNumberSequenceCommand = components["schemas"]["CreateNumberSequenceCommand"];
+export interface ConfigurationWorkspace { context: WorkingContext; configuration: ConfigurationSnapshot }
 
 export interface PublicProblem {
   type: string;

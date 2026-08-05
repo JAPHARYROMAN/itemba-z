@@ -12,6 +12,7 @@ import (
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/advancedfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/configuration"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/httpapi"
@@ -189,7 +190,17 @@ func main() {
 		logger.Error("initialize people service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithPeople(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, logger, authenticator)
+	configurationRepository, ok := repository.(configuration.Repository)
+	if !ok {
+		logger.Error("repository does not implement governed configuration")
+		os.Exit(1)
+	}
+	configurationService, err := configuration.NewService(configurationRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize configuration service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithConfiguration(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)

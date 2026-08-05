@@ -37,6 +37,8 @@ tags:
     description: Governed journals, transfers, adjustments, reversals, and fiscal-period control.
   - name: People
     description: Employee, attendance, leave, loan, payroll, and payslip control.
+  - name: Settings
+    description: Effective-dated policy, integration, template, and numbering configuration.
 paths:
   /healthz:
     get:
@@ -808,6 +810,48 @@ paths:
       parameters: [{ name: payroll_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PeopleTransitionCommand' } } } }
       responses: { '200': { description: Posted payroll and payslips., content: { application/json: { schema: { $ref: '#/components/schemas/PayrollRun' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/settings:
+    get:
+      summary: Load governed configuration and numbering
+      operationId: getConfigurationSnapshot
+      tags: [Settings]
+      x-implementation-status: implemented
+      responses: { '200': { description: Settings workspace., content: { application/json: { schema: { $ref: '#/components/schemas/ConfigurationSnapshot' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/settings/configurations:
+    post:
+      summary: Create an immutable effective-dated configuration version
+      operationId: createConfigurationVersion
+      tags: [Settings]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateConfigurationCommand' } } } }
+      responses: { '201': { description: Draft configuration., content: { application/json: { schema: { $ref: '#/components/schemas/ConfigurationVersion' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/settings/configurations/{configuration_id}/transitions:
+    post:
+      summary: Submit, independently activate, reject, or retire configuration
+      operationId: transitionConfigurationVersion
+      tags: [Settings]
+      x-implementation-status: implemented
+      parameters: [{ name: configuration_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConfigurationTransitionCommand' } } } }
+      responses: { '200': { description: Configuration version., content: { application/json: { schema: { $ref: '#/components/schemas/ConfigurationVersion' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/settings/number-sequences:
+    post:
+      summary: Create a company document number sequence
+      operationId: createNumberSequence
+      tags: [Settings]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateNumberSequenceCommand' } } } }
+      responses: { '201': { description: Number sequence., content: { application/json: { schema: { $ref: '#/components/schemas/NumberSequence' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/settings/number-sequences/{sequence_id}/allocations:
+    post:
+      summary: Atomically and idempotently allocate a document number
+      operationId: allocateDocumentNumber
+      tags: [Settings]
+      x-implementation-status: implemented
+      parameters: [{ name: sequence_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      responses: { '201': { description: Number allocation., content: { application/json: { schema: { $ref: '#/components/schemas/NumberAllocation' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
   /v1/sales:
     post:
       summary: Complete and atomically post a sale
@@ -2604,6 +2648,43 @@ components:
       additionalProperties: false
       required: [reference, currency, period_start, period_end, payment_date, salary_expense_account_id, payroll_payable_account_id, deduction_liability_account_id, reason, lines]
       properties: { reference: { type: string }, currency: { type: string }, period_start: { type: string, format: date }, period_end: { type: string, format: date }, payment_date: { type: string, format: date }, salary_expense_account_id: { type: string }, payroll_payable_account_id: { type: string }, deduction_liability_account_id: { type: string }, reason: { type: string }, lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/PayrollLine' } } }
+    ConfigurationStatus: { type: string, enum: [DRAFT, SUBMITTED, ACTIVE, REJECTED, RETIRED] }
+    ConfigurationCategory: { type: string, enum: [SALES, PURCHASING, INVENTORY, FINANCE, HR, NUMBERING, TEMPLATES, NOTIFICATIONS, IMPORTS, INTEGRATIONS] }
+    ConfigurationVersion:
+      type: object
+      additionalProperties: true
+      required: [id, category, key, name_en, name_sw, value, effective_from, status, reason, created_by, created_at]
+      properties: { id: { type: string, format: uuid }, category: { $ref: '#/components/schemas/ConfigurationCategory' }, key: { type: string }, name_en: { type: string }, name_sw: { type: string }, value: { type: object, additionalProperties: true }, secret_ref: { type: string }, effective_from: { type: string, format: date-time }, effective_to: { type: [string, 'null'], format: date-time }, status: { $ref: '#/components/schemas/ConfigurationStatus' }, reason: { type: string }, created_by: { type: string, format: uuid }, created_at: { type: string, format: date-time }, approved_by: { type: string, format: uuid } }
+    NumberSequence:
+      type: object
+      additionalProperties: true
+      required: [id, key, prefix, next_value, padding, created_by, created_at]
+      properties: { id: { type: string, format: uuid }, key: { type: string }, prefix: { type: string }, next_value: { $ref: '#/components/schemas/SafePositiveInteger' }, padding: { type: integer, minimum: 1, maximum: 18 }, created_by: { type: string, format: uuid }, created_at: { type: string, format: date-time } }
+    NumberAllocation:
+      type: object
+      additionalProperties: false
+      required: [sequence_id, number, value, allocated_at]
+      properties: { sequence_id: { type: string, format: uuid }, number: { type: string }, value: { $ref: '#/components/schemas/SafePositiveInteger' }, allocated_at: { type: string, format: date-time } }
+    ConfigurationSnapshot:
+      type: object
+      additionalProperties: false
+      required: [versions, sequences]
+      properties: { versions: { type: array, items: { $ref: '#/components/schemas/ConfigurationVersion' } }, sequences: { type: array, items: { $ref: '#/components/schemas/NumberSequence' } } }
+    CreateConfigurationCommand:
+      type: object
+      additionalProperties: false
+      required: [category, key, name_en, name_sw, value, effective_from, reason]
+      properties: { category: { $ref: '#/components/schemas/ConfigurationCategory' }, key: { type: string }, name_en: { type: string }, name_sw: { type: string }, value: { type: object, additionalProperties: true }, secret_ref: { type: string }, effective_from: { type: string, format: date }, effective_to: { type: string, format: date }, reason: { type: string } }
+    ConfigurationTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties: { status: { $ref: '#/components/schemas/ConfigurationStatus' }, reason: { type: string } }
+    CreateNumberSequenceCommand:
+      type: object
+      additionalProperties: false
+      required: [key, prefix, next_value, padding]
+      properties: { key: { type: string }, prefix: { type: string }, next_value: { $ref: '#/components/schemas/SafePositiveInteger' }, padding: { type: integer, minimum: 1, maximum: 18 } }
     Problem:
       type: object
       additionalProperties: true

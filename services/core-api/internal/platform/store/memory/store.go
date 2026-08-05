@@ -14,6 +14,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/catalog"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/configuration"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
@@ -112,6 +113,9 @@ type state struct {
 	leaveRequests             map[string]people.LeaveRequest
 	employeeLoans             map[string]people.Loan
 	payrollRuns               map[string]people.PayrollRun
+	configurations            map[string]configuration.Version
+	numberSequences           map[string]configuration.Sequence
+	numberAllocations         map[string]configuration.Allocation
 }
 
 func newState() *state {
@@ -148,6 +152,9 @@ func newState() *state {
 		leaveRequests:             make(map[string]people.LeaveRequest),
 		employeeLoans:             make(map[string]people.Loan),
 		payrollRuns:               make(map[string]people.PayrollRun),
+		configurations:            make(map[string]configuration.Version),
+		numberSequences:           make(map[string]configuration.Sequence),
+		numberAllocations:         make(map[string]configuration.Allocation),
 	}
 }
 
@@ -926,6 +933,16 @@ func cloneState(source *state) *state {
 	for key, value := range source.payrollRuns {
 		value.Lines = append([]people.PayrollLine(nil), value.Lines...)
 		result.payrollRuns[key] = value
+	}
+	for key, value := range source.configurations {
+		value.Value = append([]byte(nil), value.Value...)
+		result.configurations[key] = value
+	}
+	for key, value := range source.numberSequences {
+		result.numberSequences[key] = value
+	}
+	for key, value := range source.numberAllocations {
+		result.numberAllocations[key] = value
 	}
 	return result
 }

@@ -1,0 +1,1 @@
+SET search_path TO itembaz, public;DROP TABLE IF EXISTS number_allocations,number_sequences,configuration_transitions,configuration_versions;DROP FUNCTION IF EXISTS protect_configuration();DELETE FROM role_permissions WHERE permission_code LIKE 'settings.%';DELETE FROM permissions WHERE code LIKE 'settings.%';

@@ -1016,6 +1016,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Load governed configuration and numbering */
+        get: operations["getConfigurationSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/settings/configurations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an immutable effective-dated configuration version */
+        post: operations["createConfigurationVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/settings/configurations/{configuration_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit, independently activate, reject, or retire configuration */
+        post: operations["transitionConfigurationVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/settings/number-sequences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a company document number sequence */
+        post: operations["createNumberSequence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/settings/number-sequences/{sequence_id}/allocations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Atomically and idempotently allocate a document number */
+        post: operations["allocateDocumentNumber"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sales": {
         parameters: {
             query?: never;
@@ -2809,6 +2894,87 @@ export interface components {
             deduction_liability_account_id: string;
             reason: string;
             lines: components["schemas"]["PayrollLine"][];
+        };
+        /** @enum {string} */
+        ConfigurationStatus: "DRAFT" | "SUBMITTED" | "ACTIVE" | "REJECTED" | "RETIRED";
+        /** @enum {string} */
+        ConfigurationCategory: "SALES" | "PURCHASING" | "INVENTORY" | "FINANCE" | "HR" | "NUMBERING" | "TEMPLATES" | "NOTIFICATIONS" | "IMPORTS" | "INTEGRATIONS";
+        ConfigurationVersion: {
+            /** Format: uuid */
+            id: string;
+            category: components["schemas"]["ConfigurationCategory"];
+            key: string;
+            name_en: string;
+            name_sw: string;
+            value: {
+                [key: string]: unknown;
+            };
+            secret_ref?: string;
+            /** Format: date-time */
+            effective_from: string;
+            /** Format: date-time */
+            effective_to?: string | null;
+            status: components["schemas"]["ConfigurationStatus"];
+            reason: string;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            approved_by?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        NumberSequence: {
+            /** Format: uuid */
+            id: string;
+            key: string;
+            prefix: string;
+            next_value: components["schemas"]["SafePositiveInteger"];
+            padding: number;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+        } & {
+            [key: string]: unknown;
+        };
+        NumberAllocation: {
+            /** Format: uuid */
+            sequence_id: string;
+            number: string;
+            value: components["schemas"]["SafePositiveInteger"];
+            /** Format: date-time */
+            allocated_at: string;
+        };
+        ConfigurationSnapshot: {
+            versions: components["schemas"]["ConfigurationVersion"][];
+            sequences: components["schemas"]["NumberSequence"][];
+        };
+        CreateConfigurationCommand: {
+            category: components["schemas"]["ConfigurationCategory"];
+            key: string;
+            name_en: string;
+            name_sw: string;
+            value: {
+                [key: string]: unknown;
+            };
+            secret_ref?: string;
+            /** Format: date */
+            effective_from: string;
+            /** Format: date */
+            effective_to?: string;
+            reason: string;
+        };
+        ConfigurationTransitionCommand: {
+            status: components["schemas"]["ConfigurationStatus"];
+            reason: string;
+        };
+        CreateNumberSequenceCommand: {
+            key: string;
+            prefix: string;
+            next_value: components["schemas"]["SafePositiveInteger"];
+            padding: number;
         };
         Problem: {
             /** Format: uri-reference */
@@ -4695,6 +4861,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PayrollRun"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getConfigurationSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Settings workspace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationSnapshot"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createConfigurationVersion: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateConfigurationCommand"];
+            };
+        };
+        responses: {
+            /** @description Draft configuration. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationVersion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    transitionConfigurationVersion: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                configuration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigurationTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Configuration version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationVersion"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createNumberSequence: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateNumberSequenceCommand"];
+            };
+        };
+        responses: {
+            /** @description Number sequence. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NumberSequence"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    allocateDocumentNumber: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                sequence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Number allocation. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NumberAllocation"];
                 };
             };
             403: components["responses"]["Forbidden"];

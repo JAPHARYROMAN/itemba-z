@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/configuration"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
@@ -49,7 +50,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql", "000024_governed_settings.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -395,6 +396,38 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	peopleView, err := peopleService.Get(ctx, scope, approverID)
 	if err != nil || payroll.NetMinor != 85000 || len(peopleView.PayrollRuns) != 1 || peopleView.Loans[0].OutstandingMinor != 15000 {
 		t.Fatalf("people snapshot: %+v %v", peopleView, err)
+	}
+	configurationService, err := configuration.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(110 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := configurationService.Create(ctx, configuration.CreateCommand{Scope: scope, Category: configuration.HR, Key: "PAYROLL-POLICY", NameEN: "Payroll policy", NameSW: "Sera ya mishahara", Value: json.RawMessage(`{"parallel_runs":2}`), EffectiveFrom: testTime, Reason: "Integration payroll configuration evidence", ActorID: userID, IdempotencyKey: "integration-config-create1"})
+	if err != nil {
+		t.Fatalf("create configuration: %v", err)
+	}
+	config, err = configurationService.Transition(ctx, configuration.TransitionCommand{Scope: scope, ID: config.ID, Status: configuration.Submitted, Reason: "Configuration submitted for review", ActorID: userID, IdempotencyKey: "integration-config-submit1"})
+	if err != nil {
+		t.Fatalf("submit configuration: %v", err)
+	}
+	config, err = configurationService.Transition(ctx, configuration.TransitionCommand{Scope: scope, ID: config.ID, Status: configuration.Active, Reason: "Independent configuration activation", ActorID: approverID, IdempotencyKey: "integration-config-active1"})
+	if err != nil || config.Status != configuration.Active {
+		t.Fatalf("activate configuration: %+v %v", config, err)
+	}
+	sequence, err := configurationService.CreateSequence(ctx, configuration.SequenceCommand{Scope: scope, Key: "SALES-INVOICE", Prefix: "INV-", NextValue: 1, Padding: 6, ActorID: userID, IdempotencyKey: "integration-sequence-create"})
+	if err != nil {
+		t.Fatalf("create sequence: %v", err)
+	}
+	first, err := configurationService.Allocate(ctx, configuration.AllocateCommand{Scope: scope, SequenceID: sequence.ID, ActorID: userID, IdempotencyKey: "integration-number-first1"})
+	if err != nil || first.Number != "INV-000001" {
+		t.Fatalf("first number: %+v %v", first, err)
+	}
+	second, err := configurationService.Allocate(ctx, configuration.AllocateCommand{Scope: scope, SequenceID: sequence.ID, ActorID: userID, IdempotencyKey: "integration-number-second"})
+	if err != nil || second.Number != "INV-000002" {
+		t.Fatalf("second number: %+v %v", second, err)
+	}
+	configView, err := configurationService.Get(ctx, scope, approverID)
+	if err != nil || len(configView.Versions) != 1 || len(configView.Sequences) != 1 || configView.Sequences[0].NextValue != 3 {
+		t.Fatalf("configuration snapshot: %+v %v", configView, err)
 	}
 	closeRequest, err := financialService.RequestPeriodAction(ctx, financialops.PeriodCommand{Scope: scope, PeriodID: periodID, Action: financialops.ClosePeriod, Reason: "Integration reconciliations ready for close", ActorID: userID, IdempotencyKey: "integration-period-close-01"})
 	if err != nil {
@@ -892,7 +925,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 1 || salesCount != 7 || journalCount != 28 || outboxCount != 99 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 28 || outboxCount != 105 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }

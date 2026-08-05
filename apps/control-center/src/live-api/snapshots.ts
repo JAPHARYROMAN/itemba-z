@@ -13,6 +13,7 @@ import type {
 	TreasuryWorkspace,
 	GroupFinanceWorkspace,
 	PeopleWorkspace,
+	ConfigurationWorkspace,
 } from "@/live-api/types";
 
 export async function loadPeopleWorkspace(): Promise<LiveSnapshot<PeopleWorkspace>> {
@@ -21,6 +22,11 @@ export async function loadPeopleWorkspace(): Promise<LiveSnapshot<PeopleWorkspac
     const [context, people, accounts] = await Promise.all([repository.getWorkingContext(), repository.getPeopleSnapshot(), repository.listGLAccounts()]);
     return { state: "ready", data: { context, people, accounts: accounts.items.filter((account) => account.status === "ACTIVE") } };
   } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
+}
+
+export async function loadConfigurationWorkspace(): Promise<LiveSnapshot<ConfigurationWorkspace>> {
+  try { const repository = await createServerRepository(); const [context, configuration] = await Promise.all([repository.getWorkingContext(), repository.getConfigurationSnapshot()]); return { state: "ready", data: { context, configuration } }; }
+  catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
 }
 
 export async function loadGroupFinanceWorkspace(): Promise<LiveSnapshot<GroupFinanceWorkspace>> {

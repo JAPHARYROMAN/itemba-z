@@ -16,6 +16,7 @@ import type {
 	CreateTreasuryFacilityCommand, PostTreasuryTransactionCommand, TreasuryFacility, TreasuryFacilityPage, TreasuryTransitionCommand,
 	CreateIntercompanyCommand, GroupConsolidation, IntercompanyPage, IntercompanyTransaction, IntercompanyTransitionCommand,
 	Attendance, AttendanceCommand, CreateEmployeeCommand, Employee, EmployeeLoan, LeaveCommand, LeaveRequest, LeaveType, LeaveTypeCommand, LoanCommand, PayrollCommand, PayrollRun, PeopleSnapshot, PeopleTransitionCommand,
+	ConfigurationSnapshot, ConfigurationVersion, ConfigurationTransitionCommand, CreateConfigurationCommand, CreateNumberSequenceCommand, NumberAllocation, NumberSequence,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -293,6 +294,11 @@ export class ItembaApiClient {
   transitionEmployeeLoan(id: string, command: PeopleTransitionCommand, key: string): Promise<EmployeeLoan> { return this.request(`/v1/hr/loans/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey: key }); }
   createPayroll(command: PayrollCommand, key: string): Promise<PayrollRun> { return this.request("/v1/hr/payroll-runs", { method: "POST", body: command, idempotencyKey: key }); }
   transitionPayroll(id: string, command: PeopleTransitionCommand, key: string): Promise<PayrollRun> { return this.request(`/v1/hr/payroll-runs/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey: key }); }
+  getConfigurationSnapshot(): Promise<ConfigurationSnapshot> { return this.request("/v1/settings"); }
+  createConfiguration(command: CreateConfigurationCommand, key: string): Promise<ConfigurationVersion> { return this.request("/v1/settings/configurations", { method: "POST", body: command, idempotencyKey: key }); }
+  transitionConfiguration(id: string, command: ConfigurationTransitionCommand, key: string): Promise<ConfigurationVersion> { return this.request(`/v1/settings/configurations/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey: key }); }
+  createNumberSequence(command: CreateNumberSequenceCommand, key: string): Promise<NumberSequence> { return this.request("/v1/settings/number-sequences", { method: "POST", body: command, idempotencyKey: key }); }
+  allocateDocumentNumber(id: string, key: string): Promise<NumberAllocation> { return this.request(`/v1/settings/number-sequences/${encodeURIComponent(id)}/allocations`, { method: "POST", idempotencyKey: key }); }
 
   listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
     const query = new URLSearchParams({ page_size: "100" });
