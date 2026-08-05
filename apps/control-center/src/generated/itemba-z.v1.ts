@@ -502,6 +502,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/reports/financial/trial-balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run the legal-company trial balance */
+        get: operations["runTrialBalance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reports/financial/general-ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Drill into one general-ledger account */
+        get: operations["runGeneralLedger"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reports/financial/profit-and-loss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run the profit and loss statement */
+        get: operations["runProfitAndLoss"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reports/financial/balance-sheet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run the balance sheet */
+        get: operations["runBalanceSheet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reports/financial/cash-flow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run the cash-flow statement */
+        get: operations["runCashFlow"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reports/financial/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate and retain an audited financial report CSV export */
+        post: operations["exportFinancialReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sales": {
         parameters: {
             query?: never;
@@ -1163,6 +1265,148 @@ export interface components {
             /** Format: date-time */
             effective_from: string;
             reason: string;
+        };
+        FinancialStatementLine: {
+            account_id: string;
+            code: string;
+            name: string;
+            /** @enum {string} */
+            type: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE" | "UNCLASSIFIED";
+            amount_minor: components["schemas"]["SafeInteger"];
+            debit_minor?: components["schemas"]["SafeNonNegativeInteger"];
+            credit_minor?: components["schemas"]["SafeNonNegativeInteger"];
+        };
+        TrialBalance: {
+            /** Format: date-time */
+            as_of: string;
+            currency: string;
+            lines: components["schemas"]["FinancialStatementLine"][];
+            total_debit_minor: components["schemas"]["SafeNonNegativeInteger"];
+            total_credit_minor: components["schemas"]["SafeNonNegativeInteger"];
+            balanced: boolean;
+            /** Format: date-time */
+            generated_at: string;
+        };
+        GeneralLedgerEntry: {
+            journal_line_id: components["schemas"]["SafeNonNegativeInteger"];
+            /** Format: uuid */
+            journal_id: string;
+            /** Format: date-time */
+            occurred_at: string;
+            source_type: string;
+            /** Format: uuid */
+            source_id: string;
+            memo: string;
+            debit_minor: components["schemas"]["SafeNonNegativeInteger"];
+            credit_minor: components["schemas"]["SafeNonNegativeInteger"];
+            running_balance_minor: components["schemas"]["SafeInteger"];
+        };
+        GeneralLedger: {
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+            currency: string;
+            account_id: string;
+            account_code: string;
+            account_name: string;
+            opening_balance_minor: components["schemas"]["SafeInteger"];
+            closing_balance_minor: components["schemas"]["SafeInteger"];
+            total_debit_minor: components["schemas"]["SafeNonNegativeInteger"];
+            total_credit_minor: components["schemas"]["SafeNonNegativeInteger"];
+            entries: components["schemas"]["GeneralLedgerEntry"][];
+            /** Format: date-time */
+            generated_at: string;
+        };
+        ProfitAndLoss: {
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+            currency: string;
+            revenue: components["schemas"]["FinancialStatementLine"][];
+            expenses: components["schemas"]["FinancialStatementLine"][];
+            total_revenue_minor: components["schemas"]["SafeInteger"];
+            total_expense_minor: components["schemas"]["SafeInteger"];
+            net_profit_minor: components["schemas"]["SafeInteger"];
+            unclassified_minor: components["schemas"]["SafeInteger"];
+            /** Format: date-time */
+            generated_at: string;
+        };
+        BalanceSheet: {
+            /** Format: date-time */
+            as_of: string;
+            currency: string;
+            assets: components["schemas"]["FinancialStatementLine"][];
+            liabilities: components["schemas"]["FinancialStatementLine"][];
+            equity: components["schemas"]["FinancialStatementLine"][];
+            total_assets_minor: components["schemas"]["SafeInteger"];
+            total_liabilities_minor: components["schemas"]["SafeInteger"];
+            total_equity_minor: components["schemas"]["SafeInteger"];
+            current_earnings_minor: components["schemas"]["SafeInteger"];
+            unclassified_minor: components["schemas"]["SafeInteger"];
+            balanced: boolean;
+            /** Format: date-time */
+            generated_at: string;
+        };
+        CashMovement: {
+            /** Format: uuid */
+            journal_id: string;
+            /** Format: date-time */
+            occurred_at: string;
+            source_type: string;
+            /** Format: uuid */
+            source_id: string;
+            memo: string;
+            amount_minor: components["schemas"]["SafeInteger"];
+        };
+        CashFlowSection: {
+            /** @enum {string} */
+            activity: "OPERATING" | "INVESTING" | "FINANCING" | "UNCLASSIFIED";
+            lines: components["schemas"]["CashMovement"][];
+            net_minor: components["schemas"]["SafeInteger"];
+        };
+        CashFlow: {
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+            currency: string;
+            opening_cash_minor: components["schemas"]["SafeInteger"];
+            operating: components["schemas"]["CashFlowSection"];
+            investing: components["schemas"]["CashFlowSection"];
+            financing: components["schemas"]["CashFlowSection"];
+            unclassified: components["schemas"]["CashFlowSection"];
+            net_change_minor: components["schemas"]["SafeInteger"];
+            closing_cash_minor: components["schemas"]["SafeInteger"];
+            reconciled: boolean;
+            classified: boolean;
+            /** Format: date-time */
+            generated_at: string;
+        };
+        ExportFinancialReportCommand: {
+            /** @enum {string} */
+            report_type: "TRIAL_BALANCE" | "GENERAL_LEDGER" | "PROFIT_AND_LOSS" | "BALANCE_SHEET" | "CASH_FLOW";
+            /** Format: date */
+            from?: string;
+            /** Format: date */
+            to?: string;
+            /** Format: date */
+            as_of?: string;
+            account_id?: string;
+        };
+        ReportExportArtifact: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            report_type: "TRIAL_BALANCE" | "GENERAL_LEDGER" | "PROFIT_AND_LOSS" | "BALANCE_SHEET" | "CASH_FLOW";
+            filename: string;
+            /** @enum {string} */
+            media_type: "text/csv";
+            /** Format: byte */
+            content_base64: string;
+            /** Format: date-time */
+            generated_at: string;
         };
         JournalEntry: {
             account_id: string;
@@ -2601,6 +2845,152 @@ export interface operations {
                 };
             };
             409: components["responses"]["Conflict"];
+        };
+    };
+    runTrialBalance: {
+        parameters: {
+            query: {
+                as_of: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Balanced account-level trial balance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrialBalance"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    runGeneralLedger: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                account_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chronological ledger with running balance and source drill-down. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralLedger"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    runProfitAndLoss: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revenue, expenses, and net profit from the immutable ledger. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfitAndLoss"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    runBalanceSheet: {
+        parameters: {
+            query: {
+                as_of: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assets, liabilities, equity, current earnings, and reconciliation status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BalanceSheet"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    runCashFlow: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cash movement reconciled from opening to closing cash. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashFlow"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    exportFinancialReport: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportFinancialReportCommand"];
+            };
+        };
+        responses: {
+            /** @description Idempotent retained export artifact. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportExportArtifact"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
         };
     };
     listSales: {

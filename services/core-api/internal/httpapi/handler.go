@@ -23,6 +23,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 )
 
@@ -38,6 +39,7 @@ type Handler struct {
 	operations    *operations.Service
 	banking       *banking.Service
 	financialops  *financialops.Service
+	reporting     *reporting.Service
 	logger        *slog.Logger
 	authenticator Authenticator
 }
@@ -103,6 +105,18 @@ func NewLiveWithFinance(salesService *sales.Service, readService *readmodel.Serv
 	return handler, nil
 }
 
+func NewLiveWithReporting(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, bankingService *banking.Service, financialService *financialops.Service, reportingService *reporting.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLiveWithFinance(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if reportingService == nil {
+		return nil, errors.New("financial reporting service is required")
+	}
+	handler.reporting = reportingService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
@@ -144,6 +158,14 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("GET /v1/customers", h.listCustomers)
 		mux.HandleFunc("GET /v1/products", h.listProducts)
 		mux.HandleFunc("GET /v1/sales", h.listSales)
+	}
+	if h.reporting != nil {
+		mux.HandleFunc("GET /v1/reports/financial/trial-balance", h.trialBalance)
+		mux.HandleFunc("GET /v1/reports/financial/general-ledger", h.generalLedger)
+		mux.HandleFunc("GET /v1/reports/financial/profit-and-loss", h.profitAndLoss)
+		mux.HandleFunc("GET /v1/reports/financial/balance-sheet", h.balanceSheet)
+		mux.HandleFunc("GET /v1/reports/financial/cash-flow", h.cashFlow)
+		mux.HandleFunc("POST /v1/reports/financial/exports", h.exportFinancialReport)
 	}
 	if h.mobile != nil {
 		mux.HandleFunc("POST /v1/mobile/devices/enroll", h.enrollDevice)
@@ -1098,6 +1120,8 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusUnprocessableEntity, "business_rule_violation"
 	case errors.Is(err, sales.ErrInvalidCommand), errors.Is(err, sales.ErrInvalidLine), errors.Is(err, sales.ErrDuplicateProductLine), errors.Is(err, sales.ErrInvalidSaleKind), errors.Is(err, sales.ErrPaymentMethodRequired), errors.Is(err, operations.ErrInvalidCommand), errors.Is(err, banking.ErrInvalidCommand), errors.Is(err, financialops.ErrInvalidCommand):
 		status, code = http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, reporting.ErrInvalidQuery):
+		status, code = http.StatusBadRequest, "invalid_report_query"
 	}
 	if status == http.StatusInternalServerError {
 		h.logger.ErrorContext(request.Context(), "request failed", "method", request.Method, "path", request.URL.Path, "error", err)

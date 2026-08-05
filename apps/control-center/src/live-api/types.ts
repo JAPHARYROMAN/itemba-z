@@ -115,4 +115,12 @@ export type GovernanceDecisionCommand = components["schemas"]["GovernanceDecisio
 export type PostingMapping = components["schemas"]["PostingMapping"];
 export type PostingMappingPage = components["schemas"]["PostingMappingPage"];
 export type CreatePostingMappingCommand = components["schemas"]["CreatePostingMappingCommand"];
+export type TrialBalance = components["schemas"]["TrialBalance"];
+export type GeneralLedger = components["schemas"]["GeneralLedger"];
+export type ProfitAndLoss = components["schemas"]["ProfitAndLoss"];
+export type BalanceSheet = components["schemas"]["BalanceSheet"];
+export type CashFlow = components["schemas"]["CashFlow"];
+export type ExportFinancialReportCommand = components["schemas"]["ExportFinancialReportCommand"];
+export type ReportExportArtifact = components["schemas"]["ReportExportArtifact"];
+export interface FinancialReportsWorkspace { context: WorkingContext; accounts: GLAccount[]; from: string; to: string; asOf: string; trialBalance: TrialBalance; profitAndLoss: ProfitAndLoss; balanceSheet: BalanceSheet; cashFlow: CashFlow }
 export interface FinanceControlWorkspace { context: WorkingContext; accounts: BankAccount[]; glAccounts: GLAccount[]; postingMappings: PostingMapping[]; documents: FinancialDocument[]; periods: FiscalPeriod[]; periodActions: FiscalPeriodActionRequest[] }

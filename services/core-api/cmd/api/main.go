@@ -21,6 +21,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/postgres"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 )
 
@@ -134,7 +135,17 @@ func main() {
 		logger.Error("initialize financial operations service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithFinance(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, logger, authenticator)
+	reportingRepository, ok := repository.(reporting.Repository)
+	if !ok {
+		logger.Error("repository does not implement governed financial reporting")
+		os.Exit(1)
+	}
+	reportingService, err := reporting.NewService(reportingRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize financial reporting service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithReporting(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)

@@ -27,6 +27,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/postgres"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
@@ -44,7 +45,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -118,7 +119,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 		{`INSERT INTO sales_posting_config(tenant_id,company_id,receivable_account_id,tax_payable_account_id,cash_accounts) VALUES($1,$2,'receivable','tax-payable','{"CASH":"cash"}')`, []any{tenantID, companyID}},
 		{`INSERT INTO procurement_posting_config(tenant_id,company_id,grni_account_id,payable_account_id,inventory_adjustment_account_id,stock_in_transit_account_id,cash_accounts) VALUES($1,$2,'grni','payable','inventory-adjustment','stock-in-transit','{"CASH":"cash"}')`, []any{tenantID, companyID}},
 		{`INSERT INTO bank_accounts(id,tenant_id,company_id,branch_id,warehouse_id,code,name,account_type,currency,gl_account_id,active) VALUES($1,$2,$3,$4,$5,'CASH','Till cash','CASH','TZS','cash',true)`, []any{bankAccountID, tenantID, companyID, branchID, warehouseID}},
-		{`INSERT INTO gl_accounts(record_id,tenant_id,company_id,id,code,name,account_type,allow_manual_posting,status,created_at) VALUES(gen_random_uuid(),$1,$2,'expense','expense','Integration expense','EXPENSE',true,'ACTIVE',$3),(gen_random_uuid(),$1,$2,'suspense','suspense','Integration suspense','ASSET',true,'ACTIVE',$3)`, []any{tenantID, companyID, testTime}},
+		{`INSERT INTO gl_accounts(record_id,tenant_id,company_id,id,code,name,account_type,allow_manual_posting,status,created_at) SELECT gen_random_uuid(),$1,$2,id,id,name,kind,manual,'ACTIVE',$3 FROM (VALUES ('expense','Integration expense','EXPENSE',true),('suspense','Integration suspense','ASSET',true),('cash','Cash','ASSET',false),('revenue','Revenue','REVENUE',false),('tax-payable','Tax payable','LIABILITY',false),('cogs','Cost of goods sold','EXPENSE',false),('inventory','Inventory','ASSET',false),('receivable','Receivable','ASSET',false),('grni','GRNI','LIABILITY',false),('payable','Payable','LIABILITY',false),('inventory-adjustment','Inventory adjustment','EXPENSE',false),('stock-in-transit','Stock in transit','ASSET',false)) a(id,name,kind,manual)`, []any{tenantID, companyID, testTime}},
 		{`INSERT INTO inventory_stock_ledger(id,tenant_id,company_id,branch_id,warehouse_id,product_id,source_type,source_id,quantity,occurred_at) VALUES($1,$2,$3,$4,$5,$6,'OPENING',$7,100,$8)`, []any{stockID, tenantID, companyID, branchID, warehouseID, productID, openingID, testTime.Add(-time.Hour)}},
 	}
 	for _, statement := range statements {
@@ -198,6 +199,31 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	var debit, credit, evidence int64
 	if err = pool.QueryRow(ctx, `SELECT COALESCE(sum(l.debit_minor),0),COALESCE(sum(l.credit_minor),0),(SELECT count(*) FROM `+pgx.Identifier{schema}.Sanitize()+`.audit_events WHERE entity_id=$1) FROM `+pgx.Identifier{schema}.Sanitize()+`.journal_lines l WHERE l.journal_id=$2`, financialDocument.ID, financialDocument.JournalID).Scan(&debit, &credit, &evidence); err != nil || debit != 1500 || credit != 1500 || evidence < 3 {
 		t.Fatalf("financial journal/evidence debit=%d credit=%d evidence=%d err=%v", debit, credit, evidence, err)
+	}
+	reportingService, err := reporting.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportQuery := reporting.Query{Scope: scope, ActorID: approverID, From: testTime.Add(-24 * time.Hour), To: testTime.Add(24 * time.Hour), AsOf: testTime.Add(24 * time.Hour)}
+	trial, err := reportingService.TrialBalance(ctx, reportQuery)
+	if err != nil || !trial.Balanced || trial.TotalDebitMinor != trial.TotalCreditMinor {
+		t.Fatalf("trial balance: %+v %v", trial, err)
+	}
+	profit, err := reportingService.ProfitAndLoss(ctx, reportQuery)
+	if err != nil || profit.NetProfitMinor == 0 {
+		t.Fatalf("profit and loss: %+v %v", profit, err)
+	}
+	balance, err := reportingService.BalanceSheet(ctx, reportQuery)
+	if err != nil || !balance.Balanced {
+		t.Fatalf("balance sheet: %+v %v", balance, err)
+	}
+	flow, err := reportingService.CashFlow(ctx, reportQuery)
+	if err != nil || !flow.Reconciled || flow.ClosingCashMinor == 0 {
+		t.Fatalf("cash flow: %+v %v", flow, err)
+	}
+	artifact, err := reportingService.Export(ctx, reporting.ExportCommand{Query: reportQuery, Type: reporting.ReportTrialBalance, IdempotencyKey: "integration-report-export-1"})
+	if err != nil || artifact.ContentBase64 == "" {
+		t.Fatalf("report export: %+v %v", artifact, err)
 	}
 	closeRequest, err := financialService.RequestPeriodAction(ctx, financialops.PeriodCommand{Scope: scope, PeriodID: periodID, Action: financialops.ClosePeriod, Reason: "Integration reconciliations ready for close", ActorID: userID, IdempotencyKey: "integration-period-close-01"})
 	if err != nil {
@@ -683,7 +709,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 1 || salesCount != 7 || journalCount != 16 || outboxCount != 62 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 16 || outboxCount != 63 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }

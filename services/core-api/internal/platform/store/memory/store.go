@@ -23,6 +23,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
@@ -95,6 +96,7 @@ type state struct {
 	periodActions             map[string]financialops.PeriodActionRequest
 	glAccounts                map[string]financialops.GLAccount
 	postingMappings           map[string]financialops.PostingMapping
+	reportExports             map[string]reporting.ExportArtifact
 }
 
 func newState() *state {
@@ -119,6 +121,7 @@ func newState() *state {
 		periodActions:             make(map[string]financialops.PeriodActionRequest),
 		glAccounts:                make(map[string]financialops.GLAccount),
 		postingMappings:           make(map[string]financialops.PostingMapping),
+		reportExports:             make(map[string]reporting.ExportArtifact),
 	}
 }
 
@@ -858,6 +861,9 @@ func cloneState(source *state) *state {
 	}
 	for key, value := range source.postingMappings {
 		result.postingMappings[key] = value
+	}
+	for key, value := range source.reportExports {
+		result.reportExports[key] = value
 	}
 	return result
 }

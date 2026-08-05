@@ -11,6 +11,7 @@ import type {
 	BankAccountPage, BankStatement, BankStatementPage, ImportBankStatementCommand, MatchBankStatementLineCommand, ReconcileBankStatementCommand,
 	CreateFinancialDocumentCommand, FinancialDocument, FinancialDocumentPage, FiscalPeriodActionCommand, FiscalPeriodActionPage, FiscalPeriodActionRequest, FiscalPeriodPage, TransitionFinancialDocumentCommand,
 	CreateGLAccountCommand, CreatePostingMappingCommand, GLAccount, GLAccountPage, GovernanceDecisionCommand, PostingMapping, PostingMappingPage,
+	BalanceSheet, CashFlow, ExportFinancialReportCommand, GeneralLedger, ProfitAndLoss, ReportExportArtifact, TrialBalance,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -254,6 +255,12 @@ export class ItembaApiClient {
   listPostingMappings(): Promise<PostingMappingPage> { return this.request("/v1/finance/posting-mappings"); }
   createPostingMapping(command: CreatePostingMappingCommand, idempotencyKey: string): Promise<PostingMapping> { return this.request("/v1/finance/posting-mappings", { method: "POST", body: command, idempotencyKey }); }
   decidePostingMapping(mappingId: string, command: GovernanceDecisionCommand, idempotencyKey: string): Promise<PostingMapping> { return this.request(`/v1/finance/posting-mappings/${encodeURIComponent(mappingId)}/decisions`, { method: "POST", body: command, idempotencyKey }); }
+  trialBalance(asOf: string): Promise<TrialBalance> { return this.request(`/v1/reports/financial/trial-balance?as_of=${encodeURIComponent(asOf)}`); }
+  generalLedger(from: string, to: string, accountId: string): Promise<GeneralLedger> { const query = new URLSearchParams({ from, to, account_id: accountId }); return this.request(`/v1/reports/financial/general-ledger?${query}`); }
+  profitAndLoss(from: string, to: string): Promise<ProfitAndLoss> { const query = new URLSearchParams({ from, to }); return this.request(`/v1/reports/financial/profit-and-loss?${query}`); }
+  balanceSheet(asOf: string): Promise<BalanceSheet> { return this.request(`/v1/reports/financial/balance-sheet?as_of=${encodeURIComponent(asOf)}`); }
+  cashFlow(from: string, to: string): Promise<CashFlow> { const query = new URLSearchParams({ from, to }); return this.request(`/v1/reports/financial/cash-flow?${query}`); }
+  exportFinancialReport(command: ExportFinancialReportCommand, idempotencyKey: string): Promise<ReportExportArtifact> { return this.request("/v1/reports/financial/exports", { method: "POST", body: command, idempotencyKey }); }
 
   listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
     const query = new URLSearchParams({ page_size: "100" });

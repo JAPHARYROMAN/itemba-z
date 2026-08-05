@@ -509,6 +509,67 @@ paths:
       responses:
         '200': { description: Governance decision recorded., content: { application/json: { schema: { $ref: '#/components/schemas/PostingMapping' } } } }
         '409': { $ref: '#/components/responses/Conflict' }
+  /v1/reports/financial/trial-balance:
+    get:
+      summary: Run the legal-company trial balance
+      operationId: runTrialBalance
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: as_of, in: query, required: true, schema: { type: string, format: date } }]
+      responses:
+        '200': { description: Balanced account-level trial balance., content: { application/json: { schema: { $ref: '#/components/schemas/TrialBalance' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/reports/financial/general-ledger:
+    get:
+      summary: Drill into one general-ledger account
+      operationId: runGeneralLedger
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: from, in: query, required: true, schema: { type: string, format: date } }, { name: to, in: query, required: true, schema: { type: string, format: date } }, { name: account_id, in: query, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Chronological ledger with running balance and source drill-down., content: { application/json: { schema: { $ref: '#/components/schemas/GeneralLedger' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/reports/financial/profit-and-loss:
+    get:
+      summary: Run the profit and loss statement
+      operationId: runProfitAndLoss
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: from, in: query, required: true, schema: { type: string, format: date } }, { name: to, in: query, required: true, schema: { type: string, format: date } }]
+      responses:
+        '200': { description: 'Revenue, expenses, and net profit from the immutable ledger.', content: { application/json: { schema: { $ref: '#/components/schemas/ProfitAndLoss' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/reports/financial/balance-sheet:
+    get:
+      summary: Run the balance sheet
+      operationId: runBalanceSheet
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: as_of, in: query, required: true, schema: { type: string, format: date } }]
+      responses:
+        '200': { description: 'Assets, liabilities, equity, current earnings, and reconciliation status.', content: { application/json: { schema: { $ref: '#/components/schemas/BalanceSheet' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/reports/financial/cash-flow:
+    get:
+      summary: Run the cash-flow statement
+      operationId: runCashFlow
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: from, in: query, required: true, schema: { type: string, format: date } }, { name: to, in: query, required: true, schema: { type: string, format: date } }]
+      responses:
+        '200': { description: Cash movement reconciled from opening to closing cash., content: { application/json: { schema: { $ref: '#/components/schemas/CashFlow' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/reports/financial/exports:
+    post:
+      summary: Generate and retain an audited financial report CSV export
+      operationId: exportFinancialReport
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ExportFinancialReportCommand' } } } }
+      responses:
+        '201': { description: Idempotent retained export artifact., content: { application/json: { schema: { $ref: '#/components/schemas/ReportExportArtifact' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /v1/sales:
     post:
       summary: Complete and atomically post a sale
@@ -1397,6 +1458,143 @@ components:
         account_id: { type: string }
         effective_from: { type: string, format: date-time }
         reason: { type: string, minLength: 8, maxLength: 500 }
+    FinancialStatementLine:
+      type: object
+      additionalProperties: false
+      required: [account_id, code, name, type, amount_minor]
+      properties:
+        account_id: { type: string }
+        code: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, UNCLASSIFIED] }
+        amount_minor: { $ref: '#/components/schemas/SafeInteger' }
+        debit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+    TrialBalance:
+      type: object
+      required: [as_of, currency, lines, total_debit_minor, total_credit_minor, balanced, generated_at]
+      properties:
+        as_of: { type: string, format: date-time }
+        currency: { type: string }
+        lines: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        total_debit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        total_credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        balanced: { type: boolean }
+        generated_at: { type: string, format: date-time }
+    GeneralLedgerEntry:
+      type: object
+      required: [journal_line_id, journal_id, occurred_at, source_type, source_id, memo, debit_minor, credit_minor, running_balance_minor]
+      properties:
+        journal_line_id: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        journal_id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        source_type: { type: string }
+        source_id: { type: string, format: uuid }
+        memo: { type: string }
+        debit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        running_balance_minor: { $ref: '#/components/schemas/SafeInteger' }
+    GeneralLedger:
+      type: object
+      required: [from, to, currency, account_id, account_code, account_name, opening_balance_minor, closing_balance_minor, total_debit_minor, total_credit_minor, entries, generated_at]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        currency: { type: string }
+        account_id: { type: string }
+        account_code: { type: string }
+        account_name: { type: string }
+        opening_balance_minor: { $ref: '#/components/schemas/SafeInteger' }
+        closing_balance_minor: { $ref: '#/components/schemas/SafeInteger' }
+        total_debit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        total_credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        entries: { type: array, items: { $ref: '#/components/schemas/GeneralLedgerEntry' } }
+        generated_at: { type: string, format: date-time }
+    ProfitAndLoss:
+      type: object
+      required: [from, to, currency, revenue, expenses, total_revenue_minor, total_expense_minor, net_profit_minor, unclassified_minor, generated_at]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        currency: { type: string }
+        revenue: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        expenses: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        total_revenue_minor: { $ref: '#/components/schemas/SafeInteger' }
+        total_expense_minor: { $ref: '#/components/schemas/SafeInteger' }
+        net_profit_minor: { $ref: '#/components/schemas/SafeInteger' }
+        unclassified_minor: { $ref: '#/components/schemas/SafeInteger' }
+        generated_at: { type: string, format: date-time }
+    BalanceSheet:
+      type: object
+      required: [as_of, currency, assets, liabilities, equity, total_assets_minor, total_liabilities_minor, total_equity_minor, current_earnings_minor, unclassified_minor, balanced, generated_at]
+      properties:
+        as_of: { type: string, format: date-time }
+        currency: { type: string }
+        assets: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        liabilities: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        equity: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        total_assets_minor: { $ref: '#/components/schemas/SafeInteger' }
+        total_liabilities_minor: { $ref: '#/components/schemas/SafeInteger' }
+        total_equity_minor: { $ref: '#/components/schemas/SafeInteger' }
+        current_earnings_minor: { $ref: '#/components/schemas/SafeInteger' }
+        unclassified_minor: { $ref: '#/components/schemas/SafeInteger' }
+        balanced: { type: boolean }
+        generated_at: { type: string, format: date-time }
+    CashMovement:
+      type: object
+      required: [journal_id, occurred_at, source_type, source_id, memo, amount_minor]
+      properties:
+        journal_id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        source_type: { type: string }
+        source_id: { type: string, format: uuid }
+        memo: { type: string }
+        amount_minor: { $ref: '#/components/schemas/SafeInteger' }
+    CashFlowSection:
+      type: object
+      required: [activity, lines, net_minor]
+      properties:
+        activity: { type: string, enum: [OPERATING, INVESTING, FINANCING, UNCLASSIFIED] }
+        lines: { type: array, items: { $ref: '#/components/schemas/CashMovement' } }
+        net_minor: { $ref: '#/components/schemas/SafeInteger' }
+    CashFlow:
+      type: object
+      required: [from, to, currency, opening_cash_minor, operating, investing, financing, unclassified, net_change_minor, closing_cash_minor, reconciled, classified, generated_at]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        currency: { type: string }
+        opening_cash_minor: { $ref: '#/components/schemas/SafeInteger' }
+        operating: { $ref: '#/components/schemas/CashFlowSection' }
+        investing: { $ref: '#/components/schemas/CashFlowSection' }
+        financing: { $ref: '#/components/schemas/CashFlowSection' }
+        unclassified: { $ref: '#/components/schemas/CashFlowSection' }
+        net_change_minor: { $ref: '#/components/schemas/SafeInteger' }
+        closing_cash_minor: { $ref: '#/components/schemas/SafeInteger' }
+        reconciled: { type: boolean }
+        classified: { type: boolean }
+        generated_at: { type: string, format: date-time }
+    ExportFinancialReportCommand:
+      type: object
+      additionalProperties: false
+      required: [report_type]
+      properties:
+        report_type: { type: string, enum: [TRIAL_BALANCE, GENERAL_LEDGER, PROFIT_AND_LOSS, BALANCE_SHEET, CASH_FLOW] }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        as_of: { type: string, format: date }
+        account_id: { type: string }
+    ReportExportArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, report_type, filename, media_type, content_base64, generated_at]
+      properties:
+        id: { type: string, format: uuid }
+        report_type: { type: string, enum: [TRIAL_BALANCE, GENERAL_LEDGER, PROFIT_AND_LOSS, BALANCE_SHEET, CASH_FLOW] }
+        filename: { type: string }
+        media_type: { type: string, enum: [text/csv] }
+        content_base64: { type: string, format: byte }
+        generated_at: { type: string, format: date-time }
     JournalEntry:
       type: object
       additionalProperties: false

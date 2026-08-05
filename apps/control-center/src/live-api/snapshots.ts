@@ -8,6 +8,7 @@ import type {
 	OperationsWorkspace,
 	BankingWorkspace,
 	FinanceControlWorkspace,
+	FinancialReportsWorkspace,
 } from "@/live-api/types";
 
 export async function loadCustomerAccounts(): Promise<LiveSnapshot<CustomerAccountsWorkspace>> {
@@ -25,6 +26,15 @@ export async function loadFinanceControlWorkspace(): Promise<LiveSnapshot<Financ
     const repository = await createServerRepository();
     const [context, accounts, glAccounts, postingMappings, documents, periods, periodActions] = await Promise.all([repository.getWorkingContext(), repository.listBankAccounts(), repository.listGLAccounts(), repository.listPostingMappings(), repository.listFinancialDocuments(), repository.listFiscalPeriods(), repository.listFiscalPeriodActions()]);
     return { state: "ready", data: { context, accounts: accounts.items, glAccounts: glAccounts.items, postingMappings: postingMappings.items, documents: documents.items, periods: periods.items, periodActions: periodActions.items } };
+  } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
+}
+
+export async function loadFinancialReportsWorkspace(): Promise<LiveSnapshot<FinancialReportsWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const now = new Date(); const parts = new Intl.DateTimeFormat("en", { timeZone: "Africa/Dar_es_Salaam", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now); const datePart = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? ""; const to = `${datePart("year")}-${datePart("month")}-${datePart("day")}`; const from = `${to.slice(0, 8)}01`; const asOf = to;
+    const [context, accounts, trialBalance, profitAndLoss, balanceSheet, cashFlow] = await Promise.all([repository.getWorkingContext(), repository.listGLAccounts(), repository.trialBalance(asOf), repository.profitAndLoss(from, to), repository.balanceSheet(asOf), repository.cashFlow(from, to)]);
+    return { state: "ready", data: { context, accounts: accounts.items.filter((account) => account.status === "ACTIVE" || account.status === "INACTIVE"), from, to, asOf, trialBalance, profitAndLoss, balanceSheet, cashFlow } };
   } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
 }
 
