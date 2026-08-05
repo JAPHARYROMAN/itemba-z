@@ -12,6 +12,7 @@ import type {
 	CreateFinancialDocumentCommand, FinancialDocument, FinancialDocumentPage, FiscalPeriodActionCommand, FiscalPeriodActionPage, FiscalPeriodActionRequest, FiscalPeriodPage, TransitionFinancialDocumentCommand,
 	CreateGLAccountCommand, CreatePostingMappingCommand, GLAccount, GLAccountPage, GovernanceDecisionCommand, PostingMapping, PostingMappingPage,
 	BalanceSheet, CashFlow, ExportFinancialReportCommand, GeneralLedger, ProfitAndLoss, ReportExportArtifact, TrialBalance,
+	AdvancedFinanceTransitionCommand, Budget, BudgetActual, BudgetPage, CreateBudgetCommand, CreateFixedAssetCommand, DepreciateFixedAssetCommand, DisposeFixedAssetCommand, FixedAsset, FixedAssetDepreciation, FixedAssetPage,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -261,6 +262,15 @@ export class ItembaApiClient {
   balanceSheet(asOf: string): Promise<BalanceSheet> { return this.request(`/v1/reports/financial/balance-sheet?as_of=${encodeURIComponent(asOf)}`); }
   cashFlow(from: string, to: string): Promise<CashFlow> { const query = new URLSearchParams({ from, to }); return this.request(`/v1/reports/financial/cash-flow?${query}`); }
   exportFinancialReport(command: ExportFinancialReportCommand, idempotencyKey: string): Promise<ReportExportArtifact> { return this.request("/v1/reports/financial/exports", { method: "POST", body: command, idempotencyKey }); }
+  listBudgets(): Promise<BudgetPage> { return this.request("/v1/finance/budgets"); }
+  createBudget(command: CreateBudgetCommand, idempotencyKey: string): Promise<Budget> { return this.request("/v1/finance/budgets", { method: "POST", body: command, idempotencyKey }); }
+  transitionBudget(id: string, command: AdvancedFinanceTransitionCommand, idempotencyKey: string): Promise<Budget> { return this.request(`/v1/finance/budgets/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey }); }
+  budgetActual(id: string): Promise<BudgetActual> { return this.request(`/v1/finance/budgets/${encodeURIComponent(id)}/actual`); }
+  listFixedAssets(): Promise<FixedAssetPage> { return this.request("/v1/finance/assets"); }
+  createFixedAsset(command: CreateFixedAssetCommand, idempotencyKey: string): Promise<FixedAsset> { return this.request("/v1/finance/assets", { method: "POST", body: command, idempotencyKey }); }
+  transitionFixedAsset(id: string, command: AdvancedFinanceTransitionCommand, idempotencyKey: string): Promise<FixedAsset> { return this.request(`/v1/finance/assets/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey }); }
+  depreciateFixedAsset(id: string, command: DepreciateFixedAssetCommand, idempotencyKey: string): Promise<FixedAssetDepreciation> { return this.request(`/v1/finance/assets/${encodeURIComponent(id)}/depreciation`, { method: "POST", body: command, idempotencyKey }); }
+  disposeFixedAsset(id: string, command: DisposeFixedAssetCommand, idempotencyKey: string): Promise<FixedAsset> { return this.request(`/v1/finance/assets/${encodeURIComponent(id)}/disposal`, { method: "POST", body: command, idempotencyKey }); }
 
   listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
     const query = new URLSearchParams({ page_size: "100" });

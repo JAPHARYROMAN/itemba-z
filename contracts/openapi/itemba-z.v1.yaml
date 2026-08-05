@@ -570,6 +570,80 @@ paths:
       responses:
         '201': { description: Idempotent retained export artifact., content: { application/json: { schema: { $ref: '#/components/schemas/ReportExportArtifact' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/finance/budgets:
+    get:
+      summary: List governed legal-company budgets
+      operationId: listBudgets
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses: { '200': { description: Governed budgets., content: { application/json: { schema: { $ref: '#/components/schemas/BudgetPage' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+    post:
+      summary: Create an immutable draft budget
+      operationId: createBudget
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateBudgetCommand' } } } }
+      responses: { '201': { description: Draft budget., content: { application/json: { schema: { $ref: '#/components/schemas/Budget' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/budgets/{budget_id}/transitions:
+    post:
+      summary: Submit or independently decide a budget
+      operationId: transitionBudget
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: budget_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdvancedFinanceTransitionCommand' } } } }
+      responses: { '200': { description: Current budget., content: { application/json: { schema: { $ref: '#/components/schemas/Budget' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/budgets/{budget_id}/actual:
+    get:
+      summary: Run approved budget versus actual
+      operationId: runBudgetActual
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: budget_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Ledger-derived budget comparison., content: { application/json: { schema: { $ref: '#/components/schemas/BudgetActual' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/finance/assets:
+    get:
+      summary: List the scoped fixed-asset register
+      operationId: listFixedAssets
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses: { '200': { description: Fixed assets., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAssetPage' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+    post:
+      summary: Create an immutable draft fixed asset
+      operationId: createFixedAsset
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateFixedAssetCommand' } } } }
+      responses: { '201': { description: Draft fixed asset., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAsset' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/assets/{asset_id}/transitions:
+    post:
+      summary: Submit or independently decide fixed-asset capitalization
+      operationId: transitionFixedAsset
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdvancedFinanceTransitionCommand' } } } }
+      responses: { '200': { description: Current fixed asset., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAsset' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/assets/{asset_id}/depreciation:
+    post:
+      summary: Post one idempotent straight-line depreciation period
+      operationId: depreciateFixedAsset
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DepreciateFixedAssetCommand' } } } }
+      responses: { '201': { description: Posted depreciation evidence., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAssetDepreciation' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/assets/{asset_id}/disposal:
+    post:
+      summary: Post a controlled fixed-asset disposal
+      operationId: disposeFixedAsset
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DisposeFixedAssetCommand' } } } }
+      responses: { '200': { description: Disposed fixed asset., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAsset' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
   /v1/sales:
     post:
       summary: Complete and atomically post a sale
@@ -992,6 +1066,107 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    AdvancedFinanceStatus: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, REJECTED, ACTIVE, DISPOSED] }
+    BudgetLine:
+      type: object
+      additionalProperties: false
+      required: [account_id, month, amount_minor]
+      properties: { account_id: { type: string }, month: { type: string, format: date }, amount_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' } }
+    Budget:
+      type: object
+      additionalProperties: false
+      required: [id, scope, name, fiscal_year, currency, status, reason, lines, created_by, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        name: { type: string }
+        fiscal_year: { type: integer, minimum: 2000, maximum: 2200 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        status: { $ref: '#/components/schemas/AdvancedFinanceStatus' }
+        reason: { type: string }
+        lines: { type: array, items: { $ref: '#/components/schemas/BudgetLine' } }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+    BudgetPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/Budget' } } }
+    CreateBudgetCommand:
+      type: object
+      additionalProperties: false
+      required: [name, fiscal_year, currency, reason, lines]
+      properties: { name: { type: string, minLength: 3, maxLength: 120 }, fiscal_year: { type: integer, minimum: 2000, maximum: 2200 }, currency: { type: string, pattern: '^[A-Z]{3}$' }, reason: { type: string, minLength: 8, maxLength: 500 }, lines: { type: array, minItems: 1, maxItems: 5000, items: { $ref: '#/components/schemas/BudgetLine' } } }
+    AdvancedFinanceTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties: { status: { $ref: '#/components/schemas/AdvancedFinanceStatus' }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    BudgetActualLine:
+      type: object
+      additionalProperties: false
+      required: [account_id, code, name, month, budget_minor, actual_minor, variance_minor]
+      properties: { account_id: { type: string }, code: { type: string }, name: { type: string }, month: { type: string, format: date-time }, budget_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, actual_minor: { $ref: '#/components/schemas/SafeInteger' }, variance_minor: { $ref: '#/components/schemas/SafeInteger' } }
+    BudgetActual:
+      type: object
+      additionalProperties: false
+      required: [budget_id, currency, lines, total_budget_minor, total_actual_minor, total_variance_minor, generated_at]
+      properties: { budget_id: { type: string, format: uuid }, currency: { type: string }, lines: { type: array, items: { $ref: '#/components/schemas/BudgetActualLine' } }, total_budget_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, total_actual_minor: { $ref: '#/components/schemas/SafeInteger' }, total_variance_minor: { $ref: '#/components/schemas/SafeInteger' }, generated_at: { type: string, format: date-time } }
+    FixedAsset:
+      type: object
+      additionalProperties: false
+      required: [id, scope, code, name, category, status, currency, acquired_at, cost_minor, residual_minor, useful_life_months, accumulated_depreciation_minor, net_book_value_minor, asset_account_id, accumulated_depreciation_account_id, depreciation_expense_account_id, capitalization_offset_account_id, disposal_gain_account_id, disposal_loss_account_id, reason, created_by, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        code: { type: string }
+        name: { type: string }
+        category: { type: string }
+        status: { $ref: '#/components/schemas/AdvancedFinanceStatus' }
+        currency: { type: string }
+        acquired_at: { type: string, format: date-time }
+        cost_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        residual_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        useful_life_months: { type: integer, minimum: 1, maximum: 1200 }
+        accumulated_depreciation_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        net_book_value_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        asset_account_id: { type: string }
+        accumulated_depreciation_account_id: { type: string }
+        depreciation_expense_account_id: { type: string }
+        capitalization_offset_account_id: { type: string }
+        disposal_gain_account_id: { type: string }
+        disposal_loss_account_id: { type: string }
+        reason: { type: string }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+        disposed_at: { type: string, format: date-time }
+    FixedAssetPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/FixedAsset' } } }
+    CreateFixedAssetCommand:
+      type: object
+      additionalProperties: false
+      required: [code, name, category, currency, acquired_at, cost_minor, residual_minor, useful_life_months, asset_account_id, accumulated_depreciation_account_id, depreciation_expense_account_id, capitalization_offset_account_id, disposal_gain_account_id, disposal_loss_account_id, reason]
+      properties: { code: { type: string }, name: { type: string }, category: { type: string }, currency: { type: string }, acquired_at: { type: string, format: date }, cost_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, residual_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, useful_life_months: { type: integer, minimum: 1, maximum: 1200 }, asset_account_id: { type: string }, accumulated_depreciation_account_id: { type: string }, depreciation_expense_account_id: { type: string }, capitalization_offset_account_id: { type: string }, disposal_gain_account_id: { type: string }, disposal_loss_account_id: { type: string }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    DepreciateFixedAssetCommand:
+      type: object
+      additionalProperties: false
+      required: [period, reason]
+      properties: { period: { type: string, format: date }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    DisposeFixedAssetCommand:
+      type: object
+      additionalProperties: false
+      required: [proceeds_minor, proceeds_account_id, reason]
+      properties: { proceeds_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, proceeds_account_id: { type: string }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    FixedAssetDepreciation:
+      type: object
+      additionalProperties: false
+      required: [id, asset_id, period, amount_minor, journal_id, posted_by, posted_at]
+      properties: { id: { type: string, format: uuid }, asset_id: { type: string, format: uuid }, period: { type: string, format: date-time }, amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, journal_id: { type: string, format: uuid }, posted_by: { type: string, format: uuid }, posted_at: { type: string, format: date-time } }
     Health:
       type: object
       additionalProperties: false

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/advancedfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
@@ -32,16 +33,17 @@ const maxBodyBytes = 1 << 20
 var correlationIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
 
 type Handler struct {
-	sales         *sales.Service
-	read          *readmodel.Service
-	mobile        *mobile.Service
-	receivables   *receivables.Service
-	operations    *operations.Service
-	banking       *banking.Service
-	financialops  *financialops.Service
-	reporting     *reporting.Service
-	logger        *slog.Logger
-	authenticator Authenticator
+	sales           *sales.Service
+	read            *readmodel.Service
+	mobile          *mobile.Service
+	receivables     *receivables.Service
+	operations      *operations.Service
+	banking         *banking.Service
+	financialops    *financialops.Service
+	reporting       *reporting.Service
+	advancedfinance *advancedfinance.Service
+	logger          *slog.Logger
+	authenticator   Authenticator
 }
 
 func New(salesService *sales.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
@@ -117,6 +119,18 @@ func NewLiveWithReporting(salesService *sales.Service, readService *readmodel.Se
 	return handler, nil
 }
 
+func NewLiveWithAdvancedFinance(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, bankingService *banking.Service, financialService *financialops.Service, reportingService *reporting.Service, advancedService *advancedfinance.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLiveWithReporting(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if advancedService == nil {
+		return nil, errors.New("advanced finance service is required")
+	}
+	handler.advancedfinance = advancedService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
@@ -166,6 +180,17 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("GET /v1/reports/financial/balance-sheet", h.balanceSheet)
 		mux.HandleFunc("GET /v1/reports/financial/cash-flow", h.cashFlow)
 		mux.HandleFunc("POST /v1/reports/financial/exports", h.exportFinancialReport)
+	}
+	if h.advancedfinance != nil {
+		mux.HandleFunc("GET /v1/finance/budgets", h.listBudgets)
+		mux.HandleFunc("POST /v1/finance/budgets", h.createBudget)
+		mux.HandleFunc("POST /v1/finance/budgets/{budgetID}/transitions", h.transitionBudget)
+		mux.HandleFunc("GET /v1/finance/budgets/{budgetID}/actual", h.budgetActual)
+		mux.HandleFunc("GET /v1/finance/assets", h.listAssets)
+		mux.HandleFunc("POST /v1/finance/assets", h.createAsset)
+		mux.HandleFunc("POST /v1/finance/assets/{assetID}/transitions", h.transitionAsset)
+		mux.HandleFunc("POST /v1/finance/assets/{assetID}/depreciation", h.depreciateAsset)
+		mux.HandleFunc("POST /v1/finance/assets/{assetID}/disposal", h.disposeAsset)
 	}
 	if h.mobile != nil {
 		mux.HandleFunc("POST /v1/mobile/devices/enroll", h.enrollDevice)
@@ -1122,6 +1147,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, reporting.ErrInvalidQuery):
 		status, code = http.StatusBadRequest, "invalid_report_query"
+	case errors.Is(err, advancedfinance.ErrInvalidCommand):
+		status, code = http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, advancedfinance.ErrInvalidTransition), errors.Is(err, advancedfinance.ErrSeparationOfDuties), errors.Is(err, advancedfinance.ErrAssetFullyDepreciated):
+		status, code = http.StatusConflict, "advanced_finance_conflict"
 	}
 	if status == http.StatusInternalServerError {
 		h.logger.ErrorContext(request.Context(), "request failed", "method", request.Method, "path", request.URL.Path, "error", err)

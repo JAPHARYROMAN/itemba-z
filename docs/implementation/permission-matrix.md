@@ -34,3 +34,9 @@ Customer receivables are separately split into `customers.accounts.read` and
 effective policy. Credit management only appends a reasoned, future-effective
 policy; it cannot edit history, alter ledger balances, enable General Customer
 credit, or bypass overdue, risk-hold, and reconciliation controls.
+
+Advanced finance separates budget read/manage/approve and fixed-asset
+read/manage/approve/depreciate/dispose permissions. Budget and capitalization
+approval reject the originating maker. Depreciation and disposal remain
+separate ledger-posting capabilities and must be assigned only to finance roles
+authorized for the relevant legal company and operating scope.

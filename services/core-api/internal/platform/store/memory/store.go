@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/advancedfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/catalog"
@@ -97,6 +98,9 @@ type state struct {
 	glAccounts                map[string]financialops.GLAccount
 	postingMappings           map[string]financialops.PostingMapping
 	reportExports             map[string]reporting.ExportArtifact
+	budgets                   map[string]advancedfinance.Budget
+	assets                    map[string]advancedfinance.Asset
+	depreciation              map[string]advancedfinance.Depreciation
 }
 
 func newState() *state {
@@ -122,6 +126,9 @@ func newState() *state {
 		glAccounts:                make(map[string]financialops.GLAccount),
 		postingMappings:           make(map[string]financialops.PostingMapping),
 		reportExports:             make(map[string]reporting.ExportArtifact),
+		budgets:                   make(map[string]advancedfinance.Budget),
+		assets:                    make(map[string]advancedfinance.Asset),
+		depreciation:              make(map[string]advancedfinance.Depreciation),
 	}
 }
 
@@ -864,6 +871,16 @@ func cloneState(source *state) *state {
 	}
 	for key, value := range source.reportExports {
 		result.reportExports[key] = value
+	}
+	for key, value := range source.budgets {
+		value.Lines = append([]advancedfinance.BudgetLine(nil), value.Lines...)
+		result.budgets[key] = value
+	}
+	for key, value := range source.assets {
+		result.assets[key] = value
+	}
+	for key, value := range source.depreciation {
+		result.depreciation[key] = value
 	}
 	return result
 }

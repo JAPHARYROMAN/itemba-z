@@ -604,6 +604,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/finance/budgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List governed legal-company budgets */
+        get: operations["listBudgets"];
+        put?: never;
+        /** Create an immutable draft budget */
+        post: operations["createBudget"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/budgets/{budget_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit or independently decide a budget */
+        post: operations["transitionBudget"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/budgets/{budget_id}/actual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run approved budget versus actual */
+        get: operations["runBudgetActual"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the scoped fixed-asset register */
+        get: operations["listFixedAssets"];
+        put?: never;
+        /** Create an immutable draft fixed asset */
+        post: operations["createFixedAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/assets/{asset_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit or independently decide fixed-asset capitalization */
+        post: operations["transitionFixedAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/assets/{asset_id}/depreciation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post one idempotent straight-line depreciation period */
+        post: operations["depreciateFixedAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/assets/{asset_id}/disposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post a controlled fixed-asset disposal */
+        post: operations["disposeFixedAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sales": {
         parameters: {
             query?: never;
@@ -814,6 +935,144 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        AdvancedFinanceStatus: "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED" | "ACTIVE" | "DISPOSED";
+        BudgetLine: {
+            account_id: string;
+            /** Format: date */
+            month: string;
+            amount_minor: components["schemas"]["SafeNonNegativeInteger"];
+        };
+        Budget: {
+            /** Format: uuid */
+            id: string;
+            scope: components["schemas"]["Scope"];
+            name: string;
+            fiscal_year: number;
+            currency: string;
+            status: components["schemas"]["AdvancedFinanceStatus"];
+            reason: string;
+            lines: components["schemas"]["BudgetLine"][];
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            approved_by?: string;
+        };
+        BudgetPage: {
+            items: components["schemas"]["Budget"][];
+        };
+        CreateBudgetCommand: {
+            name: string;
+            fiscal_year: number;
+            currency: string;
+            reason: string;
+            lines: components["schemas"]["BudgetLine"][];
+        };
+        AdvancedFinanceTransitionCommand: {
+            status: components["schemas"]["AdvancedFinanceStatus"];
+            reason: string;
+        };
+        BudgetActualLine: {
+            account_id: string;
+            code: string;
+            name: string;
+            /** Format: date-time */
+            month: string;
+            budget_minor: components["schemas"]["SafeNonNegativeInteger"];
+            actual_minor: components["schemas"]["SafeInteger"];
+            variance_minor: components["schemas"]["SafeInteger"];
+        };
+        BudgetActual: {
+            /** Format: uuid */
+            budget_id: string;
+            currency: string;
+            lines: components["schemas"]["BudgetActualLine"][];
+            total_budget_minor: components["schemas"]["SafeNonNegativeInteger"];
+            total_actual_minor: components["schemas"]["SafeInteger"];
+            total_variance_minor: components["schemas"]["SafeInteger"];
+            /** Format: date-time */
+            generated_at: string;
+        };
+        FixedAsset: {
+            /** Format: uuid */
+            id: string;
+            scope: components["schemas"]["Scope"];
+            code: string;
+            name: string;
+            category: string;
+            status: components["schemas"]["AdvancedFinanceStatus"];
+            currency: string;
+            /** Format: date-time */
+            acquired_at: string;
+            cost_minor: components["schemas"]["SafePositiveInteger"];
+            residual_minor: components["schemas"]["SafeNonNegativeInteger"];
+            useful_life_months: number;
+            accumulated_depreciation_minor: components["schemas"]["SafeNonNegativeInteger"];
+            net_book_value_minor: components["schemas"]["SafeNonNegativeInteger"];
+            asset_account_id: string;
+            accumulated_depreciation_account_id: string;
+            depreciation_expense_account_id: string;
+            capitalization_offset_account_id: string;
+            disposal_gain_account_id: string;
+            disposal_loss_account_id: string;
+            reason: string;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            approved_by?: string;
+            /** Format: date-time */
+            disposed_at?: string;
+        };
+        FixedAssetPage: {
+            items: components["schemas"]["FixedAsset"][];
+        };
+        CreateFixedAssetCommand: {
+            code: string;
+            name: string;
+            category: string;
+            currency: string;
+            /** Format: date */
+            acquired_at: string;
+            cost_minor: components["schemas"]["SafePositiveInteger"];
+            residual_minor: components["schemas"]["SafeNonNegativeInteger"];
+            useful_life_months: number;
+            asset_account_id: string;
+            accumulated_depreciation_account_id: string;
+            depreciation_expense_account_id: string;
+            capitalization_offset_account_id: string;
+            disposal_gain_account_id: string;
+            disposal_loss_account_id: string;
+            reason: string;
+        };
+        DepreciateFixedAssetCommand: {
+            /** Format: date */
+            period: string;
+            reason: string;
+        };
+        DisposeFixedAssetCommand: {
+            proceeds_minor: components["schemas"]["SafeNonNegativeInteger"];
+            proceeds_account_id: string;
+            reason: string;
+        };
+        FixedAssetDepreciation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            asset_id: string;
+            /** Format: date-time */
+            period: string;
+            amount_minor: components["schemas"]["SafePositiveInteger"];
+            /** Format: uuid */
+            journal_id: string;
+            /** Format: uuid */
+            posted_by: string;
+            /** Format: date-time */
+            posted_at: string;
+        };
         Health: {
             /** @enum {string} */
             status: "healthy";
@@ -2991,6 +3250,247 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listBudgets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Governed budgets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createBudget: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBudgetCommand"];
+            };
+        };
+        responses: {
+            /** @description Draft budget. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Budget"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    transitionBudget: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                budget_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdvancedFinanceTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Current budget. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Budget"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    runBudgetActual: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                budget_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ledger-derived budget comparison. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetActual"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listFixedAssets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Fixed assets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixedAssetPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createFixedAsset: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFixedAssetCommand"];
+            };
+        };
+        responses: {
+            /** @description Draft fixed asset. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixedAsset"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    transitionFixedAsset: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdvancedFinanceTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Current fixed asset. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixedAsset"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    depreciateFixedAsset: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepreciateFixedAssetCommand"];
+            };
+        };
+        responses: {
+            /** @description Posted depreciation evidence. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixedAssetDepreciation"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    disposeFixedAsset: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DisposeFixedAssetCommand"];
+            };
+        };
+        responses: {
+            /** @description Disposed fixed asset. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixedAsset"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
         };
     };
     listSales: {

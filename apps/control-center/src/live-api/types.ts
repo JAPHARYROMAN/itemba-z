@@ -124,3 +124,15 @@ export type ExportFinancialReportCommand = components["schemas"]["ExportFinancia
 export type ReportExportArtifact = components["schemas"]["ReportExportArtifact"];
 export interface FinancialReportsWorkspace { context: WorkingContext; accounts: GLAccount[]; from: string; to: string; asOf: string; trialBalance: TrialBalance; profitAndLoss: ProfitAndLoss; balanceSheet: BalanceSheet; cashFlow: CashFlow }
 export interface FinanceControlWorkspace { context: WorkingContext; accounts: BankAccount[]; glAccounts: GLAccount[]; postingMappings: PostingMapping[]; documents: FinancialDocument[]; periods: FiscalPeriod[]; periodActions: FiscalPeriodActionRequest[] }
+export type Budget = components["schemas"]["Budget"];
+export type BudgetPage = components["schemas"]["BudgetPage"];
+export type BudgetActual = components["schemas"]["BudgetActual"];
+export type CreateBudgetCommand = components["schemas"]["CreateBudgetCommand"];
+export type AdvancedFinanceTransitionCommand = components["schemas"]["AdvancedFinanceTransitionCommand"];
+export type FixedAsset = components["schemas"]["FixedAsset"];
+export type FixedAssetPage = components["schemas"]["FixedAssetPage"];
+export type CreateFixedAssetCommand = components["schemas"]["CreateFixedAssetCommand"];
+export type FixedAssetDepreciation = components["schemas"]["FixedAssetDepreciation"];
+export type DepreciateFixedAssetCommand = components["schemas"]["DepreciateFixedAssetCommand"];
+export type DisposeFixedAssetCommand = components["schemas"]["DisposeFixedAssetCommand"];
+export interface AdvancedFinanceWorkspace { context: WorkingContext; accounts: GLAccount[]; budgets: Budget[]; assets: FixedAsset[] }

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/advancedfinance"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -45,7 +46,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -224,6 +225,46 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	artifact, err := reportingService.Export(ctx, reporting.ExportCommand{Query: reportQuery, Type: reporting.ReportTrialBalance, IdempotencyKey: "integration-report-export-1"})
 	if err != nil || artifact.ContentBase64 == "" {
 		t.Fatalf("report export: %+v %v", artifact, err)
+	}
+	advancedService, err := advancedfinance.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(90 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget, err := advancedService.CreateBudget(ctx, advancedfinance.CreateBudgetCommand{Scope: scope, Name: "Integration operating budget", FiscalYear: testTime.Year(), Currency: "TZS", Reason: "Approved integration operating plan", ActorID: userID, IdempotencyKey: "integration-budget-create-1", Lines: []advancedfinance.BudgetLine{{AccountID: "expense", Month: time.Date(testTime.Year(), testTime.Month(), 1, 0, 0, 0, 0, time.UTC), AmountMinor: 5000}}})
+	if err != nil {
+		t.Fatalf("create budget: %v", err)
+	}
+	budget, err = advancedService.TransitionBudget(ctx, advancedfinance.TransitionCommand{Scope: scope, ID: budget.ID, Status: advancedfinance.Submitted, Reason: "Budget evidence ready for review", ActorID: userID, IdempotencyKey: "integration-budget-submit-1"})
+	if err != nil {
+		t.Fatalf("submit budget: %v", err)
+	}
+	budget, err = advancedService.TransitionBudget(ctx, advancedfinance.TransitionCommand{Scope: scope, ID: budget.ID, Status: advancedfinance.Approved, Reason: "Independent budget review completed", ActorID: approverID, IdempotencyKey: "integration-budget-approve1"})
+	if err != nil {
+		t.Fatalf("approve budget: %v", err)
+	}
+	actual, err := advancedService.BudgetActual(ctx, scope, approverID, budget.ID)
+	if err != nil || len(actual.Lines) != 1 || actual.Lines[0].ActualMinor != 1500 {
+		t.Fatalf("budget actual: %+v %v", actual, err)
+	}
+	asset, err := advancedService.CreateAsset(ctx, advancedfinance.CreateAssetCommand{Scope: scope, Code: "INT-ASSET-1", Name: "Integration fixed asset", Category: "Equipment", Currency: "TZS", AcquiredAt: testTime, CostMinor: 12000, ResidualMinor: 0, UsefulLifeMonths: 12, AssetAccountID: "inventory", AccumulatedDepreciationAccountID: "suspense", DepreciationExpenseAccountID: "expense", CapitalizationOffsetAccountID: "payable", DisposalGainAccountID: "revenue", DisposalLossAccountID: "cogs", Reason: "Approved integration asset purchase", ActorID: userID, IdempotencyKey: "integration-asset-create-1"})
+	if err != nil {
+		t.Fatalf("create asset: %v", err)
+	}
+	asset, err = advancedService.TransitionAsset(ctx, advancedfinance.TransitionCommand{Scope: scope, ID: asset.ID, Status: advancedfinance.Submitted, Reason: "Asset evidence ready for review", ActorID: userID, IdempotencyKey: "integration-asset-submit-1"})
+	if err != nil {
+		t.Fatalf("submit asset: %v", err)
+	}
+	asset, err = advancedService.TransitionAsset(ctx, advancedfinance.TransitionCommand{Scope: scope, ID: asset.ID, Status: advancedfinance.Active, Reason: "Independent capitalization approved", ActorID: approverID, IdempotencyKey: "integration-asset-active-1"})
+	if err != nil {
+		t.Fatalf("activate asset: %v", err)
+	}
+	depreciation, err := advancedService.Depreciate(ctx, advancedfinance.DepreciateCommand{Scope: scope, AssetID: asset.ID, Period: time.Date(testTime.Year(), testTime.Month(), 1, 0, 0, 0, 0, time.UTC), Reason: "Approved monthly asset depreciation", ActorID: approverID, IdempotencyKey: "integration-asset-depr-001"})
+	if err != nil || depreciation.AmountMinor != 1000 {
+		t.Fatalf("depreciate asset: %+v %v", depreciation, err)
+	}
+	asset, err = advancedService.Dispose(ctx, advancedfinance.DisposeCommand{Scope: scope, AssetID: asset.ID, ProceedsMinor: 10000, ProceedsAccountID: "cash", Reason: "Approved integration asset disposal", ActorID: approverID, IdempotencyKey: "integration-asset-dispose1"})
+	if err != nil || asset.Status != advancedfinance.Disposed {
+		t.Fatalf("dispose asset: %+v %v", asset, err)
 	}
 	closeRequest, err := financialService.RequestPeriodAction(ctx, financialops.PeriodCommand{Scope: scope, PeriodID: periodID, Action: financialops.ClosePeriod, Reason: "Integration reconciliations ready for close", ActorID: userID, IdempotencyKey: "integration-period-close-01"})
 	if err != nil {
@@ -709,7 +750,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 1 || salesCount != 7 || journalCount != 16 || outboxCount != 63 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 19 || outboxCount != 71 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }

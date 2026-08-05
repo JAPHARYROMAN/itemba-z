@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/advancedfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/httpapi"
@@ -145,7 +146,17 @@ func main() {
 		logger.Error("initialize financial reporting service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithReporting(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, logger, authenticator)
+	advancedRepository, ok := repository.(advancedfinance.Repository)
+	if !ok {
+		logger.Error("repository does not implement advanced finance")
+		os.Exit(1)
+	}
+	advancedService, err := advancedfinance.NewService(advancedRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize advanced finance service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithAdvancedFinance(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)
