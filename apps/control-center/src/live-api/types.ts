@@ -142,3 +142,9 @@ export type CreateTreasuryFacilityCommand = components["schemas"]["CreateTreasur
 export type TreasuryTransitionCommand = components["schemas"]["TreasuryTransitionCommand"];
 export type PostTreasuryTransactionCommand = components["schemas"]["PostTreasuryTransactionCommand"];
 export interface TreasuryWorkspace { context: WorkingContext; accounts: GLAccount[]; facilities: TreasuryFacility[] }
+export type IntercompanyTransaction = components["schemas"]["IntercompanyTransaction"];
+export type IntercompanyPage = components["schemas"]["IntercompanyPage"];
+export type CreateIntercompanyCommand = components["schemas"]["CreateIntercompanyCommand"];
+export type IntercompanyTransitionCommand = components["schemas"]["IntercompanyTransitionCommand"];
+export type GroupConsolidation = components["schemas"]["GroupConsolidation"];
+export interface GroupFinanceWorkspace { context: WorkingContext; accounts: GLAccount[]; transactions: IntercompanyTransaction[]; consolidation: GroupConsolidation | null }

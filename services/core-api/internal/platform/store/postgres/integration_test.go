@@ -20,6 +20,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
@@ -47,7 +48,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -59,27 +60,33 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 
 	const (
-		tenantID         = "00000000-0000-4000-8000-000000000001"
-		companyID        = "00000000-0000-4000-8000-000000000002"
-		branchID         = "00000000-0000-4000-8000-0000000000a3"
-		warehouseID      = "00000000-0000-4000-8000-0000000000b4"
-		userID           = "00000000-0000-4000-8000-0000000000d5"
-		roleID           = "00000000-0000-4000-8000-000000000006"
-		scopeID          = "00000000-0000-4000-8000-000000000007"
-		customerID       = "00000000-0000-4000-8000-0000000000e8"
-		creditCustomerID = "00000000-0000-4000-8000-0000000000e9"
-		productID        = "00000000-0000-4000-8000-0000000000c9"
-		taxID            = "00000000-0000-4000-8000-00000000000a"
-		periodID         = "00000000-0000-4000-8000-00000000000b"
-		stockID          = "00000000-0000-4000-8000-00000000000c"
-		openingID        = "00000000-0000-4000-8000-00000000000d"
-		otherBranchID    = "00000000-0000-4000-8000-00000000000e"
-		otherWarehouseID = "00000000-0000-4000-8000-00000000000f"
-		otherScopeID     = "00000000-0000-4000-8000-000000000010"
-		approverID       = "00000000-0000-4000-8000-000000000011"
-		approverScopeID  = "00000000-0000-4000-8000-000000000012"
-		supplierID       = "00000000-0000-4000-8000-000000000013"
-		bankAccountID    = "00000000-0000-4000-8000-000000000014"
+		tenantID          = "00000000-0000-4000-8000-000000000001"
+		companyID         = "00000000-0000-4000-8000-000000000002"
+		branchID          = "00000000-0000-4000-8000-0000000000a3"
+		warehouseID       = "00000000-0000-4000-8000-0000000000b4"
+		userID            = "00000000-0000-4000-8000-0000000000d5"
+		roleID            = "00000000-0000-4000-8000-000000000006"
+		scopeID           = "00000000-0000-4000-8000-000000000007"
+		customerID        = "00000000-0000-4000-8000-0000000000e8"
+		creditCustomerID  = "00000000-0000-4000-8000-0000000000e9"
+		productID         = "00000000-0000-4000-8000-0000000000c9"
+		taxID             = "00000000-0000-4000-8000-00000000000a"
+		periodID          = "00000000-0000-4000-8000-00000000000b"
+		stockID           = "00000000-0000-4000-8000-00000000000c"
+		openingID         = "00000000-0000-4000-8000-00000000000d"
+		otherBranchID     = "00000000-0000-4000-8000-00000000000e"
+		otherWarehouseID  = "00000000-0000-4000-8000-00000000000f"
+		otherScopeID      = "00000000-0000-4000-8000-000000000010"
+		approverID        = "00000000-0000-4000-8000-000000000011"
+		approverScopeID   = "00000000-0000-4000-8000-000000000012"
+		supplierID        = "00000000-0000-4000-8000-000000000013"
+		bankAccountID     = "00000000-0000-4000-8000-000000000014"
+		secondCompanyID   = "00000000-0000-4000-8000-000000000015"
+		secondBranchID    = "00000000-0000-4000-8000-000000000016"
+		secondWarehouseID = "00000000-0000-4000-8000-000000000017"
+		counterApproverID = "00000000-0000-4000-8000-000000000018"
+		counterScopeID    = "00000000-0000-4000-8000-000000000019"
+		secondPeriodID    = "00000000-0000-4000-8000-00000000001a"
 	)
 	var testTime time.Time
 	if err := pool.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&testTime); err != nil {
@@ -100,28 +107,36 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}{
 		{`INSERT INTO tenants(id,name) VALUES($1,'Tenant')`, []any{tenantID}},
 		{`INSERT INTO legal_companies(id,tenant_id,name) VALUES($1,$2,'Company')`, []any{companyID, tenantID}},
+		{`INSERT INTO legal_companies(id,tenant_id,name) VALUES($1,$2,'Second Company')`, []any{secondCompanyID, tenantID}},
 		{`INSERT INTO branches(id,tenant_id,company_id,name) VALUES($1,$2,$3,'Branch')`, []any{branchID, tenantID, companyID}},
 		{`INSERT INTO warehouses(id,tenant_id,company_id,branch_id,name) VALUES($1,$2,$3,$4,'Warehouse')`, []any{warehouseID, tenantID, companyID, branchID}},
+		{`INSERT INTO branches(id,tenant_id,company_id,name) VALUES($1,$2,$3,'Second Branch')`, []any{secondBranchID, tenantID, secondCompanyID}},
+		{`INSERT INTO warehouses(id,tenant_id,company_id,branch_id,name) VALUES($1,$2,$3,$4,'Second Warehouse')`, []any{secondWarehouseID, tenantID, secondCompanyID, secondBranchID}},
 		{`INSERT INTO branches(id,tenant_id,company_id,name) VALUES($1,$2,$3,'Other Branch')`, []any{otherBranchID, tenantID, companyID}},
 		{`INSERT INTO warehouses(id,tenant_id,company_id,branch_id,name) VALUES($1,$2,$3,$4,'Other Warehouse')`, []any{otherWarehouseID, tenantID, companyID, otherBranchID}},
 		{`INSERT INTO users(id,tenant_id,email) VALUES($1,$2,'user@example.test')`, []any{userID, tenantID}},
 		{`INSERT INTO users(id,tenant_id,email) VALUES($1,$2,'approver@example.test')`, []any{approverID, tenantID}},
+		{`INSERT INTO users(id,tenant_id,email) VALUES($1,$2,'counter@example.test')`, []any{counterApproverID, tenantID}},
 		{`INSERT INTO roles(id,tenant_id,name) VALUES($1,$2,'Manager')`, []any{roleID, tenantID}},
 		{`INSERT INTO role_permissions(tenant_id,role_id,permission_code) SELECT $1,$2,code FROM permissions`, []any{tenantID, roleID}},
 		{`INSERT INTO user_role_scopes(id,tenant_id,user_id,role_id,company_id,branch_id,warehouse_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, []any{scopeID, tenantID, userID, roleID, companyID, branchID, warehouseID}},
 		{`INSERT INTO user_role_scopes(id,tenant_id,user_id,role_id,company_id,branch_id,warehouse_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, []any{otherScopeID, tenantID, userID, roleID, companyID, otherBranchID, otherWarehouseID}},
 		{`INSERT INTO user_role_scopes(id,tenant_id,user_id,role_id,company_id,branch_id,warehouse_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, []any{approverScopeID, tenantID, approverID, roleID, companyID, branchID, warehouseID}},
+		{`INSERT INTO user_role_scopes(id,tenant_id,user_id,role_id,company_id,branch_id,warehouse_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, []any{counterScopeID, tenantID, counterApproverID, roleID, secondCompanyID, secondBranchID, secondWarehouseID}},
 		{`INSERT INTO customer_accounts(id,tenant_id,company_id,code,name,active,is_general) VALUES($1,$2,$3,'GENERAL','General Customer',true,true)`, []any{customerID, tenantID, companyID}},
 		{`INSERT INTO customer_accounts(id,tenant_id,company_id,code,name,active,is_general,credit_enabled,credit_limit_minor) VALUES($1,$2,$3,'CREDIT','Credit Customer',true,false,true,1000000)`, []any{creditCustomerID, tenantID, companyID}},
 		{`INSERT INTO products(id,tenant_id,company_id,sku,name,currency,list_price_minor,standard_cost_minor,tax_code,revenue_account_id,cogs_account_id,inventory_account_id) VALUES($1,$2,$3,'SKU','Product','TZS',10000,6000,'VAT','revenue','cogs','inventory')`, []any{productID, tenantID, companyID}},
 		{`INSERT INTO suppliers(id,tenant_id,company_id,code,name,active,payment_terms_days) VALUES($1,$2,$3,'SUP','Supplier',true,30)`, []any{supplierID, tenantID, companyID}},
 		{`INSERT INTO tax_rules(id,tenant_id,company_id,code,basis_points,effective_from) VALUES($1,$2,$3,'VAT',1800,$4)`, []any{taxID, tenantID, companyID, testTime.AddDate(-1, 0, 0)}},
 		{`INSERT INTO fiscal_periods(id,tenant_id,company_id,starts_at,ends_at,is_open) VALUES($1,$2,$3,$4,$5,true)`, []any{periodID, tenantID, companyID, testTime.AddDate(0, -1, 0), testTime.AddDate(0, 1, 0)}},
+		{`INSERT INTO fiscal_periods(id,tenant_id,company_id,starts_at,ends_at,is_open) VALUES($1,$2,$3,$4,$5,true)`, []any{secondPeriodID, tenantID, secondCompanyID, testTime.AddDate(0, -1, 0), testTime.AddDate(0, 1, 0)}},
 		{`INSERT INTO offline_posting_policies(id,tenant_id,company_id,accounting_time_basis,maximum_future_skew_seconds,require_same_fiscal_period,effective_from,created_by,created_at) VALUES(gen_random_uuid(),$1,$2,'SERVER_RECEIPT',14400,true,$3,$4,$5)`, []any{tenantID, companyID, testTime.AddDate(-1, 0, 0), userID, testTime}},
 		{`INSERT INTO sales_posting_config(tenant_id,company_id,receivable_account_id,tax_payable_account_id,cash_accounts) VALUES($1,$2,'receivable','tax-payable','{"CASH":"cash"}')`, []any{tenantID, companyID}},
 		{`INSERT INTO procurement_posting_config(tenant_id,company_id,grni_account_id,payable_account_id,inventory_adjustment_account_id,stock_in_transit_account_id,cash_accounts) VALUES($1,$2,'grni','payable','inventory-adjustment','stock-in-transit','{"CASH":"cash"}')`, []any{tenantID, companyID}},
 		{`INSERT INTO bank_accounts(id,tenant_id,company_id,branch_id,warehouse_id,code,name,account_type,currency,gl_account_id,active) VALUES($1,$2,$3,$4,$5,'CASH','Till cash','CASH','TZS','cash',true)`, []any{bankAccountID, tenantID, companyID, branchID, warehouseID}},
 		{`INSERT INTO gl_accounts(record_id,tenant_id,company_id,id,code,name,account_type,allow_manual_posting,status,created_at) SELECT gen_random_uuid(),$1,$2,id,id,name,kind,manual,'ACTIVE',$3 FROM (VALUES ('expense','Integration expense','EXPENSE',true),('suspense','Integration suspense','ASSET',true),('cash','Cash','ASSET',false),('revenue','Revenue','REVENUE',false),('tax-payable','Tax payable','LIABILITY',false),('cogs','Cost of goods sold','EXPENSE',false),('inventory','Inventory','ASSET',false),('receivable','Receivable','ASSET',false),('grni','GRNI','LIABILITY',false),('payable','Payable','LIABILITY',false),('inventory-adjustment','Inventory adjustment','EXPENSE',false),('stock-in-transit','Stock in transit','ASSET',false)) a(id,name,kind,manual)`, []any{tenantID, companyID, testTime}},
+		{`INSERT INTO gl_accounts(record_id,tenant_id,company_id,id,code,name,account_type,allow_manual_posting,status,created_at) SELECT gen_random_uuid(),$1,$2,id,id,name,kind,false,'ACTIVE',$3 FROM (VALUES ('ic-receivable','Intercompany receivable','ASSET'),('recovery','Cost recovery','REVENUE')) a(id,name,kind)`, []any{tenantID, companyID, testTime}},
+		{`INSERT INTO gl_accounts(record_id,tenant_id,company_id,id,code,name,account_type,allow_manual_posting,status,created_at) SELECT gen_random_uuid(),$1,$2,id,id,name,kind,false,'ACTIVE',$3 FROM (VALUES ('allocated-expense','Allocated expense','EXPENSE'),('ic-payable','Intercompany payable','LIABILITY')) a(id,name,kind)`, []any{tenantID, secondCompanyID, testTime}},
 		{`INSERT INTO inventory_stock_ledger(id,tenant_id,company_id,branch_id,warehouse_id,product_id,source_type,source_id,quantity,occurred_at) VALUES($1,$2,$3,$4,$5,$6,'OPENING',$7,100,$8)`, []any{stockID, tenantID, companyID, branchID, warehouseID, productID, openingID, testTime.Add(-time.Hour)}},
 	}
 	for _, statement := range statements {
@@ -298,6 +313,31 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	facility, err = treasuryService.TransitionFacility(ctx, treasury.TransitionCommand{Scope: scope, FacilityID: facility.ID, Status: treasury.Closed, Reason: "Facility fully settled and reconciled", ActorID: approverID, IdempotencyKey: "integration-facility-close1"})
 	if err != nil || facility.Status != treasury.Closed {
 		t.Fatalf("close facility: %+v %v", facility, err)
+	}
+	groupService, err := groupfinance.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(100 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intercompany, err := groupService.Create(ctx, groupfinance.CreateCommand{Scope: scope, CounterpartyCompanyID: secondCompanyID, Reference: "INT-ALLOC-1", Type: groupfinance.CostAllocation, Currency: "TZS", AmountMinor: 5000, OccurredAt: testTime, SourceDebitAccountID: "ic-receivable", SourceCreditAccountID: "recovery", CounterpartyDebitAccountID: "allocated-expense", CounterpartyCreditAccountID: "ic-payable", Reason: "Approved integration shared service allocation", ActorID: userID, IdempotencyKey: "integration-group-create1"})
+	if err != nil {
+		t.Fatalf("create intercompany: %v", err)
+	}
+	intercompany, err = groupService.Transition(ctx, groupfinance.TransitionCommand{Scope: scope, TransactionID: intercompany.ID, Status: groupfinance.Submitted, Reason: "Intercompany evidence ready for review", ActorID: userID, IdempotencyKey: "integration-group-submit1"})
+	if err != nil {
+		t.Fatalf("submit intercompany: %v", err)
+	}
+	intercompany, err = groupService.Transition(ctx, groupfinance.TransitionCommand{Scope: scope, TransactionID: intercompany.ID, Status: groupfinance.SourceApproved, Reason: "Independent source company approval complete", ActorID: approverID, IdempotencyKey: "integration-group-source1"})
+	if err != nil {
+		t.Fatalf("source approve intercompany: %v", err)
+	}
+	counterScope := tenancy.Scope{TenantID: tenantID, CompanyID: secondCompanyID, BranchID: secondBranchID, WarehouseID: secondWarehouseID}
+	intercompany, err = groupService.Transition(ctx, groupfinance.TransitionCommand{Scope: counterScope, TransactionID: intercompany.ID, Status: groupfinance.Posted, Reason: "Counterparty confirmed allocation posting", ActorID: counterApproverID, IdempotencyKey: "integration-group-counter"})
+	if err != nil || intercompany.Status != groupfinance.Posted {
+		t.Fatalf("post intercompany: %+v %v", intercompany, err)
+	}
+	consolidated, err := groupService.Consolidated(ctx, scope, approverID, testTime.Add(time.Hour))
+	if err != nil || consolidated.IntercompanyBalanceEliminationMinor != 5000 || consolidated.IntercompanyActivityEliminationMinor != 5000 || !consolidated.Balanced {
+		t.Fatalf("consolidation: %+v %v", consolidated, err)
 	}
 	closeRequest, err := financialService.RequestPeriodAction(ctx, financialops.PeriodCommand{Scope: scope, PeriodID: periodID, Action: financialops.ClosePeriod, Reason: "Integration reconciliations ready for close", ActorID: userID, IdempotencyKey: "integration-period-close-01"})
 	if err != nil {
@@ -783,7 +823,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 1 || salesCount != 7 || journalCount != 23 || outboxCount != 79 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 25 || outboxCount != 83 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }

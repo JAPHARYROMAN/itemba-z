@@ -46,3 +46,9 @@ Treasury separates `finance.treasury.read`, `manage`, `approve`, and
 fully reconciled principal and accrued interest. Transaction authority posts
 only the four governed borrowing movements and does not permit facility-master
 mutation, approval, fiscal-period override, or account remapping.
+
+Group finance separates `finance.intercompany.read`, `manage`, `approve`, and
+`finance.consolidation.read`. Source approval and counterparty confirmation are
+bound to the actor's assigned legal-company scope. The maker cannot approve,
+the source approver cannot confirm the counterparty posting, and consolidation
+access does not grant transaction mutation.

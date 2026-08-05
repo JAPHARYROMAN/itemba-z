@@ -13,6 +13,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/advancedfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/banking"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/httpapi"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
@@ -167,7 +168,17 @@ func main() {
 		logger.Error("initialize treasury service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithTreasury(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, logger, authenticator)
+	groupRepository, ok := repository.(groupfinance.Repository)
+	if !ok {
+		logger.Error("repository does not implement group finance")
+		os.Exit(1)
+	}
+	groupService, err := groupfinance.NewService(groupRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize group finance service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithGroupFinance(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)

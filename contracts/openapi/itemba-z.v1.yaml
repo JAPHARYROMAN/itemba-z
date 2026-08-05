@@ -677,6 +677,38 @@ paths:
       parameters: [{ name: facility_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PostTreasuryTransactionCommand' } } } }
       responses: { '201': { description: Facility with posted transaction and current balances., content: { application/json: { schema: { $ref: '#/components/schemas/TreasuryFacility' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/intercompany:
+    get:
+      summary: List intercompany transactions involving the assigned legal company
+      operationId: listIntercompanyTransactions
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses: { '200': { description: Intercompany queue., content: { application/json: { schema: { $ref: '#/components/schemas/IntercompanyPage' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+    post:
+      summary: Create an immutable source-company intercompany transaction
+      operationId: createIntercompanyTransaction
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateIntercompanyCommand' } } } }
+      responses: { '201': { description: Draft intercompany transaction., content: { application/json: { schema: { $ref: '#/components/schemas/IntercompanyTransaction' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/intercompany/{transaction_id}/transitions:
+    post:
+      summary: Submit, dual-company approve, post, or reject an intercompany transaction
+      operationId: transitionIntercompanyTransaction
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: transaction_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IntercompanyTransitionCommand' } } } }
+      responses: { '200': { description: Current intercompany transaction., content: { application/json: { schema: { $ref: '#/components/schemas/IntercompanyTransaction' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/reports/financial/consolidation:
+    get:
+      summary: Run tenant-group consolidation with intercompany eliminations
+      operationId: runGroupConsolidation
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: as_of, in: query, required: true, schema: { type: string, format: date-time } }]
+      responses: { '200': { description: Ledger-derived group consolidation., content: { application/json: { schema: { $ref: '#/components/schemas/GroupConsolidation' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
   /v1/sales:
     post:
       summary: Complete and atomically post a sale
@@ -1257,6 +1289,59 @@ components:
       additionalProperties: false
       required: [type, amount_minor, occurred_at, reason]
       properties: { type: { $ref: '#/components/schemas/TreasuryTransactionType' }, amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, occurred_at: { type: string, format: date-time }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    IntercompanyType: { type: string, enum: [CASH_TRANSFER, COST_ALLOCATION] }
+    IntercompanyStatus: { type: string, enum: [DRAFT, SUBMITTED, SOURCE_APPROVED, POSTED, REJECTED] }
+    IntercompanyTransaction:
+      type: object
+      additionalProperties: false
+      required: [id, scope, counterparty_company_id, reference, type, status, currency, amount_minor, occurred_at, source_debit_account_id, source_credit_account_id, counterparty_debit_account_id, counterparty_credit_account_id, reason, created_by, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        counterparty_company_id: { type: string, format: uuid }
+        counterparty_company_name: { type: string }
+        reference: { type: string }
+        type: { $ref: '#/components/schemas/IntercompanyType' }
+        status: { $ref: '#/components/schemas/IntercompanyStatus' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        occurred_at: { type: string, format: date-time }
+        source_debit_account_id: { type: string }
+        source_credit_account_id: { type: string }
+        counterparty_debit_account_id: { type: string }
+        counterparty_credit_account_id: { type: string }
+        reason: { type: string }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        source_approved_by: { type: string, format: uuid }
+        posted_by: { type: string, format: uuid }
+        source_journal_id: { type: string, format: uuid }
+        counterparty_journal_id: { type: string, format: uuid }
+    IntercompanyPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/IntercompanyTransaction' } } }
+    CreateIntercompanyCommand:
+      type: object
+      additionalProperties: false
+      required: [counterparty_company_id, reference, type, currency, amount_minor, occurred_at, source_debit_account_id, source_credit_account_id, counterparty_debit_account_id, counterparty_credit_account_id, reason]
+      properties: { counterparty_company_id: { type: string, format: uuid }, reference: { type: string, minLength: 2, maxLength: 60 }, type: { $ref: '#/components/schemas/IntercompanyType' }, currency: { type: string, pattern: '^[A-Z]{3}$' }, amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, occurred_at: { type: string, format: date-time }, source_debit_account_id: { type: string }, source_credit_account_id: { type: string }, counterparty_debit_account_id: { type: string }, counterparty_credit_account_id: { type: string }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    IntercompanyTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties: { status: { $ref: '#/components/schemas/IntercompanyStatus' }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    GroupCompanySummary:
+      type: object
+      additionalProperties: false
+      required: [company_id, company_name, assets_minor, liabilities_minor, equity_minor, revenue_minor, expense_minor]
+      properties: { company_id: { type: string, format: uuid }, company_name: { type: string }, assets_minor: { $ref: '#/components/schemas/SafeInteger' }, liabilities_minor: { $ref: '#/components/schemas/SafeInteger' }, equity_minor: { $ref: '#/components/schemas/SafeInteger' }, revenue_minor: { $ref: '#/components/schemas/SafeInteger' }, expense_minor: { $ref: '#/components/schemas/SafeInteger' } }
+    GroupConsolidation:
+      type: object
+      additionalProperties: false
+      required: [currency, as_of, companies, assets_before_minor, liabilities_before_minor, equity_minor, revenue_before_minor, expense_before_minor, intercompany_balance_elimination_minor, intercompany_activity_elimination_minor, assets_minor, liabilities_minor, revenue_minor, expense_minor, net_profit_minor, balanced]
+      properties: { currency: { type: string }, as_of: { type: string, format: date-time }, companies: { type: array, items: { $ref: '#/components/schemas/GroupCompanySummary' } }, assets_before_minor: { $ref: '#/components/schemas/SafeInteger' }, liabilities_before_minor: { $ref: '#/components/schemas/SafeInteger' }, equity_minor: { $ref: '#/components/schemas/SafeInteger' }, revenue_before_minor: { $ref: '#/components/schemas/SafeInteger' }, expense_before_minor: { $ref: '#/components/schemas/SafeInteger' }, intercompany_balance_elimination_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, intercompany_activity_elimination_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, assets_minor: { $ref: '#/components/schemas/SafeInteger' }, liabilities_minor: { $ref: '#/components/schemas/SafeInteger' }, revenue_minor: { $ref: '#/components/schemas/SafeInteger' }, expense_minor: { $ref: '#/components/schemas/SafeInteger' }, net_profit_minor: { $ref: '#/components/schemas/SafeInteger' }, balanced: { type: boolean } }
     Health:
       type: object
       additionalProperties: false

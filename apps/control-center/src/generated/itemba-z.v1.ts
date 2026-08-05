@@ -777,6 +777,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/finance/intercompany": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List intercompany transactions involving the assigned legal company */
+        get: operations["listIntercompanyTransactions"];
+        put?: never;
+        /** Create an immutable source-company intercompany transaction */
+        post: operations["createIntercompanyTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/intercompany/{transaction_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit, dual-company approve, post, or reject an intercompany transaction */
+        post: operations["transitionIntercompanyTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reports/financial/consolidation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run tenant-group consolidation with intercompany eliminations */
+        get: operations["runGroupConsolidation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sales": {
         parameters: {
             query?: never;
@@ -1211,6 +1263,93 @@ export interface components {
             /** Format: date-time */
             occurred_at: string;
             reason: string;
+        };
+        /** @enum {string} */
+        IntercompanyType: "CASH_TRANSFER" | "COST_ALLOCATION";
+        /** @enum {string} */
+        IntercompanyStatus: "DRAFT" | "SUBMITTED" | "SOURCE_APPROVED" | "POSTED" | "REJECTED";
+        IntercompanyTransaction: {
+            /** Format: uuid */
+            id: string;
+            scope: components["schemas"]["Scope"];
+            /** Format: uuid */
+            counterparty_company_id: string;
+            counterparty_company_name?: string;
+            reference: string;
+            type: components["schemas"]["IntercompanyType"];
+            status: components["schemas"]["IntercompanyStatus"];
+            currency: string;
+            amount_minor: components["schemas"]["SafePositiveInteger"];
+            /** Format: date-time */
+            occurred_at: string;
+            source_debit_account_id: string;
+            source_credit_account_id: string;
+            counterparty_debit_account_id: string;
+            counterparty_credit_account_id: string;
+            reason: string;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            source_approved_by?: string;
+            /** Format: uuid */
+            posted_by?: string;
+            /** Format: uuid */
+            source_journal_id?: string;
+            /** Format: uuid */
+            counterparty_journal_id?: string;
+        };
+        IntercompanyPage: {
+            items: components["schemas"]["IntercompanyTransaction"][];
+        };
+        CreateIntercompanyCommand: {
+            /** Format: uuid */
+            counterparty_company_id: string;
+            reference: string;
+            type: components["schemas"]["IntercompanyType"];
+            currency: string;
+            amount_minor: components["schemas"]["SafePositiveInteger"];
+            /** Format: date-time */
+            occurred_at: string;
+            source_debit_account_id: string;
+            source_credit_account_id: string;
+            counterparty_debit_account_id: string;
+            counterparty_credit_account_id: string;
+            reason: string;
+        };
+        IntercompanyTransitionCommand: {
+            status: components["schemas"]["IntercompanyStatus"];
+            reason: string;
+        };
+        GroupCompanySummary: {
+            /** Format: uuid */
+            company_id: string;
+            company_name: string;
+            assets_minor: components["schemas"]["SafeInteger"];
+            liabilities_minor: components["schemas"]["SafeInteger"];
+            equity_minor: components["schemas"]["SafeInteger"];
+            revenue_minor: components["schemas"]["SafeInteger"];
+            expense_minor: components["schemas"]["SafeInteger"];
+        };
+        GroupConsolidation: {
+            currency: string;
+            /** Format: date-time */
+            as_of: string;
+            companies: components["schemas"]["GroupCompanySummary"][];
+            assets_before_minor: components["schemas"]["SafeInteger"];
+            liabilities_before_minor: components["schemas"]["SafeInteger"];
+            equity_minor: components["schemas"]["SafeInteger"];
+            revenue_before_minor: components["schemas"]["SafeInteger"];
+            expense_before_minor: components["schemas"]["SafeInteger"];
+            intercompany_balance_elimination_minor: components["schemas"]["SafeNonNegativeInteger"];
+            intercompany_activity_elimination_minor: components["schemas"]["SafeNonNegativeInteger"];
+            assets_minor: components["schemas"]["SafeInteger"];
+            liabilities_minor: components["schemas"]["SafeInteger"];
+            revenue_minor: components["schemas"]["SafeInteger"];
+            expense_minor: components["schemas"]["SafeInteger"];
+            net_profit_minor: components["schemas"]["SafeInteger"];
+            balanced: boolean;
         };
         Health: {
             /** @enum {string} */
@@ -3739,6 +3878,108 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listIntercompanyTransactions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Intercompany queue. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntercompanyPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createIntercompanyTransaction: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateIntercompanyCommand"];
+            };
+        };
+        responses: {
+            /** @description Draft intercompany transaction. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntercompanyTransaction"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    transitionIntercompanyTransaction: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                transaction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntercompanyTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Current intercompany transaction. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntercompanyTransaction"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    runGroupConsolidation: {
+        parameters: {
+            query: {
+                as_of: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ledger-derived group consolidation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupConsolidation"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
         };
     };
     listSales: {

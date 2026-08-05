@@ -14,6 +14,7 @@ import type {
 	BalanceSheet, CashFlow, ExportFinancialReportCommand, GeneralLedger, ProfitAndLoss, ReportExportArtifact, TrialBalance,
 	AdvancedFinanceTransitionCommand, Budget, BudgetActual, BudgetPage, CreateBudgetCommand, CreateFixedAssetCommand, DepreciateFixedAssetCommand, DisposeFixedAssetCommand, FixedAsset, FixedAssetDepreciation, FixedAssetPage,
 	CreateTreasuryFacilityCommand, PostTreasuryTransactionCommand, TreasuryFacility, TreasuryFacilityPage, TreasuryTransitionCommand,
+	CreateIntercompanyCommand, GroupConsolidation, IntercompanyPage, IntercompanyTransaction, IntercompanyTransitionCommand,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -276,6 +277,10 @@ export class ItembaApiClient {
   createTreasuryFacility(command: CreateTreasuryFacilityCommand, idempotencyKey: string): Promise<TreasuryFacility> { return this.request("/v1/finance/facilities", { method: "POST", body: command, idempotencyKey }); }
   transitionTreasuryFacility(id: string, command: TreasuryTransitionCommand, idempotencyKey: string): Promise<TreasuryFacility> { return this.request(`/v1/finance/facilities/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey }); }
   postTreasuryTransaction(id: string, command: PostTreasuryTransactionCommand, idempotencyKey: string): Promise<TreasuryFacility> { return this.request(`/v1/finance/facilities/${encodeURIComponent(id)}/transactions`, { method: "POST", body: command, idempotencyKey }); }
+  listIntercompanyTransactions(): Promise<IntercompanyPage> { return this.request("/v1/finance/intercompany"); }
+  createIntercompanyTransaction(command: CreateIntercompanyCommand, idempotencyKey: string): Promise<IntercompanyTransaction> { return this.request("/v1/finance/intercompany", { method: "POST", body: command, idempotencyKey }); }
+  transitionIntercompanyTransaction(id: string, command: IntercompanyTransitionCommand, idempotencyKey: string): Promise<IntercompanyTransaction> { return this.request(`/v1/finance/intercompany/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey }); }
+  groupConsolidation(asOf: string): Promise<GroupConsolidation> { return this.request(`/v1/reports/financial/consolidation?as_of=${encodeURIComponent(asOf)}`); }
 
   listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
     const query = new URLSearchParams({ page_size: "100" });

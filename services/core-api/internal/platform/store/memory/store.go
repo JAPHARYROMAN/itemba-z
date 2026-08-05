@@ -18,6 +18,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
@@ -103,6 +104,7 @@ type state struct {
 	assets                    map[string]advancedfinance.Asset
 	depreciation              map[string]advancedfinance.Depreciation
 	facilities                map[string]treasury.Facility
+	intercompany              map[string]groupfinance.Transaction
 }
 
 func newState() *state {
@@ -132,6 +134,7 @@ func newState() *state {
 		assets:                    make(map[string]advancedfinance.Asset),
 		depreciation:              make(map[string]advancedfinance.Depreciation),
 		facilities:                make(map[string]treasury.Facility),
+		intercompany:              make(map[string]groupfinance.Transaction),
 	}
 }
 
@@ -888,6 +891,9 @@ func cloneState(source *state) *state {
 	for key, value := range source.facilities {
 		value.Transactions = append([]treasury.Transaction(nil), value.Transactions...)
 		result.facilities[key] = value
+	}
+	for key, value := range source.intercompany {
+		result.intercompany[key] = value
 	}
 	return result
 }

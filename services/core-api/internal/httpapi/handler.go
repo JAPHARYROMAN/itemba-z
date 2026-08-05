@@ -19,6 +19,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
@@ -44,6 +45,7 @@ type Handler struct {
 	reporting       *reporting.Service
 	advancedfinance *advancedfinance.Service
 	treasury        *treasury.Service
+	groupfinance    *groupfinance.Service
 	logger          *slog.Logger
 	authenticator   Authenticator
 }
@@ -145,6 +147,18 @@ func NewLiveWithTreasury(salesService *sales.Service, readService *readmodel.Ser
 	return handler, nil
 }
 
+func NewLiveWithGroupFinance(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, bankingService *banking.Service, financialService *financialops.Service, reportingService *reporting.Service, advancedService *advancedfinance.Service, treasuryService *treasury.Service, groupService *groupfinance.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLiveWithTreasury(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if groupService == nil {
+		return nil, errors.New("group finance service is required")
+	}
+	handler.groupfinance = groupService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
@@ -211,6 +225,12 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("POST /v1/finance/facilities", h.createTreasuryFacility)
 		mux.HandleFunc("POST /v1/finance/facilities/{facilityID}/transitions", h.transitionTreasuryFacility)
 		mux.HandleFunc("POST /v1/finance/facilities/{facilityID}/transactions", h.postTreasuryTransaction)
+	}
+	if h.groupfinance != nil {
+		mux.HandleFunc("GET /v1/finance/intercompany", h.listIntercompany)
+		mux.HandleFunc("POST /v1/finance/intercompany", h.createIntercompany)
+		mux.HandleFunc("POST /v1/finance/intercompany/{transactionID}/transitions", h.transitionIntercompany)
+		mux.HandleFunc("GET /v1/reports/financial/consolidation", h.consolidation)
 	}
 	if h.mobile != nil {
 		mux.HandleFunc("POST /v1/mobile/devices/enroll", h.enrollDevice)
@@ -1175,6 +1195,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, treasury.ErrInvalidTransition), errors.Is(err, treasury.ErrSeparationOfDuties), errors.Is(err, treasury.ErrLimitExceeded):
 		status, code = http.StatusConflict, "treasury_conflict"
+	case errors.Is(err, groupfinance.ErrInvalidCommand):
+		status, code = http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, groupfinance.ErrInvalidTransition), errors.Is(err, groupfinance.ErrSeparationOfDuties), errors.Is(err, groupfinance.ErrCounterpartyApproval):
+		status, code = http.StatusConflict, "group_finance_conflict"
 	}
 	if status == http.StatusInternalServerError {
 		h.logger.ErrorContext(request.Context(), "request failed", "method", request.Method, "path", request.URL.Path, "error", err)

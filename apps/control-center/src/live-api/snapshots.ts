@@ -11,7 +11,20 @@ import type {
 	FinancialReportsWorkspace,
 	AdvancedFinanceWorkspace,
 	TreasuryWorkspace,
+	GroupFinanceWorkspace,
 } from "@/live-api/types";
+
+export async function loadGroupFinanceWorkspace(): Promise<LiveSnapshot<GroupFinanceWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const context = await repository.getWorkingContext();
+    const [accounts, transactions, consolidation] = await Promise.all([
+      repository.listGLAccounts(), repository.listIntercompanyTransactions(),
+      context.permissions.includes("finance.consolidation.read") ? repository.groupConsolidation(new Date().toISOString()) : Promise.resolve(null),
+    ]);
+    return { state: "ready", data: { context, accounts: accounts.items.filter((account) => account.status === "ACTIVE"), transactions: transactions.items, consolidation } };
+  } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
+}
 
 export async function loadTreasuryWorkspace(): Promise<LiveSnapshot<TreasuryWorkspace>> {
   try {
