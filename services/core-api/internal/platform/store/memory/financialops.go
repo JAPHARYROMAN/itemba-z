@@ -59,6 +59,14 @@ func (s *Store) CreateFinancialDocument(_ context.Context, d financialops.Docume
 			}
 		}
 	}
+	if d.Type == financialops.ManualJournal {
+		for _, line := range d.Lines {
+			account, ok := s.state.glAccounts[accountKey(d.Scope, line.AccountID)]
+			if !ok || account.Status != financialops.GovernanceActive || !account.AllowManualPosting || account.ControlAccount {
+				return d, financialops.ErrAccountGovernance
+			}
+		}
+	}
 	d.Number = "FIN-" + d.ID[len(d.ID)-8:]
 	if d.Type == financialops.CashTransfer {
 		d.Lines[0].AccountID = "__AMOUNT__"

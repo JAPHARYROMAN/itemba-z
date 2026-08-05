@@ -93,6 +93,8 @@ type state struct {
 	bankStatements            map[string]banking.Statement
 	financialDocuments        map[string]financialops.Document
 	periodActions             map[string]financialops.PeriodActionRequest
+	glAccounts                map[string]financialops.GLAccount
+	postingMappings           map[string]financialops.PostingMapping
 }
 
 func newState() *state {
@@ -115,6 +117,8 @@ func newState() *state {
 		bankStatements:            make(map[string]banking.Statement),
 		financialDocuments:        make(map[string]financialops.Document),
 		periodActions:             make(map[string]financialops.PeriodActionRequest),
+		glAccounts:                make(map[string]financialops.GLAccount),
+		postingMappings:           make(map[string]financialops.PostingMapping),
 	}
 }
 
@@ -526,6 +530,30 @@ func (t *transaction) SalesPostingConfig(_ context.Context, scope tenancy.Scope)
 		return finance.SalesPostingConfig{}, sales.ErrPostingConfig
 	}
 	value.CashAccounts = cloneStringMap(value.CashAccounts)
+	active := make(map[financialops.MappingKey]financialops.PostingMapping)
+	now := time.Now().UTC()
+	for _, mapping := range t.state.postingMappings {
+		if mapping.TenantID != scope.TenantID || mapping.CompanyID != scope.CompanyID || mapping.Status != financialops.GovernanceActive || mapping.EffectiveFrom.After(now) {
+			continue
+		}
+		if current, ok := active[mapping.Key]; !ok || mapping.EffectiveFrom.After(current.EffectiveFrom) {
+			active[mapping.Key] = mapping
+		}
+	}
+	if mapping, ok := active[financialops.MapSalesReceivable]; ok {
+		value.ReceivableAccountID = mapping.AccountID
+	}
+	if mapping, ok := active[financialops.MapSalesTaxPayable]; ok {
+		value.TaxPayableAccountID = mapping.AccountID
+	}
+	for key, method := range map[financialops.MappingKey]string{
+		financialops.MapPaymentCash: sales.PaymentCash, financialops.MapPaymentMobileMoney: sales.PaymentMobileMoney,
+		financialops.MapPaymentBankCard: sales.PaymentBankCard, financialops.MapPaymentBankTransfer: sales.PaymentBankTransfer,
+	} {
+		if mapping, ok := active[key]; ok {
+			value.CashAccounts[method] = mapping.AccountID
+		}
+	}
 	return value, nil
 }
 
@@ -824,6 +852,12 @@ func cloneState(source *state) *state {
 	}
 	for key, value := range source.periodActions {
 		result.periodActions[key] = value
+	}
+	for key, value := range source.glAccounts {
+		result.glAccounts[key] = value
+	}
+	for key, value := range source.postingMappings {
+		result.postingMappings[key] = value
 	}
 	return result
 }

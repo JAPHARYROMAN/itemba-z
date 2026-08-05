@@ -18,6 +18,12 @@ import (
 )
 
 type Repository interface {
+	ListGLAccounts(context.Context, tenancy.Scope, string) (GLAccountPage, error)
+	CreateGLAccount(context.Context, GLAccount, tenancy.Scope, string, string) (GLAccount, error)
+	DecideGLAccount(context.Context, tenancy.Scope, string, string, GovernanceStatus, string, string, string, time.Time) (GLAccount, error)
+	ListPostingMappings(context.Context, tenancy.Scope, string) (PostingMappingPage, error)
+	CreatePostingMapping(context.Context, PostingMapping, tenancy.Scope, string, string) (PostingMapping, error)
+	DecidePostingMapping(context.Context, tenancy.Scope, string, string, GovernanceStatus, string, string, string, time.Time) (PostingMapping, error)
 	CreateFinancialDocument(context.Context, Document, string, string) (Document, error)
 	ListFinancialDocuments(context.Context, tenancy.Scope, string, string, int) (Page, error)
 	FinancialDocument(context.Context, tenancy.Scope, string, string) (Document, error)

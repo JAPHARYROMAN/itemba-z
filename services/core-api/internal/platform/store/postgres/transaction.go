@@ -14,6 +14,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/catalog"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
@@ -363,6 +364,24 @@ func (t *transaction) SalesPostingConfig(ctx context.Context, scope tenancy.Scop
 	}
 	if err := json.Unmarshal(cashJSON, &value.CashAccounts); err != nil {
 		return finance.SalesPostingConfig{}, fmt.Errorf("decode cash account mapping: %w", err)
+	}
+	mappings, err := t.activePostingAccounts(ctx, scope, time.Now().UTC())
+	if err != nil {
+		return finance.SalesPostingConfig{}, err
+	}
+	if account := mappings[financialops.MapSalesReceivable]; account != "" {
+		value.ReceivableAccountID = account
+	}
+	if account := mappings[financialops.MapSalesTaxPayable]; account != "" {
+		value.TaxPayableAccountID = account
+	}
+	for key, method := range map[financialops.MappingKey]string{
+		financialops.MapPaymentCash: sales.PaymentCash, financialops.MapPaymentMobileMoney: sales.PaymentMobileMoney,
+		financialops.MapPaymentBankCard: sales.PaymentBankCard, financialops.MapPaymentBankTransfer: sales.PaymentBankTransfer,
+	} {
+		if account := mappings[key]; account != "" {
+			value.CashAccounts[method] = account
+		}
 	}
 	return value, nil
 }

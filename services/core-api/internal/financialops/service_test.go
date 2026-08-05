@@ -12,6 +12,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/memory"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
 
@@ -28,6 +29,8 @@ func TestManualJournalRequiresIndependentPostingAndReversesExactly(t *testing.T)
 		}
 	}
 	store.SeedFiscalPeriod(memory.FiscalPeriod{ID: "00000000-0000-4000-8000-000000000007", TenantID: scope.TenantID, CompanyID: scope.CompanyID, StartsAt: at.AddDate(0, -1, 0), EndsAt: at.AddDate(0, 1, 0), Open: true})
+	store.SeedGLAccount(financialops.GLAccount{RecordID: "00000000-0000-4000-8000-000000000008", ID: "expense", TenantID: scope.TenantID, CompanyID: scope.CompanyID, Code: "expense", Name: "Expense", Type: financialops.AccountExpense, AllowManualPosting: true, Status: financialops.GovernanceActive})
+	store.SeedGLAccount(financialops.GLAccount{RecordID: "00000000-0000-4000-8000-000000000009", ID: "suspense", TenantID: scope.TenantID, CompanyID: scope.CompanyID, Code: "suspense", Name: "Suspense", Type: financialops.AccountAsset, AllowManualPosting: true, Status: financialops.GovernanceActive})
 	service, err := financialops.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: at})
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +64,65 @@ func TestManualJournalRequiresIndependentPostingAndReversesExactly(t *testing.T)
 	}
 	if reversal.Lines[0].CreditMinor != 25000 || reversal.Lines[1].DebitMinor != 25000 {
 		t.Fatalf("expected exact inverted lines, got %#v", reversal.Lines)
+	}
+}
+
+func TestChartOfAccountsAndPostingMappingsRequireIndependentApproval(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	scope := tenancy.Scope{TenantID: "20000000-0000-4000-8000-000000000001", CompanyID: "20000000-0000-4000-8000-000000000002", BranchID: "20000000-0000-4000-8000-000000000003", WarehouseID: "20000000-0000-4000-8000-000000000004"}
+	maker, checker := "20000000-0000-4000-8000-000000000005", "20000000-0000-4000-8000-000000000006"
+	at := time.Date(2026, 8, 5, 9, 0, 0, 0, time.UTC)
+	store := memory.New()
+	store.SeedPostingConfig(scope.TenantID, scope.CompanyID, finance.SalesPostingConfig{ReceivableAccountID: "legacy-receivable", TaxPayableAccountID: "legacy-tax", CashAccounts: map[string]string{sales.PaymentCash: "legacy-cash"}})
+	for _, actor := range []string{maker, checker} {
+		for _, permission := range []string{"finance.accounts.read", "finance.accounts.manage", "finance.accounts.approve"} {
+			store.SeedPermission(scope, actor, permission)
+		}
+	}
+	service, err := financialops.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: at})
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := service.CreateAccount(ctx, financialops.CreateAccountCommand{Scope: scope, Code: "1100-cash", Name: "Cash on hand", Type: financialops.AccountAsset, ActorID: maker, IdempotencyKey: "account-create-0001"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.DecideAccount(ctx, financialops.DecideAccountCommand{Scope: scope, AccountID: account.ID, Status: financialops.GovernanceActive, Reason: "Reviewed account classification", ActorID: maker, IdempotencyKey: "account-self-approve-1"})
+	if !errors.Is(err, financialops.ErrAccountGovernance) {
+		t.Fatalf("expected maker-checker rejection, got %v", err)
+	}
+	account, err = service.DecideAccount(ctx, financialops.DecideAccountCommand{Scope: scope, AccountID: account.ID, Status: financialops.GovernanceActive, Reason: "Reviewed account classification", ActorID: checker, IdempotencyKey: "account-approve-0001"})
+	if err != nil || account.Status != financialops.GovernanceActive {
+		t.Fatalf("expected active account, got %#v, %v", account, err)
+	}
+	_, err = service.CreateMapping(ctx, financialops.CreateMappingCommand{Scope: scope, Key: financialops.MapSalesTaxPayable, AccountID: account.ID, EffectiveFrom: at, Reason: "Configure tax posting account", ActorID: maker, IdempotencyKey: "mapping-invalid-0001"})
+	if !errors.Is(err, financialops.ErrAccountGovernance) {
+		t.Fatalf("expected incompatible mapping rejection, got %v", err)
+	}
+	mapping, err := service.CreateMapping(ctx, financialops.CreateMappingCommand{Scope: scope, Key: financialops.MapPaymentCash, AccountID: account.ID, EffectiveFrom: at.Add(-time.Hour), Reason: "Configure cash posting account", ActorID: maker, IdempotencyKey: "mapping-create-00001"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.DecideMapping(ctx, financialops.DecideMappingCommand{Scope: scope, MappingID: mapping.ID, Status: financialops.GovernanceActive, Reason: "Reviewed effective posting rule", ActorID: checker, IdempotencyKey: "mapping-approve-0001"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := service.Mappings(ctx, scope, checker)
+	if err != nil || len(page.Items) != 1 || page.Items[0].Status != financialops.GovernanceActive {
+		t.Fatalf("expected one active mapping, got %#v, %v", page, err)
+	}
+	if err = store.WithTransaction(ctx, func(tx sales.Transaction) error {
+		config, configErr := tx.SalesPostingConfig(ctx, scope)
+		if configErr != nil {
+			return configErr
+		}
+		if config.CashAccounts[sales.PaymentCash] != account.ID {
+			t.Fatalf("expected approved mapping to govern sales posting, got %#v", config.CashAccounts)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

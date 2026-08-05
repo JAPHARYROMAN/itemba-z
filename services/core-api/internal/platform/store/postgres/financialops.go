@@ -36,6 +36,23 @@ func (s *Store) CreateFinancialDocument(ctx context.Context, d financialops.Docu
 			result, err = tx.financialDocument(ctx, d.Scope, resultID)
 			return err
 		}
+		if d.Type == financialops.ManualJournal {
+			accountIDs := make([]string, 0, len(d.Lines))
+			seen := make(map[string]struct{}, len(d.Lines))
+			for _, line := range d.Lines {
+				if _, ok := seen[line.AccountID]; !ok {
+					seen[line.AccountID] = struct{}{}
+					accountIDs = append(accountIDs, line.AccountID)
+				}
+			}
+			var governed int
+			if err = tx.tx.QueryRow(ctx, `SELECT COUNT(*) FROM gl_accounts WHERE tenant_id=$1 AND company_id=$2 AND id=ANY($3::text[]) AND status='ACTIVE' AND allow_manual_posting AND NOT control_account`, d.Scope.TenantID, d.Scope.CompanyID, accountIDs).Scan(&governed); err != nil {
+				return normalizeError(err)
+			}
+			if governed != len(accountIDs) {
+				return financialops.ErrAccountGovernance
+			}
+		}
 		d.Number = "FIN-" + time.Now().UTC().Format("20060102") + "-" + d.ID[len(d.ID)-8:]
 		if d.Type == financialops.Reversal {
 			var originalStatus, originalCurrency string

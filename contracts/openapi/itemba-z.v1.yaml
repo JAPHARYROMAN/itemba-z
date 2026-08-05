@@ -449,6 +449,66 @@ paths:
       responses:
         '200': { description: Company fiscal action register including pending maker-checker work., content: { application/json: { schema: { $ref: '#/components/schemas/FiscalPeriodActionPage' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/finance/accounts:
+    get:
+      summary: List the governed legal-company chart of accounts
+      operationId: listGLAccounts
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Chart of accounts including pending governance work., content: { application/json: { schema: { $ref: '#/components/schemas/GLAccountPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Submit a general-ledger account
+      operationId: createGLAccount
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateGLAccountCommand' } } } }
+      responses:
+        '201': { description: Account submitted for independent approval., content: { application/json: { schema: { $ref: '#/components/schemas/GLAccount' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/accounts/{account_id}/decisions:
+    post:
+      summary: Independently approve or reject a submitted account
+      operationId: decideGLAccount
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: account_id, in: path, required: true, schema: { type: string } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GovernanceDecisionCommand' } } } }
+      responses:
+        '200': { description: Governance decision recorded., content: { application/json: { schema: { $ref: '#/components/schemas/GLAccount' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/posting-mappings:
+    get:
+      summary: List effective-dated posting mappings
+      operationId: listPostingMappings
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Posting mapping register., content: { application/json: { schema: { $ref: '#/components/schemas/PostingMappingPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Submit an effective-dated posting mapping
+      operationId: createPostingMapping
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreatePostingMappingCommand' } } } }
+      responses:
+        '201': { description: Mapping submitted for independent approval., content: { application/json: { schema: { $ref: '#/components/schemas/PostingMapping' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/posting-mappings/{mapping_id}/decisions:
+    post:
+      summary: Independently approve or reject a posting mapping
+      operationId: decidePostingMapping
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: mapping_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GovernanceDecisionCommand' } } } }
+      responses:
+        '200': { description: Governance decision recorded., content: { application/json: { schema: { $ref: '#/components/schemas/PostingMapping' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
   /v1/sales:
     post:
       summary: Complete and atomically post a sale
@@ -1262,6 +1322,81 @@ components:
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Supplier' } }
         next_cursor: { type: [string, 'null'] }
+    GLAccount:
+      type: object
+      additionalProperties: false
+      required: [record_id, id, tenant_id, company_id, code, name, type, control_account, allow_manual_posting, status, created_at]
+      properties:
+        record_id: { type: string, format: uuid }
+        id: { type: string }
+        tenant_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        code: { type: string, pattern: '^[a-z0-9][a-z0-9._-]{1,63}$' }
+        name: { type: string, minLength: 2, maxLength: 160 }
+        type: { type: string, enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, UNCLASSIFIED] }
+        parent_account_id: { type: string }
+        control_account: { type: boolean }
+        allow_manual_posting: { type: boolean }
+        status: { type: string, enum: [SUBMITTED, ACTIVE, REJECTED, INACTIVE] }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+        approved_at: { type: string, format: date-time }
+    GLAccountPage:
+      type: object
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/GLAccount' } } }
+    CreateGLAccountCommand:
+      type: object
+      additionalProperties: false
+      required: [code, name, type, control_account, allow_manual_posting]
+      properties:
+        code: { type: string, pattern: '^[a-z0-9][a-z0-9._-]{1,63}$' }
+        name: { type: string, minLength: 2, maxLength: 160 }
+        type: { type: string, enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE] }
+        parent_account_id: { type: string }
+        control_account: { type: boolean }
+        allow_manual_posting: { type: boolean }
+    GovernanceDecisionCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties:
+        status: { type: string, enum: [ACTIVE, REJECTED] }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    PostingMapping:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, company_id, key, account_id, effective_from, status, reason, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        key: { $ref: '#/components/schemas/PostingMappingKey' }
+        account_id: { type: string }
+        effective_from: { type: string, format: date-time }
+        status: { type: string, enum: [SUBMITTED, ACTIVE, REJECTED] }
+        reason: { type: string }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+        approved_at: { type: string, format: date-time }
+    PostingMappingPage:
+      type: object
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/PostingMapping' } } }
+    PostingMappingKey:
+      type: string
+      enum: [SALES_RECEIVABLE, SALES_TAX_PAYABLE, PAYMENT_CASH, PAYMENT_MOBILE_MONEY, PAYMENT_BANK_CARD, PAYMENT_BANK_TRANSFER, PROCUREMENT_GRNI, PROCUREMENT_PAYABLE, INVENTORY_ADJUSTMENT, STOCK_IN_TRANSIT]
+    CreatePostingMappingCommand:
+      type: object
+      additionalProperties: false
+      required: [key, account_id, effective_from, reason]
+      properties:
+        key: { $ref: '#/components/schemas/PostingMappingKey' }
+        account_id: { type: string }
+        effective_from: { type: string, format: date-time }
+        reason: { type: string, minLength: 8, maxLength: 500 }
     JournalEntry:
       type: object
       additionalProperties: false

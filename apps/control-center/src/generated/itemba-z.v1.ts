@@ -432,6 +432,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/finance/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the governed legal-company chart of accounts */
+        get: operations["listGLAccounts"];
+        put?: never;
+        /** Submit a general-ledger account */
+        post: operations["createGLAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/accounts/{account_id}/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Independently approve or reject a submitted account */
+        post: operations["decideGLAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/posting-mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List effective-dated posting mappings */
+        get: operations["listPostingMappings"];
+        put?: never;
+        /** Submit an effective-dated posting mapping */
+        post: operations["createPostingMapping"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/posting-mappings/{mapping_id}/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Independently approve or reject a posting mapping */
+        post: operations["decidePostingMapping"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sales": {
         parameters: {
             query?: never;
@@ -1015,6 +1085,84 @@ export interface components {
         SupplierPage: {
             items: components["schemas"]["Supplier"][];
             next_cursor: string | null;
+        };
+        GLAccount: {
+            /** Format: uuid */
+            record_id: string;
+            id: string;
+            /** Format: uuid */
+            tenant_id: string;
+            /** Format: uuid */
+            company_id: string;
+            code: string;
+            name: string;
+            /** @enum {string} */
+            type: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE" | "UNCLASSIFIED";
+            parent_account_id?: string;
+            control_account: boolean;
+            allow_manual_posting: boolean;
+            /** @enum {string} */
+            status: "SUBMITTED" | "ACTIVE" | "REJECTED" | "INACTIVE";
+            /** Format: uuid */
+            created_by?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            approved_by?: string;
+            /** Format: date-time */
+            approved_at?: string;
+        };
+        GLAccountPage: {
+            items: components["schemas"]["GLAccount"][];
+        };
+        CreateGLAccountCommand: {
+            code: string;
+            name: string;
+            /** @enum {string} */
+            type: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+            parent_account_id?: string;
+            control_account: boolean;
+            allow_manual_posting: boolean;
+        };
+        GovernanceDecisionCommand: {
+            /** @enum {string} */
+            status: "ACTIVE" | "REJECTED";
+            reason: string;
+        };
+        PostingMapping: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tenant_id: string;
+            /** Format: uuid */
+            company_id: string;
+            key: components["schemas"]["PostingMappingKey"];
+            account_id: string;
+            /** Format: date-time */
+            effective_from: string;
+            /** @enum {string} */
+            status: "SUBMITTED" | "ACTIVE" | "REJECTED";
+            reason: string;
+            /** Format: uuid */
+            created_by?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            approved_by?: string;
+            /** Format: date-time */
+            approved_at?: string;
+        };
+        PostingMappingPage: {
+            items: components["schemas"]["PostingMapping"][];
+        };
+        /** @enum {string} */
+        PostingMappingKey: "SALES_RECEIVABLE" | "SALES_TAX_PAYABLE" | "PAYMENT_CASH" | "PAYMENT_MOBILE_MONEY" | "PAYMENT_BANK_CARD" | "PAYMENT_BANK_TRANSFER" | "PROCUREMENT_GRNI" | "PROCUREMENT_PAYABLE" | "INVENTORY_ADJUSTMENT" | "STOCK_IN_TRANSIT";
+        CreatePostingMappingCommand: {
+            key: components["schemas"]["PostingMappingKey"];
+            account_id: string;
+            /** Format: date-time */
+            effective_from: string;
+            reason: string;
         };
         JournalEntry: {
             account_id: string;
@@ -2299,6 +2447,160 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listGLAccounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chart of accounts including pending governance work. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GLAccountPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createGLAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateGLAccountCommand"];
+            };
+        };
+        responses: {
+            /** @description Account submitted for independent approval. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GLAccount"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    decideGLAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GovernanceDecisionCommand"];
+            };
+        };
+        responses: {
+            /** @description Governance decision recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GLAccount"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listPostingMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Posting mapping register. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PostingMappingPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createPostingMapping: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePostingMappingCommand"];
+            };
+        };
+        responses: {
+            /** @description Mapping submitted for independent approval. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PostingMapping"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    decidePostingMapping: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                mapping_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GovernanceDecisionCommand"];
+            };
+        };
+        responses: {
+            /** @description Governance decision recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PostingMapping"];
+                };
+            };
+            409: components["responses"]["Conflict"];
         };
     };
     listSales: {

@@ -214,3 +214,146 @@ func (h *Handler) approveFiscalPeriodAction(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, 201, v)
 }
+
+type createGLAccountRequest struct {
+	Code               string                   `json:"code"`
+	Name               string                   `json:"name"`
+	Type               financialops.AccountType `json:"type"`
+	ParentAccountID    string                   `json:"parent_account_id,omitempty"`
+	ControlAccount     bool                     `json:"control_account"`
+	AllowManualPosting bool                     `json:"allow_manual_posting"`
+}
+
+type governanceDecisionRequest struct {
+	Status financialops.GovernanceStatus `json:"status"`
+	Reason string                        `json:"reason"`
+}
+
+type createPostingMappingRequest struct {
+	Key           financialops.MappingKey `json:"key"`
+	AccountID     string                  `json:"account_id"`
+	EffectiveFrom string                  `json:"effective_from"`
+	Reason        string                  `json:"reason"`
+}
+
+func (h *Handler) listGLAccounts(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.requestContext(w, r)
+	if !ok {
+		return
+	}
+	v, err := h.financialops.Accounts(r.Context(), p.Scope, p.ActorID)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (h *Handler) createGLAccount(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.requestContext(w, r)
+	if !ok {
+		return
+	}
+	idem, ok := idempotency(w, r)
+	if !ok {
+		return
+	}
+	var body createGLAccountRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	v, err := h.financialops.CreateAccount(r.Context(), financialops.CreateAccountCommand{Scope: p.Scope, Code: body.Code, Name: body.Name, Type: body.Type, ParentAccountID: body.ParentAccountID, ControlAccount: body.ControlAccount, AllowManualPosting: body.AllowManualPosting, ActorID: p.ActorID, IdempotencyKey: idem})
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	w.Header().Set("Location", "/v1/finance/accounts/"+v.ID)
+	writeJSON(w, http.StatusCreated, v)
+}
+
+func (h *Handler) decideGLAccount(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.requestContext(w, r)
+	if !ok {
+		return
+	}
+	idem, ok := idempotency(w, r)
+	if !ok {
+		return
+	}
+	var body governanceDecisionRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	v, err := h.financialops.DecideAccount(r.Context(), financialops.DecideAccountCommand{Scope: p.Scope, AccountID: r.PathValue("accountID"), Status: body.Status, Reason: body.Reason, ActorID: p.ActorID, IdempotencyKey: idem})
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (h *Handler) listPostingMappings(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.requestContext(w, r)
+	if !ok {
+		return
+	}
+	v, err := h.financialops.Mappings(r.Context(), p.Scope, p.ActorID)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (h *Handler) createPostingMapping(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.requestContext(w, r)
+	if !ok {
+		return
+	}
+	idem, ok := idempotency(w, r)
+	if !ok {
+		return
+	}
+	var body createPostingMappingRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	effective, err := time.Parse(time.RFC3339, body.EffectiveFrom)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_request", "effective_from must be RFC3339")
+		return
+	}
+	v, err := h.financialops.CreateMapping(r.Context(), financialops.CreateMappingCommand{Scope: p.Scope, Key: body.Key, AccountID: body.AccountID, EffectiveFrom: effective, Reason: body.Reason, ActorID: p.ActorID, IdempotencyKey: idem})
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	w.Header().Set("Location", "/v1/finance/posting-mappings/"+v.ID)
+	writeJSON(w, http.StatusCreated, v)
+}
+
+func (h *Handler) decidePostingMapping(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.requestContext(w, r)
+	if !ok {
+		return
+	}
+	idem, ok := idempotency(w, r)
+	if !ok {
+		return
+	}
+	id, err := identity.CanonicalUUID(r.PathValue("mappingID"))
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_request", "mappingID must be a UUID")
+		return
+	}
+	var body governanceDecisionRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	v, err := h.financialops.DecideMapping(r.Context(), financialops.DecideMappingCommand{Scope: p.Scope, MappingID: id, Status: body.Status, Reason: body.Reason, ActorID: p.ActorID, IdempotencyKey: idem})
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}

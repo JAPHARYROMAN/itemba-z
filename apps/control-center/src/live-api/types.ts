@@ -108,4 +108,11 @@ export type FiscalPeriodPage = components["schemas"]["FiscalPeriodPage"];
 export type FiscalPeriodActionCommand = components["schemas"]["FiscalPeriodActionCommand"];
 export type FiscalPeriodActionRequest = components["schemas"]["FiscalPeriodActionRequest"];
 export type FiscalPeriodActionPage = components["schemas"]["FiscalPeriodActionPage"];
-export interface FinanceControlWorkspace { context: WorkingContext; accounts: BankAccount[]; documents: FinancialDocument[]; periods: FiscalPeriod[]; periodActions: FiscalPeriodActionRequest[] }
+export type GLAccount = components["schemas"]["GLAccount"];
+export type GLAccountPage = components["schemas"]["GLAccountPage"];
+export type CreateGLAccountCommand = components["schemas"]["CreateGLAccountCommand"];
+export type GovernanceDecisionCommand = components["schemas"]["GovernanceDecisionCommand"];
+export type PostingMapping = components["schemas"]["PostingMapping"];
+export type PostingMappingPage = components["schemas"]["PostingMappingPage"];
+export type CreatePostingMappingCommand = components["schemas"]["CreatePostingMappingCommand"];
+export interface FinanceControlWorkspace { context: WorkingContext; accounts: BankAccount[]; glAccounts: GLAccount[]; postingMappings: PostingMapping[]; documents: FinancialDocument[]; periods: FiscalPeriod[]; periodActions: FiscalPeriodActionRequest[] }

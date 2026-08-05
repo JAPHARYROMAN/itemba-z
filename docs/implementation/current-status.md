@@ -25,10 +25,12 @@ This repository is the first executable ITEMBA-Z foundation. It proves the archi
 - Sales and procure-to-pay now cover quotations, sales orders and reservations, purchase requests, purchase orders, goods receipts, three-way-matched supplier invoices, supplier payments, purchase returns, customer collections, AP/AR allocations, and their atomic journal, audit, and outbox effects.
 - Inventory operations now cover authorized warehouse transfers with in-transit accounting, physical counts, controlled adjustments, stock reservation/release, standard-cost postings, and immutable movement evidence.
 - Cash and bank reconciliation now provides scoped account masters, balanced multi-line statement import, exact signed-value GL candidates, one-to-one append-only matches, duplicate-reference protection, and maker-checker final approval. The bilingual Finance workspace exposes the complete evidence flow.
+- Governed finance now includes balanced manual journals, linked reversals, internal cash/bank transfers, bank adjustments, immutable supporting evidence, and maker-checker fiscal-period close/reopen controls with reconciliation blockers.
+- The legal-company chart of accounts is now governed from submission through independent approval. Effective-dated, type-compatible mappings drive sales, payment, procurement, and inventory postings; manual journals accept only active non-control accounts explicitly enabled for manual posting. PostgreSQL migration 17 backfills legacy posting accounts and mappings, and the bilingual Finance workspace exposes both governance queues.
 
 ## Remaining before Release 1 can be claimed
 
-- Complete remaining master-data maintenance and finance workflows: manual journals and reversals, internal cash/bank transfers, bank-specific import adapters, suspense/fee handling, period close, budgeting, assets, treasury, intercompany, and consolidation.
+- Complete remaining master-data maintenance and finance workflows: bank-specific import adapters, budgeting, assets, treasury, intercompany, consolidation, and governed financial statements/reporting.
 - Complete HR, attendance, leave, loans, payroll, governed reports, and settings APIs and workflows.
 - Complete the Flutter online credit-sale entry and customer-account cache UX; the server contract and online synchronization path are authoritative, while offline credit intentionally remains fail-closed.
 - Select and integrate the production identity provider and login/session lifecycle; deploy the API and clients behind managed TLS, provision production devices, and add governed queue-support workflows.

@@ -132,6 +132,12 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("GET /v1/finance/fiscal-period-actions", h.listFiscalPeriodActions)
 		mux.HandleFunc("POST /v1/finance/fiscal-periods/{periodID}/actions", h.requestFiscalPeriodAction)
 		mux.HandleFunc("POST /v1/finance/fiscal-period-actions/{actionID}/approval", h.approveFiscalPeriodAction)
+		mux.HandleFunc("GET /v1/finance/accounts", h.listGLAccounts)
+		mux.HandleFunc("POST /v1/finance/accounts", h.createGLAccount)
+		mux.HandleFunc("POST /v1/finance/accounts/{accountID}/decisions", h.decideGLAccount)
+		mux.HandleFunc("GET /v1/finance/posting-mappings", h.listPostingMappings)
+		mux.HandleFunc("POST /v1/finance/posting-mappings", h.createPostingMapping)
+		mux.HandleFunc("POST /v1/finance/posting-mappings/{mappingID}/decisions", h.decidePostingMapping)
 	}
 	if h.read != nil {
 		mux.HandleFunc("GET /v1/context", h.workingContext)
@@ -1073,7 +1079,7 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusConflict, "bank_reconciliation_conflict"
 	case errors.Is(err, banking.ErrInactiveAccount):
 		status, code = http.StatusUnprocessableEntity, "business_rule_violation"
-	case errors.Is(err, financialops.ErrInvalidTransition), errors.Is(err, financialops.ErrSeparationOfDuties), errors.Is(err, financialops.ErrPeriodCloseBlocked), errors.Is(err, financialops.ErrAlreadyReversed):
+	case errors.Is(err, financialops.ErrInvalidTransition), errors.Is(err, financialops.ErrSeparationOfDuties), errors.Is(err, financialops.ErrPeriodCloseBlocked), errors.Is(err, financialops.ErrAlreadyReversed), errors.Is(err, financialops.ErrAccountGovernance):
 		status, code = http.StatusConflict, "financial_control_conflict"
 	case errors.Is(err, financialops.ErrPeriodClosed):
 		status, code = http.StatusConflict, "fiscal_period_closed"

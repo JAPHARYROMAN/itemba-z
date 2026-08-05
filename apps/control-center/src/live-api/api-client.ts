@@ -10,6 +10,7 @@ import type {
 	CustomerCollection, ReceiveCustomerCollectionCommand,
 	BankAccountPage, BankStatement, BankStatementPage, ImportBankStatementCommand, MatchBankStatementLineCommand, ReconcileBankStatementCommand,
 	CreateFinancialDocumentCommand, FinancialDocument, FinancialDocumentPage, FiscalPeriodActionCommand, FiscalPeriodActionPage, FiscalPeriodActionRequest, FiscalPeriodPage, TransitionFinancialDocumentCommand,
+	CreateGLAccountCommand, CreatePostingMappingCommand, GLAccount, GLAccountPage, GovernanceDecisionCommand, PostingMapping, PostingMappingPage,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -247,6 +248,12 @@ export class ItembaApiClient {
   listFiscalPeriodActions(): Promise<FiscalPeriodActionPage> { return this.request("/v1/finance/fiscal-period-actions"); }
   requestFiscalPeriodAction(periodId: string, command: FiscalPeriodActionCommand, idempotencyKey: string): Promise<FiscalPeriodActionRequest> { return this.request(`/v1/finance/fiscal-periods/${encodeURIComponent(periodId)}/actions`, { method: "POST", body: command, idempotencyKey }); }
   approveFiscalPeriodAction(actionId: string, reason: string, idempotencyKey: string): Promise<FiscalPeriodActionRequest> { return this.request(`/v1/finance/fiscal-period-actions/${encodeURIComponent(actionId)}/approval`, { method: "POST", body: { reason }, idempotencyKey }); }
+  listGLAccounts(): Promise<GLAccountPage> { return this.request("/v1/finance/accounts"); }
+  createGLAccount(command: CreateGLAccountCommand, idempotencyKey: string): Promise<GLAccount> { return this.request("/v1/finance/accounts", { method: "POST", body: command, idempotencyKey }); }
+  decideGLAccount(accountId: string, command: GovernanceDecisionCommand, idempotencyKey: string): Promise<GLAccount> { return this.request(`/v1/finance/accounts/${encodeURIComponent(accountId)}/decisions`, { method: "POST", body: command, idempotencyKey }); }
+  listPostingMappings(): Promise<PostingMappingPage> { return this.request("/v1/finance/posting-mappings"); }
+  createPostingMapping(command: CreatePostingMappingCommand, idempotencyKey: string): Promise<PostingMapping> { return this.request("/v1/finance/posting-mappings", { method: "POST", body: command, idempotencyKey }); }
+  decidePostingMapping(mappingId: string, command: GovernanceDecisionCommand, idempotencyKey: string): Promise<PostingMapping> { return this.request(`/v1/finance/posting-mappings/${encodeURIComponent(mappingId)}/decisions`, { method: "POST", body: command, idempotencyKey }); }
 
   listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
     const query = new URLSearchParams({ page_size: "100" });
