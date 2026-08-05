@@ -42,6 +42,23 @@ type createAssetRequest struct {
 	DisposalLossAccountID            string `json:"disposal_loss_account_id"`
 	Reason                           string `json:"reason"`
 }
+type createPurchasedAssetRequest struct {
+	SourceDocumentID                 string `json:"source_document_id"`
+	SourceProductID                  string `json:"source_product_id"`
+	Code                             string `json:"code"`
+	Name                             string `json:"name"`
+	Category                         string `json:"category"`
+	Currency                         string `json:"currency"`
+	ResidualMinor                    int64  `json:"residual_minor"`
+	UsefulLifeMonths                 int    `json:"useful_life_months"`
+	AssetAccountID                   string `json:"asset_account_id"`
+	AccumulatedDepreciationAccountID string `json:"accumulated_depreciation_account_id"`
+	DepreciationExpenseAccountID     string `json:"depreciation_expense_account_id"`
+	CapitalizationOffsetAccountID    string `json:"capitalization_offset_account_id"`
+	DisposalGainAccountID            string `json:"disposal_gain_account_id"`
+	DisposalLossAccountID            string `json:"disposal_loss_account_id"`
+	Reason                           string `json:"reason"`
+}
 type depreciationRequest struct {
 	Period string `json:"period"`
 	Reason string `json:"reason"`
@@ -172,6 +189,26 @@ func (h *Handler) createAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := h.advancedfinance.CreateAsset(r.Context(), advancedfinance.CreateAssetCommand{Scope: p.Scope, Code: body.Code, Name: body.Name, Category: body.Category, Currency: body.Currency, AcquiredAt: acquired, CostMinor: body.CostMinor, ResidualMinor: body.ResidualMinor, UsefulLifeMonths: body.UsefulLifeMonths, AssetAccountID: body.AssetAccountID, AccumulatedDepreciationAccountID: body.AccumulatedDepreciationAccountID, DepreciationExpenseAccountID: body.DepreciationExpenseAccountID, CapitalizationOffsetAccountID: body.CapitalizationOffsetAccountID, DisposalGainAccountID: body.DisposalGainAccountID, DisposalLossAccountID: body.DisposalLossAccountID, Reason: body.Reason, ActorID: p.ActorID, IdempotencyKey: idem})
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	writeJSON(w, 201, v)
+}
+func (h *Handler) createPurchasedAsset(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.requestContext(w, r)
+	if !ok {
+		return
+	}
+	idem, ok := requireIdempotencyKey(w, r)
+	if !ok {
+		return
+	}
+	var b createPurchasedAssetRequest
+	if !decodeJSON(w, r, &b) {
+		return
+	}
+	v, err := h.advancedfinance.CreatePurchasedAsset(r.Context(), advancedfinance.CreatePurchasedAssetCommand{Scope: p.Scope, SourceDocumentID: b.SourceDocumentID, SourceProductID: b.SourceProductID, Code: b.Code, Name: b.Name, Category: b.Category, Currency: b.Currency, ResidualMinor: b.ResidualMinor, UsefulLifeMonths: b.UsefulLifeMonths, AssetAccountID: b.AssetAccountID, AccumulatedDepreciationAccountID: b.AccumulatedDepreciationAccountID, DepreciationExpenseAccountID: b.DepreciationExpenseAccountID, CapitalizationOffsetAccountID: b.CapitalizationOffsetAccountID, DisposalGainAccountID: b.DisposalGainAccountID, DisposalLossAccountID: b.DisposalLossAccountID, Reason: b.Reason, ActorID: p.ActorID, IdempotencyKey: idem})
 	if err != nil {
 		h.writeError(w, r, err)
 		return

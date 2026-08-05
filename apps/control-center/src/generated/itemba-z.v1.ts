@@ -691,6 +691,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/finance/assets/from-purchase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a fixed-asset draft from a posted matched supplier-invoice line */
+        post: operations["createFixedAssetFromPurchase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/finance/assets/{asset_id}/depreciation": {
         parameters: {
             query?: never;
@@ -1130,6 +1147,10 @@ export interface components {
             approved_by?: string;
             /** Format: date-time */
             disposed_at?: string;
+            /** Format: uuid */
+            source_document_id?: string;
+            /** Format: uuid */
+            source_product_id?: string;
         };
         FixedAssetPage: {
             items: components["schemas"]["FixedAsset"][];
@@ -1142,6 +1163,25 @@ export interface components {
             /** Format: date */
             acquired_at: string;
             cost_minor: components["schemas"]["SafePositiveInteger"];
+            residual_minor: components["schemas"]["SafeNonNegativeInteger"];
+            useful_life_months: number;
+            asset_account_id: string;
+            accumulated_depreciation_account_id: string;
+            depreciation_expense_account_id: string;
+            capitalization_offset_account_id: string;
+            disposal_gain_account_id: string;
+            disposal_loss_account_id: string;
+            reason: string;
+        };
+        CreatePurchasedFixedAssetCommand: {
+            /** Format: uuid */
+            source_document_id: string;
+            /** Format: uuid */
+            source_product_id: string;
+            code: string;
+            name: string;
+            category: string;
+            currency: string;
             residual_minor: components["schemas"]["SafeNonNegativeInteger"];
             useful_life_months: number;
             asset_account_id: string;
@@ -3700,6 +3740,34 @@ export interface operations {
         responses: {
             /** @description Current fixed asset. */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixedAsset"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createFixedAssetFromPurchase: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePurchasedFixedAssetCommand"];
+            };
+        };
+        responses: {
+            /** @description Purchase-linked fixed-asset draft with server-derived cost. */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

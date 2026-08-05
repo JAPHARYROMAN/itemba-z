@@ -12,7 +12,7 @@ import type {
 	CreateFinancialDocumentCommand, FinancialDocument, FinancialDocumentPage, FiscalPeriodActionCommand, FiscalPeriodActionPage, FiscalPeriodActionRequest, FiscalPeriodPage, TransitionFinancialDocumentCommand,
 	CreateGLAccountCommand, CreatePostingMappingCommand, GLAccount, GLAccountPage, GovernanceDecisionCommand, PostingMapping, PostingMappingPage,
 	BalanceSheet, CashFlow, ExportFinancialReportCommand, GeneralLedger, ProfitAndLoss, ReportExportArtifact, TrialBalance,
-	AdvancedFinanceTransitionCommand, Budget, BudgetActual, BudgetPage, CreateBudgetCommand, CreateFixedAssetCommand, DepreciateFixedAssetCommand, DisposeFixedAssetCommand, FixedAsset, FixedAssetDepreciation, FixedAssetPage,
+	AdvancedFinanceTransitionCommand, Budget, BudgetActual, BudgetPage, CreateBudgetCommand, CreateFixedAssetCommand, CreatePurchasedFixedAssetCommand, DepreciateFixedAssetCommand, DisposeFixedAssetCommand, FixedAsset, FixedAssetDepreciation, FixedAssetPage,
 	CreateTreasuryFacilityCommand, PostTreasuryTransactionCommand, TreasuryFacility, TreasuryFacilityPage, TreasuryTransitionCommand,
 	CreateIntercompanyCommand, GroupConsolidation, IntercompanyPage, IntercompanyTransaction, IntercompanyTransitionCommand,
 } from "@/live-api/types";
@@ -270,6 +270,7 @@ export class ItembaApiClient {
   budgetActual(id: string): Promise<BudgetActual> { return this.request(`/v1/finance/budgets/${encodeURIComponent(id)}/actual`); }
   listFixedAssets(): Promise<FixedAssetPage> { return this.request("/v1/finance/assets"); }
   createFixedAsset(command: CreateFixedAssetCommand, idempotencyKey: string): Promise<FixedAsset> { return this.request("/v1/finance/assets", { method: "POST", body: command, idempotencyKey }); }
+  createFixedAssetFromPurchase(command: CreatePurchasedFixedAssetCommand, idempotencyKey: string): Promise<FixedAsset> { return this.request("/v1/finance/assets/from-purchase", { method: "POST", body: command, idempotencyKey }); }
   transitionFixedAsset(id: string, command: AdvancedFinanceTransitionCommand, idempotencyKey: string): Promise<FixedAsset> { return this.request(`/v1/finance/assets/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey }); }
   depreciateFixedAsset(id: string, command: DepreciateFixedAssetCommand, idempotencyKey: string): Promise<FixedAssetDepreciation> { return this.request(`/v1/finance/assets/${encodeURIComponent(id)}/depreciation`, { method: "POST", body: command, idempotencyKey }); }
   disposeFixedAsset(id: string, command: DisposeFixedAssetCommand, idempotencyKey: string): Promise<FixedAsset> { return this.request(`/v1/finance/assets/${encodeURIComponent(id)}/disposal`, { method: "POST", body: command, idempotencyKey }); }

@@ -58,6 +58,7 @@ const workspace: AdvancedFinanceWorkspace = {
     },
   ],
   assets: [],
+  purchaseInvoices: [],
 };
 
 describe("AdvancedFinance", () => {
@@ -74,5 +75,10 @@ describe("AdvancedFinance", () => {
     expect(
       screen.getByRole("button", { name: "Register asset" }),
     ).toBeInTheDocument();
+  });
+
+  it("exposes posted matched purchases for controlled capitalization", () => {
+    render(<LanguageProvider><AdvancedFinance workspace={{...workspace,purchaseInvoices:[{id:"00000000-0000-4000-8000-000000000010",number:"SI-001",type:"SUPPLIER_INVOICE",status:"POSTED",party_type:"SUPPLIER",currency:"TZS",total_minor:10000,reason:"Matched supplier invoice",created_at:generated,lines:[{id:"00000000-0000-4000-8000-000000000011",product_id:"00000000-0000-4000-8000-000000000012",quantity:1,unit_price_minor:10000,amount_minor:10000}]}]}} /></LanguageProvider>);
+    expect(screen.getByRole("button",{name:"Create purchase-linked asset"})).toBeInTheDocument();
   });
 });

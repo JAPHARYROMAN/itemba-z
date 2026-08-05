@@ -7,6 +7,7 @@ import (
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/advancedfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
@@ -155,6 +156,57 @@ func (s *Store) CreateAsset(_ context.Context, a advancedfinance.Asset, idem, ha
 	}
 	s.state.assets[companyEntityKey(a.Scope.TenantID, a.Scope.CompanyID, a.ID)] = a
 	s.state.idempotencies[k] = idempotency{RequestHash: hash, ResultID: a.ID}
+	return a, nil
+}
+func (s *Store) CreateAssetFromPurchase(_ context.Context, a advancedfinance.Asset, sourceDocumentID, sourceProductID, idem, hash string) (advancedfinance.Asset, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.state.permissions[permissionKey(a.Scope, a.CreatedBy, "finance.assets.manage")] {
+		return a, sales.ErrForbidden
+	}
+	ik := idempotencyKey(a.Scope, "finance.asset.create_from_purchase.v1", idem)
+	if v, ok := s.state.idempotencies[ik]; ok {
+		if v.RequestHash != hash {
+			return a, sales.ErrIdempotencyConflict
+		}
+		return s.state.assets[companyEntityKey(a.Scope.TenantID, a.Scope.CompanyID, v.ResultID)], nil
+	}
+	document, ok := s.state.operationDocuments[operationKey(a.Scope, sourceDocumentID)]
+	if !ok || document.Type != operations.SupplierInvoice || document.Status != operations.Posted {
+		return a, advancedfinance.ErrInvalidCommand
+	}
+	found := false
+	for _, line := range document.Lines {
+		if line.ProductID == sourceProductID {
+			product, exists := s.state.products[companyEntityKey(a.Scope.TenantID, a.Scope.CompanyID, sourceProductID)]
+			if !exists || a.CapitalizationOffsetAccountID != product.InventoryAccountID {
+				return a, advancedfinance.ErrInvalidCommand
+			}
+			a.CostMinor = line.AmountMinor
+			for _, returned := range s.state.operationDocuments {
+				if returned.Scope == a.Scope && returned.Type == operations.PurchaseReturn && returned.Status == operations.Posted && returned.SourceDocumentID == sourceDocumentID {
+					for _, returnLine := range returned.Lines {
+						if returnLine.ProductID == sourceProductID {
+							a.CostMinor -= returnLine.AmountMinor
+						}
+					}
+				}
+			}
+			a.NetBookValueMinor = a.CostMinor
+			found = true
+			break
+		}
+	}
+	if !found || a.CostMinor <= 0 || a.ResidualMinor >= a.CostMinor {
+		return a, advancedfinance.ErrInvalidCommand
+	}
+	if document.PostedAt != nil {
+		a.AcquiredAt = *document.PostedAt
+	} else {
+		a.AcquiredAt = document.CreatedAt
+	}
+	s.state.assets[companyEntityKey(a.Scope.TenantID, a.Scope.CompanyID, a.ID)] = a
+	s.state.idempotencies[ik] = idempotency{RequestHash: hash, ResultID: a.ID}
 	return a, nil
 }
 func (s *Store) TransitionAsset(_ context.Context, scope tenancy.Scope, actor, id string, to advancedfinance.Status, _, journalID, idem, hash string, at time.Time) (advancedfinance.Asset, error) {

@@ -626,6 +626,15 @@ paths:
       parameters: [{ name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdvancedFinanceTransitionCommand' } } } }
       responses: { '200': { description: Current fixed asset., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAsset' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/assets/from-purchase:
+    post:
+      summary: Create a fixed-asset draft from a posted matched supplier-invoice line
+      operationId: createFixedAssetFromPurchase
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreatePurchasedFixedAssetCommand' } } } }
+      responses: { '201': { description: Purchase-linked fixed-asset draft with server-derived cost., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAsset' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
   /v1/finance/assets/{asset_id}/depreciation:
     post:
       summary: Post one idempotent straight-line depreciation period
@@ -1207,6 +1216,8 @@ components:
         created_at: { type: string, format: date-time }
         approved_by: { type: string, format: uuid }
         disposed_at: { type: string, format: date-time }
+        source_document_id: { type: string, format: uuid }
+        source_product_id: { type: string, format: uuid }
     FixedAssetPage:
       type: object
       additionalProperties: false
@@ -1217,6 +1228,11 @@ components:
       additionalProperties: false
       required: [code, name, category, currency, acquired_at, cost_minor, residual_minor, useful_life_months, asset_account_id, accumulated_depreciation_account_id, depreciation_expense_account_id, capitalization_offset_account_id, disposal_gain_account_id, disposal_loss_account_id, reason]
       properties: { code: { type: string }, name: { type: string }, category: { type: string }, currency: { type: string }, acquired_at: { type: string, format: date }, cost_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, residual_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, useful_life_months: { type: integer, minimum: 1, maximum: 1200 }, asset_account_id: { type: string }, accumulated_depreciation_account_id: { type: string }, depreciation_expense_account_id: { type: string }, capitalization_offset_account_id: { type: string }, disposal_gain_account_id: { type: string }, disposal_loss_account_id: { type: string }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    CreatePurchasedFixedAssetCommand:
+      type: object
+      additionalProperties: false
+      required: [source_document_id, source_product_id, code, name, category, currency, residual_minor, useful_life_months, asset_account_id, accumulated_depreciation_account_id, depreciation_expense_account_id, capitalization_offset_account_id, disposal_gain_account_id, disposal_loss_account_id, reason]
+      properties: { source_document_id: { type: string, format: uuid }, source_product_id: { type: string, format: uuid }, code: { type: string }, name: { type: string }, category: { type: string }, currency: { type: string }, residual_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, useful_life_months: { type: integer, minimum: 1, maximum: 1200 }, asset_account_id: { type: string }, accumulated_depreciation_account_id: { type: string }, depreciation_expense_account_id: { type: string }, capitalization_offset_account_id: { type: string }, disposal_gain_account_id: { type: string }, disposal_loss_account_id: { type: string }, reason: { type: string, minLength: 8, maxLength: 500 } }
     DepreciateFixedAssetCommand:
       type: object
       additionalProperties: false

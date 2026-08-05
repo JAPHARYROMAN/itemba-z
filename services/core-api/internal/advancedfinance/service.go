@@ -23,6 +23,7 @@ type Repository interface {
 	BudgetActual(context.Context, tenancy.Scope, string, string, time.Time) (BudgetActual, error)
 	ListAssets(context.Context, tenancy.Scope, string) (Page[Asset], error)
 	CreateAsset(context.Context, Asset, string, string) (Asset, error)
+	CreateAssetFromPurchase(context.Context, Asset, string, string, string, string) (Asset, error)
 	TransitionAsset(context.Context, tenancy.Scope, string, string, Status, string, string, string, string, time.Time) (Asset, error)
 	PostDepreciation(context.Context, tenancy.Scope, string, string, string, string, time.Time, string, string, time.Time) (Depreciation, error)
 	DisposeAsset(context.Context, tenancy.Scope, string, string, int64, string, string, string, string, string, time.Time) (Asset, error)
@@ -59,6 +60,14 @@ type CreateAssetCommand struct {
 	Code, Name, Category, Currency                                                                                                                                                               string
 	AcquiredAt                                                                                                                                                                                   time.Time
 	CostMinor, ResidualMinor                                                                                                                                                                     int64
+	UsefulLifeMonths                                                                                                                                                                             int
+	AssetAccountID, AccumulatedDepreciationAccountID, DepreciationExpenseAccountID, CapitalizationOffsetAccountID, DisposalGainAccountID, DisposalLossAccountID, Reason, ActorID, IdempotencyKey string
+}
+type CreatePurchasedAssetCommand struct {
+	Scope                                                                                                                                                                                        tenancy.Scope
+	SourceDocumentID, SourceProductID                                                                                                                                                            string
+	Code, Name, Category, Currency                                                                                                                                                               string
+	ResidualMinor                                                                                                                                                                                int64
 	UsefulLifeMonths                                                                                                                                                                             int
 	AssetAccountID, AccumulatedDepreciationAccountID, DepreciationExpenseAccountID, CapitalizationOffsetAccountID, DisposalGainAccountID, DisposalLossAccountID, Reason, ActorID, IdempotencyKey string
 }
@@ -146,6 +155,34 @@ func (s *Service) CreateAsset(ctx context.Context, c CreateAssetCommand) (Asset,
 	now := s.clock.Now().UTC()
 	a := Asset{ID: id, Scope: c.Scope, Code: c.Code, Name: c.Name, Category: c.Category, Status: Draft, Currency: c.Currency, AcquiredAt: c.AcquiredAt.UTC(), CostMinor: c.CostMinor, ResidualMinor: c.ResidualMinor, UsefulLifeMonths: c.UsefulLifeMonths, NetBookValueMinor: c.CostMinor, AssetAccountID: c.AssetAccountID, AccumulatedDepreciationAccountID: c.AccumulatedDepreciationAccountID, DepreciationExpenseAccountID: c.DepreciationExpenseAccountID, CapitalizationOffsetAccountID: c.CapitalizationOffsetAccountID, DisposalGainAccountID: c.DisposalGainAccountID, DisposalLossAccountID: c.DisposalLossAccountID, Reason: c.Reason, CreatedBy: c.ActorID, CreatedAt: now}
 	return s.repository.CreateAsset(ctx, a, c.IdempotencyKey, hash(c))
+}
+func (s *Service) CreatePurchasedAsset(ctx context.Context, c CreatePurchasedAssetCommand) (Asset, error) {
+	c.Scope = c.Scope.Normalize()
+	c.ActorID = identity.NormalizeClaim(c.ActorID)
+	c.SourceDocumentID = identity.NormalizeClaim(c.SourceDocumentID)
+	c.SourceProductID = identity.NormalizeClaim(c.SourceProductID)
+	c.Code = strings.ToUpper(strings.TrimSpace(c.Code))
+	c.Name = strings.TrimSpace(c.Name)
+	c.Category = strings.TrimSpace(c.Category)
+	c.Currency = strings.ToUpper(strings.TrimSpace(c.Currency))
+	c.Reason = strings.TrimSpace(c.Reason)
+	ids := []*string{&c.AssetAccountID, &c.AccumulatedDepreciationAccountID, &c.DepreciationExpenseAccountID, &c.CapitalizationOffsetAccountID, &c.DisposalGainAccountID, &c.DisposalLossAccountID}
+	for _, v := range ids {
+		*v = identity.NormalizeClaim(*v)
+		if !validAccountID(*v) {
+			return Asset{}, ErrInvalidCommand
+		}
+	}
+	if c.Scope.Validate() != nil || c.ActorID == "" || !identity.IsUUID(c.SourceDocumentID) || !identity.IsUUID(c.SourceProductID) || len(c.Code) < 2 || len(c.Code) > 40 || len(c.Name) < 3 || len(c.Name) > 160 || len(c.Category) < 2 || len(c.Currency) != 3 || c.ResidualMinor < 0 || !wire.IsSafeInteger(c.ResidualMinor) || c.UsefulLifeMonths < 1 || c.UsefulLifeMonths > 1200 || !validReason(c.Reason) || !validIdem(c.IdempotencyKey) {
+		return Asset{}, ErrInvalidCommand
+	}
+	id, err := s.ids.New()
+	if err != nil {
+		return Asset{}, err
+	}
+	now := s.clock.Now().UTC()
+	a := Asset{ID: id, Scope: c.Scope, Code: c.Code, Name: c.Name, Category: c.Category, Status: Draft, Currency: c.Currency, ResidualMinor: c.ResidualMinor, UsefulLifeMonths: c.UsefulLifeMonths, AssetAccountID: c.AssetAccountID, AccumulatedDepreciationAccountID: c.AccumulatedDepreciationAccountID, DepreciationExpenseAccountID: c.DepreciationExpenseAccountID, CapitalizationOffsetAccountID: c.CapitalizationOffsetAccountID, DisposalGainAccountID: c.DisposalGainAccountID, DisposalLossAccountID: c.DisposalLossAccountID, Reason: c.Reason, CreatedBy: c.ActorID, CreatedAt: now, SourceDocumentID: c.SourceDocumentID, SourceProductID: c.SourceProductID}
+	return s.repository.CreateAssetFromPurchase(ctx, a, c.SourceDocumentID, c.SourceProductID, c.IdempotencyKey, hash(c))
 }
 func (s *Service) TransitionAsset(ctx context.Context, c TransitionCommand) (Asset, error) {
 	c = normalizeTransition(c)

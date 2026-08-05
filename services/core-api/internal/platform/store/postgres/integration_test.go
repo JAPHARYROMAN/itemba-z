@@ -48,7 +48,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -442,6 +442,18 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	purchaseReturn = advance(purchaseReturn, operations.Submitted, userID, "integration-return-submit", scope)
 	purchaseReturn = advance(purchaseReturn, operations.Approved, approverID, "integration-return-approve", scope)
 	purchaseReturn = advance(purchaseReturn, operations.Posted, userID, "integration-return-posted", scope)
+	purchasedAsset, err := advancedService.CreatePurchasedAsset(ctx, advancedfinance.CreatePurchasedAssetCommand{Scope: scope, SourceDocumentID: invoice.ID, SourceProductID: productID, Code: "INT-PURCHASE-ASSET", Name: "Purchased integration asset", Category: "Equipment", Currency: "TZS", ResidualMinor: 0, UsefulLifeMonths: 24, AssetAccountID: "suspense", AccumulatedDepreciationAccountID: "inventory", DepreciationExpenseAccountID: "expense", CapitalizationOffsetAccountID: "inventory", DisposalGainAccountID: "revenue", DisposalLossAccountID: "cogs", Reason: "Capitalize matched supplier invoice balance", ActorID: userID, IdempotencyKey: "integration-purchased-asset"})
+	if err != nil || purchasedAsset.CostMinor != 5000 || purchasedAsset.SourceDocumentID != invoice.ID {
+		t.Fatalf("create purchased asset: %+v %v", purchasedAsset, err)
+	}
+	purchasedAsset, err = advancedService.TransitionAsset(ctx, advancedfinance.TransitionCommand{Scope: scope, ID: purchasedAsset.ID, Status: advancedfinance.Submitted, Reason: "Purchase-linked asset ready for review", ActorID: userID, IdempotencyKey: "integration-passet-submit"})
+	if err != nil {
+		t.Fatalf("submit purchased asset: %v", err)
+	}
+	purchasedAsset, err = advancedService.TransitionAsset(ctx, advancedfinance.TransitionCommand{Scope: scope, ID: purchasedAsset.ID, Status: advancedfinance.Active, Reason: "Independent purchase capitalization approved", ActorID: approverID, IdempotencyKey: "integration-passet-active"})
+	if err != nil || purchasedAsset.Status != advancedfinance.Active {
+		t.Fatalf("activate purchased asset: %+v %v", purchasedAsset, err)
+	}
 	payment := createDocument(operations.SupplierPayment, operations.SupplierParty, supplierID, invoice.ID, "", 1, 5000, "integration-sp-create")
 	payment = advance(payment, operations.Submitted, userID, "integration-sp-submit", scope)
 	payment = advance(payment, operations.Approved, approverID, "integration-sp-approve", scope)
@@ -823,7 +835,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 1 || salesCount != 7 || journalCount != 25 || outboxCount != 83 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 26 || outboxCount != 86 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }

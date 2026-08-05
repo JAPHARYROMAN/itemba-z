@@ -2,6 +2,7 @@ import type {
   AdvancedFinanceTransitionCommand,
   CreateBudgetCommand,
   CreateFixedAssetCommand,
+  CreatePurchasedFixedAssetCommand,
   DepreciateFixedAssetCommand,
   DisposeFixedAssetCommand,
 } from "@/live-api/types";
@@ -33,6 +34,7 @@ type Command =
       command: AdvancedFinanceTransitionCommand;
     }
   | { action: "create_asset"; command: CreateFixedAssetCommand }
+  | { action: "create_purchased_asset"; command: CreatePurchasedFixedAssetCommand }
   | {
       action: "transition_asset";
       id: string;
@@ -64,6 +66,8 @@ export async function POST(request: Request) {
         await repository.createFixedAsset(body.command, key),
         201,
       );
+    if (body.action === "create_purchased_asset")
+      return liveResponse(await repository.createFixedAssetFromPurchase(body.command, key), 201);
     if (body.action === "transition_asset")
       return liveResponse(
         await repository.transitionFixedAsset(body.id, body.command, key),

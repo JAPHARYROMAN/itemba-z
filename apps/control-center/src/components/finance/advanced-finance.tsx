@@ -10,6 +10,7 @@ import type {
   Budget,
   CreateBudgetCommand,
   CreateFixedAssetCommand,
+  CreatePurchasedFixedAssetCommand,
   DisposeFixedAssetCommand,
   FixedAsset,
   PublicProblem,
@@ -227,6 +228,16 @@ export function AdvancedFinance({
             if (value) setAssets((v) => [value, ...v]);
           }}
         />
+        {workspace.purchaseInvoices.length > 0 ? (
+          <PurchasedAssetForm
+            disabled={busy || !canAssetManage}
+            workspace={workspace}
+            onCreate={async (command) => {
+              const value = (await run({ action: "create_purchased_asset", command })) as FixedAsset | null;
+              if (value) setAssets((current) => [value, ...current]);
+            }}
+          />
+        ) : null}
         <div className="table-scroll">
           <table>
             <thead>
@@ -606,4 +617,12 @@ function AssetForm({
       </button>
     </form>
   );
+}
+
+function PurchasedAssetForm({disabled,workspace,onCreate}:{disabled:boolean;workspace:AdvancedFinanceWorkspace;onCreate:(command:CreatePurchasedFixedAssetCommand)=>void}){
+  const {l,locale}=useLanguage();const assets=workspace.accounts.filter((account)=>account.type==="ASSET"),expenses=workspace.accounts.filter((account)=>account.type==="EXPENSE"),revenue=workspace.accounts.filter((account)=>account.type==="REVENUE");const options=(items:typeof assets)=>items.map((account)=><option key={account.id} value={account.id}>{account.code} · {account.name}</option>);
+  const sources=workspace.purchaseInvoices.flatMap((invoice)=>invoice.lines.map((line)=>({invoice,line})));
+  return <form className="bank-import-form" onSubmit={(event)=>{event.preventDefault();const f=new FormData(event.currentTarget);const [source_document_id,source_product_id]=String(f.get("source")).split(":");onCreate({source_document_id,source_product_id,code:String(f.get("code")),name:String(f.get("name")),category:String(f.get("category")),currency:workspace.context.currency,residual_minor:Math.round(Number(f.get("residual"))*100),useful_life_months:Number(f.get("life")),asset_account_id:String(f.get("asset")),accumulated_depreciation_account_id:String(f.get("accum")),depreciation_expense_account_id:String(f.get("expense")),capitalization_offset_account_id:String(f.get("offset")),disposal_gain_account_id:String(f.get("gain")),disposal_loss_account_id:String(f.get("loss")),reason:String(f.get("reason"))});}}>
+    <h3>{l(text("Capitalize a matched purchase","Fanya ununuzi uliolinganishwa kuwa mali"))}</h3><label>{l(text("Posted supplier invoice line","Mstari wa ankara ya msambazaji"))}<select name="source" required>{sources.map(({invoice,line})=><option key={`${invoice.id}:${line.product_id}`} value={`${invoice.id}:${line.product_id}`}>{invoice.number} · {line.product_id} · {formatMinorUnits(line.amount_minor,invoice.currency,locale)}</option>)}</select></label><label>{l(text("Asset code","Namba ya mali"))}<input name="code" required/></label><label>{l(text("Asset name","Jina la mali"))}<input name="name" required/></label><label>{l(text("Category","Aina"))}<input name="category" required/></label><label>{l(text("Residual TZS","Thamani ya mwisho TZS"))}<input name="residual" type="number" min="0" step="0.01" defaultValue="0" required/></label><label>{l(text("Life months","Miezi ya matumizi"))}<input name="life" type="number" min="1" max="1200" required/></label><label>{l(text("Fixed-asset account","Akaunti ya mali ya kudumu"))}<select name="asset" required>{options(assets)}</select></label><label>{l(text("Accumulated depreciation","Uchakavu uliokusanywa"))}<select name="accum" required>{options(assets)}</select></label><label>{l(text("Depreciation expense","Gharama ya uchakavu"))}<select name="expense" required>{options(expenses)}</select></label><label>{l(text("Purchased inventory clearing account","Akaunti ya kuondoa ununuzi"))}<select name="offset" required>{options(assets)}</select></label><label>{l(text("Disposal gain","Faida ya uuzaji"))}<select name="gain" required>{options(revenue)}</select></label><label>{l(text("Disposal loss","Hasara ya uuzaji"))}<select name="loss" required>{options(expenses)}</select></label><label>{l(text("Reason","Sababu"))}<input name="reason" minLength={8} required/></label><button disabled={disabled} className="button button-primary">{l(text("Create purchase-linked asset","Unda mali kutoka ununuzi"))}</button>
+  </form>;
 }

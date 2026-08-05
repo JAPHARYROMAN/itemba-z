@@ -216,6 +216,7 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("GET /v1/finance/budgets/{budgetID}/actual", h.budgetActual)
 		mux.HandleFunc("GET /v1/finance/assets", h.listAssets)
 		mux.HandleFunc("POST /v1/finance/assets", h.createAsset)
+		mux.HandleFunc("POST /v1/finance/assets/from-purchase", h.createPurchasedAsset)
 		mux.HandleFunc("POST /v1/finance/assets/{assetID}/transitions", h.transitionAsset)
 		mux.HandleFunc("POST /v1/finance/assets/{assetID}/depreciation", h.depreciateAsset)
 		mux.HandleFunc("POST /v1/finance/assets/{assetID}/disposal", h.disposeAsset)

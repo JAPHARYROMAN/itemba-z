@@ -248,7 +248,7 @@ func (s *Store) ListAssets(ctx context.Context, scope tenancy.Scope, actor strin
 }
 func (t *transaction) asset(ctx context.Context, scope tenancy.Scope, id string) (advancedfinance.Asset, error) {
 	a := advancedfinance.Asset{Scope: scope}
-	err := t.tx.QueryRow(ctx, `SELECT id::text,code,name,category,status,currency,acquired_at,cost_minor,residual_minor,useful_life_months,accumulated_depreciation_minor,asset_account_id,accumulated_depreciation_account_id,depreciation_expense_account_id,capitalization_offset_account_id,disposal_gain_account_id,disposal_loss_account_id,reason,created_by::text,created_at,COALESCE(approved_by::text,''),disposed_at FROM fixed_assets WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND id=$5`, scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, id).Scan(&a.ID, &a.Code, &a.Name, &a.Category, &a.Status, &a.Currency, &a.AcquiredAt, &a.CostMinor, &a.ResidualMinor, &a.UsefulLifeMonths, &a.AccumulatedDepreciationMinor, &a.AssetAccountID, &a.AccumulatedDepreciationAccountID, &a.DepreciationExpenseAccountID, &a.CapitalizationOffsetAccountID, &a.DisposalGainAccountID, &a.DisposalLossAccountID, &a.Reason, &a.CreatedBy, &a.CreatedAt, &a.ApprovedBy, &a.DisposedAt)
+	err := t.tx.QueryRow(ctx, `SELECT id::text,code,name,category,status,currency,acquired_at,cost_minor,residual_minor,useful_life_months,accumulated_depreciation_minor,asset_account_id,accumulated_depreciation_account_id,depreciation_expense_account_id,capitalization_offset_account_id,disposal_gain_account_id,disposal_loss_account_id,reason,created_by::text,created_at,COALESCE(approved_by::text,''),disposed_at,COALESCE(source_document_id::text,''),COALESCE(source_product_id::text,'') FROM fixed_assets WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND id=$5`, scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, id).Scan(&a.ID, &a.Code, &a.Name, &a.Category, &a.Status, &a.Currency, &a.AcquiredAt, &a.CostMinor, &a.ResidualMinor, &a.UsefulLifeMonths, &a.AccumulatedDepreciationMinor, &a.AssetAccountID, &a.AccumulatedDepreciationAccountID, &a.DepreciationExpenseAccountID, &a.CapitalizationOffsetAccountID, &a.DisposalGainAccountID, &a.DisposalLossAccountID, &a.Reason, &a.CreatedBy, &a.CreatedAt, &a.ApprovedBy, &a.DisposedAt, &a.SourceDocumentID, &a.SourceProductID)
 	a.NetBookValueMinor = a.CostMinor - a.AccumulatedDepreciationMinor
 	return a, normalizeError(err)
 }
@@ -293,6 +293,56 @@ func (s *Store) CreateAsset(ctx context.Context, a advancedfinance.Asset, idem, 
 			return e
 		}
 		if e = tx.CompleteIdempotency(ctx, a.Scope, "finance.asset.create.v1", idem, a.ID); e != nil {
+			return e
+		}
+		r = a
+		return nil
+	})
+	return r, err
+}
+
+func (s *Store) CreateAssetFromPurchase(ctx context.Context, a advancedfinance.Asset, sourceDocumentID, sourceProductID, idem, hash string) (advancedfinance.Asset, error) {
+	var r advancedfinance.Asset
+	err := s.WithTransaction(ctx, func(contract sales.Transaction) error {
+		tx := contract.(*transaction)
+		ok, e := tx.Authorize(ctx, a.Scope, a.CreatedBy, "finance.assets.manage")
+		if e != nil {
+			return e
+		}
+		if !ok {
+			return sales.ErrForbidden
+		}
+		acquired, resultID, e := tx.ClaimIdempotency(ctx, a.Scope, "finance.asset.create_from_purchase.v1", idem, hash)
+		if e != nil {
+			return e
+		}
+		if !acquired {
+			r, e = tx.asset(ctx, a.Scope, resultID)
+			return e
+		}
+		var inventoryAccount string
+		if e = tx.tx.QueryRow(ctx, `SELECT d.currency,d.posted_at,l.amount_minor-COALESCE((SELECT sum(rl.amount_minor) FROM operation_documents rd JOIN operation_document_lines rl ON rl.tenant_id=rd.tenant_id AND rl.company_id=rd.company_id AND rl.document_id=rd.id WHERE rd.tenant_id=d.tenant_id AND rd.company_id=d.company_id AND rd.source_document_id=d.id AND rd.document_type='PURCHASE_RETURN' AND rd.status='POSTED' AND rl.product_id=l.product_id),0),p.inventory_account_id FROM operation_documents d JOIN operation_document_lines l ON l.tenant_id=d.tenant_id AND l.company_id=d.company_id AND l.document_id=d.id JOIN products p ON p.tenant_id=l.tenant_id AND p.company_id=l.company_id AND p.id=l.product_id WHERE d.tenant_id=$1 AND d.company_id=$2 AND d.branch_id=$3 AND d.warehouse_id=$4 AND d.id=$5 AND d.document_type='SUPPLIER_INVOICE' AND d.status='POSTED' AND l.product_id=$6`, a.Scope.TenantID, a.Scope.CompanyID, a.Scope.BranchID, a.Scope.WarehouseID, sourceDocumentID, sourceProductID).Scan(&a.Currency, &a.AcquiredAt, &a.CostMinor, &inventoryAccount); e != nil {
+			return normalizeError(e)
+		}
+		if a.CostMinor <= 0 || a.CapitalizationOffsetAccountID != inventoryAccount || a.ResidualMinor >= a.CostMinor {
+			return advancedfinance.ErrInvalidCommand
+		}
+		a.NetBookValueMinor = a.CostMinor
+		var governed int
+		if e = tx.tx.QueryRow(ctx, `SELECT count(*) FROM (VALUES($3::text,'ASSET'),($4,'ASSET'),($5,'EXPENSE'),($6,'ASSET'),($7,'REVENUE'),($8,'EXPENSE')) v(id,kind) JOIN gl_accounts g ON g.tenant_id=$1 AND g.company_id=$2 AND g.id=v.id AND g.status='ACTIVE' AND g.account_type=v.kind`, a.Scope.TenantID, a.Scope.CompanyID, a.AssetAccountID, a.AccumulatedDepreciationAccountID, a.DepreciationExpenseAccountID, a.CapitalizationOffsetAccountID, a.DisposalGainAccountID, a.DisposalLossAccountID).Scan(&governed); e != nil {
+			return normalizeError(e)
+		}
+		if governed != 6 {
+			return advancedfinance.ErrInvalidCommand
+		}
+		_, e = tx.tx.Exec(ctx, `INSERT INTO fixed_assets(id,tenant_id,company_id,branch_id,warehouse_id,code,name,category,status,currency,acquired_at,cost_minor,residual_minor,useful_life_months,asset_account_id,accumulated_depreciation_account_id,depreciation_expense_account_id,capitalization_offset_account_id,disposal_gain_account_id,disposal_loss_account_id,reason,created_by,created_at,source_document_id,source_product_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'DRAFT',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`, a.ID, a.Scope.TenantID, a.Scope.CompanyID, a.Scope.BranchID, a.Scope.WarehouseID, a.Code, a.Name, a.Category, a.Currency, a.AcquiredAt, a.CostMinor, a.ResidualMinor, a.UsefulLifeMonths, a.AssetAccountID, a.AccumulatedDepreciationAccountID, a.DepreciationExpenseAccountID, a.CapitalizationOffsetAccountID, a.DisposalGainAccountID, a.DisposalLossAccountID, a.Reason, a.CreatedBy, a.CreatedAt, sourceDocumentID, sourceProductID)
+		if e != nil {
+			return normalizeError(e)
+		}
+		if e = tx.financialEvidence(ctx, a.Scope, a.CreatedBy, "asset.created_from_purchase", "fixed_asset", a.ID, sourceDocumentID, a.CreatedAt); e != nil {
+			return e
+		}
+		if e = tx.CompleteIdempotency(ctx, a.Scope, "finance.asset.create_from_purchase.v1", idem, a.ID); e != nil {
 			return e
 		}
 		r = a

@@ -84,6 +84,8 @@ type Asset struct {
 	CreatedAt                        time.Time     `json:"created_at"`
 	ApprovedBy                       string        `json:"approved_by,omitempty"`
 	DisposedAt                       *time.Time    `json:"disposed_at,omitempty"`
+	SourceDocumentID                 string        `json:"source_document_id,omitempty"`
+	SourceProductID                  string        `json:"source_product_id,omitempty"`
 }
 
 type Depreciation struct {

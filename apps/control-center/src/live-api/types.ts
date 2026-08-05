@@ -132,10 +132,11 @@ export type AdvancedFinanceTransitionCommand = components["schemas"]["AdvancedFi
 export type FixedAsset = components["schemas"]["FixedAsset"];
 export type FixedAssetPage = components["schemas"]["FixedAssetPage"];
 export type CreateFixedAssetCommand = components["schemas"]["CreateFixedAssetCommand"];
+export type CreatePurchasedFixedAssetCommand = components["schemas"]["CreatePurchasedFixedAssetCommand"];
 export type FixedAssetDepreciation = components["schemas"]["FixedAssetDepreciation"];
 export type DepreciateFixedAssetCommand = components["schemas"]["DepreciateFixedAssetCommand"];
 export type DisposeFixedAssetCommand = components["schemas"]["DisposeFixedAssetCommand"];
-export interface AdvancedFinanceWorkspace { context: WorkingContext; accounts: GLAccount[]; budgets: Budget[]; assets: FixedAsset[] }
+export interface AdvancedFinanceWorkspace { context: WorkingContext; accounts: GLAccount[]; budgets: Budget[]; assets: FixedAsset[]; purchaseInvoices: OperationDocument[] }
 export type TreasuryFacility = components["schemas"]["TreasuryFacility"];
 export type TreasuryFacilityPage = components["schemas"]["TreasuryFacilityPage"];
 export type CreateTreasuryFacilityCommand = components["schemas"]["CreateTreasuryFacilityCommand"];

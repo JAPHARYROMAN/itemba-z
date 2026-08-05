@@ -37,8 +37,8 @@ export async function loadTreasuryWorkspace(): Promise<LiveSnapshot<TreasuryWork
 export async function loadAdvancedFinanceWorkspace(): Promise<LiveSnapshot<AdvancedFinanceWorkspace>> {
   try {
     const repository = await createServerRepository();
-    const [context, accounts, budgets, assets] = await Promise.all([repository.getWorkingContext(), repository.listGLAccounts(), repository.listBudgets(), repository.listFixedAssets()]);
-    return { state: "ready", data: { context, accounts: accounts.items.filter((account) => account.status === "ACTIVE"), budgets: budgets.items, assets: assets.items } };
+    const [context, accounts, budgets, assets, documents] = await Promise.all([repository.getWorkingContext(), repository.listGLAccounts(), repository.listBudgets(), repository.listFixedAssets(), repository.listOperationDocuments()]);
+    return { state: "ready", data: { context, accounts: accounts.items.filter((account) => account.status === "ACTIVE"), budgets: budgets.items, assets: assets.items, purchaseInvoices: documents.items.filter((document) => document.type === "SUPPLIER_INVOICE" && document.status === "POSTED") } };
   } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
 }
 
