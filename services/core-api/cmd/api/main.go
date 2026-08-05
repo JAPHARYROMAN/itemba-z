@@ -30,6 +30,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/treasury"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/workforce"
 )
 
 func main() {
@@ -222,7 +223,17 @@ func main() {
 		logger.Error("initialize inventory control service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithInventoryControl(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, commercialService, inventoryService, logger, authenticator)
+	workforceRepository, ok := repository.(workforce.Repository)
+	if !ok {
+		logger.Error("repository does not implement workforce control")
+		os.Exit(1)
+	}
+	workforceService, err := workforce.NewService(workforceRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize workforce service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithWorkforce(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, commercialService, inventoryService, workforceService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)

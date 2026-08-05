@@ -1067,6 +1067,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/hr/workforce": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get governed workforce scheduling, document, and payroll output evidence */
+        get: operations["getWorkforceSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/shift-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a shift-template revision */
+        post: operations["createShiftTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/shift-templates/{templateID}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit, activate, or reject a shift template */
+        post: operations["transitionShiftTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/shift-assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an employee shift assignment */
+        post: operations["createShiftAssignment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/shift-assignments/{assignmentID}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit, approve, or reject a shift assignment */
+        post: operations["transitionShiftAssignment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/employee-documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register immutable employee document metadata */
+        post: operations["registerEmployeeDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/payroll-runs/{payrollID}/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate a reproducible configured payroll output artifact */
+        post: operations["generatePayrollArtifact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/hr": {
         parameters: {
             query?: never;
@@ -3044,6 +3163,152 @@ export interface components {
             leave_requests: components["schemas"]["LeaveRequest"][];
             loans: components["schemas"]["EmployeeLoan"][];
             payroll_runs: components["schemas"]["PayrollRun"][];
+        };
+        /** @enum {string} */
+        WorkforceStatus: "DRAFT" | "SUBMITTED" | "ACTIVE" | "APPROVED" | "REJECTED";
+        ShiftTemplate: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            name_en: string;
+            name_sw: string;
+            status: components["schemas"]["WorkforceStatus"];
+            start_minute: number;
+            end_minute: number;
+            break_minutes: number;
+            weekday_mask: number;
+            /** Format: date-time */
+            effective_from: string;
+            /** Format: date-time */
+            effective_to?: string;
+            reason: string;
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            approved_by?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CreateShiftTemplateCommand: {
+            code: string;
+            name_en: string;
+            name_sw: string;
+            start_minute: number;
+            end_minute: number;
+            break_minutes: number;
+            weekday_mask: number;
+            /** Format: date */
+            effective_from: string;
+            /** Format: date */
+            effective_to?: string;
+            reason: string;
+        };
+        ShiftAssignment: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            employee_id: string;
+            /** Format: uuid */
+            shift_template_id: string;
+            status: components["schemas"]["WorkforceStatus"];
+            /** Format: date-time */
+            starts_on: string;
+            /** Format: date-time */
+            ends_on: string;
+            reason: string;
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            approved_by?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CreateShiftAssignmentCommand: {
+            /** Format: uuid */
+            employee_id: string;
+            /** Format: uuid */
+            shift_template_id: string;
+            /** Format: date */
+            starts_on: string;
+            /** Format: date */
+            ends_on: string;
+            reason: string;
+        };
+        WorkforceTransitionCommand: {
+            status: components["schemas"]["WorkforceStatus"];
+            reason: string;
+        };
+        EmployeeDocument: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            employee_id: string;
+            document_type: string;
+            title: string;
+            object_key: string;
+            sha256: string;
+            media_type: string;
+            /** @enum {string} */
+            classification: "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
+            /** Format: date-time */
+            issued_on?: string;
+            /** Format: date-time */
+            expires_on?: string;
+            reason: string;
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+        } & {
+            [key: string]: unknown;
+        };
+        RegisterEmployeeDocumentCommand: {
+            /** Format: uuid */
+            employee_id: string;
+            document_type: string;
+            title: string;
+            object_key: string;
+            sha256: string;
+            media_type: string;
+            /** @enum {string} */
+            classification: "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
+            /** Format: date */
+            issued_on?: string;
+            /** Format: date */
+            expires_on?: string;
+            reason: string;
+        };
+        PayrollArtifact: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            payroll_run_id: string;
+            /** Format: uuid */
+            configuration_id: string;
+            /** @enum {string} */
+            format: "BANK_CSV" | "STATUTORY_CSV";
+            file_name: string;
+            media_type: string;
+            sha256: string;
+            configuration_sha256: string;
+            row_count: components["schemas"]["SafePositiveInteger"];
+            content?: string;
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+        } & {
+            [key: string]: unknown;
+        };
+        GeneratePayrollArtifactCommand: {
+            /** Format: uuid */
+            configuration_id: string;
+            /** @enum {string} */
+            format: "BANK_CSV" | "STATUTORY_CSV";
+        };
+        WorkforceSnapshot: {
+            templates: components["schemas"]["ShiftTemplate"][];
+            assignments: components["schemas"]["ShiftAssignment"][];
+            documents: components["schemas"]["EmployeeDocument"][];
+            payroll_artifacts: components["schemas"]["PayrollArtifact"][];
         };
         /** @enum {string} */
         PeopleWorkflowStatus: "DRAFT" | "SUBMITTED" | "APPROVED" | "POSTED" | "REJECTED";
@@ -5464,6 +5729,195 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getWorkforceSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workforce snapshot. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkforceSnapshot"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createShiftTemplate: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateShiftTemplateCommand"];
+            };
+        };
+        responses: {
+            /** @description Shift template. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShiftTemplate"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    transitionShiftTemplate: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                templateID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkforceTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Shift template. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShiftTemplate"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createShiftAssignment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateShiftAssignmentCommand"];
+            };
+        };
+        responses: {
+            /** @description Shift assignment. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShiftAssignment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    transitionShiftAssignment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                assignmentID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkforceTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Shift assignment. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShiftAssignment"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    registerEmployeeDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterEmployeeDocumentCommand"];
+            };
+        };
+        responses: {
+            /** @description Employee document. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeDocument"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    generatePayrollArtifact: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                payrollID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneratePayrollArtifactCommand"];
+            };
+        };
+        responses: {
+            /** @description Payroll artifact including generated content. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollArtifact"];
+                };
+            };
+            409: components["responses"]["Conflict"];
         };
     };
     getPeopleSnapshot: {

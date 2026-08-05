@@ -36,7 +36,17 @@ export type LeaveCommand = components["schemas"]["LeaveCommand"];
 export type PeopleTransitionCommand = components["schemas"]["PeopleTransitionCommand"];
 export type LoanCommand = components["schemas"]["LoanCommand"];
 export type PayrollCommand = components["schemas"]["PayrollCommand"];
-export interface PeopleWorkspace { context: WorkingContext; people: PeopleSnapshot; accounts: GLAccount[] }
+export type WorkforceSnapshot = components["schemas"]["WorkforceSnapshot"];
+export type ShiftTemplate = components["schemas"]["ShiftTemplate"];
+export type ShiftAssignment = components["schemas"]["ShiftAssignment"];
+export type EmployeeDocument = components["schemas"]["EmployeeDocument"];
+export type PayrollArtifact = components["schemas"]["PayrollArtifact"];
+export type WorkforceStatus = components["schemas"]["WorkforceStatus"];
+export type CreateShiftTemplateCommand = components["schemas"]["CreateShiftTemplateCommand"];
+export type CreateShiftAssignmentCommand = components["schemas"]["CreateShiftAssignmentCommand"];
+export type RegisterEmployeeDocumentCommand = components["schemas"]["RegisterEmployeeDocumentCommand"];
+export type GeneratePayrollArtifactCommand = components["schemas"]["GeneratePayrollArtifactCommand"];
+export interface PeopleWorkspace { context: WorkingContext; people: PeopleSnapshot; workforce: WorkforceSnapshot; configurations: ConfigurationVersion[]; accounts: GLAccount[] }
 export type ConfigurationVersion = components["schemas"]["ConfigurationVersion"];
 export type NumberSequence = components["schemas"]["NumberSequence"];
 export type NumberAllocation = components["schemas"]["NumberAllocation"];

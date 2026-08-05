@@ -16,6 +16,7 @@ import type {
 	CreateTreasuryFacilityCommand, PostTreasuryTransactionCommand, TreasuryFacility, TreasuryFacilityPage, TreasuryTransitionCommand,
 	CreateIntercompanyCommand, GroupConsolidation, IntercompanyPage, IntercompanyTransaction, IntercompanyTransitionCommand,
 	Attendance, AttendanceCommand, CreateEmployeeCommand, Employee, EmployeeLoan, LeaveCommand, LeaveRequest, LeaveType, LeaveTypeCommand, LoanCommand, PayrollCommand, PayrollRun, PeopleSnapshot, PeopleTransitionCommand,
+	CreateShiftAssignmentCommand, CreateShiftTemplateCommand, EmployeeDocument, GeneratePayrollArtifactCommand, PayrollArtifact, RegisterEmployeeDocumentCommand, ShiftAssignment, ShiftTemplate, WorkforceSnapshot, WorkforceStatus,
 	ConfigurationSnapshot, ConfigurationVersion, ConfigurationTransitionCommand, CreateConfigurationCommand, CreateNumberSequenceCommand, NumberAllocation, NumberSequence,
 	CommercialSnapshot, CreateMasterRevisionCommand, MasterRevision, MasterRevisionStatus, CreateRFQCommand, RFQ, RFQStatus, CreateSupplierQuoteCommand, SupplierQuote, SourcingAward,
 	CreateInventoryPolicyCommand, InventoryControlSnapshot, InventoryPolicy, InventoryPolicyStatus, LotRegistration, RegisterReceiptLotsCommand,
@@ -287,6 +288,13 @@ export class ItembaApiClient {
   transitionIntercompanyTransaction(id: string, command: IntercompanyTransitionCommand, idempotencyKey: string): Promise<IntercompanyTransaction> { return this.request(`/v1/finance/intercompany/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey }); }
   groupConsolidation(asOf: string): Promise<GroupConsolidation> { return this.request(`/v1/reports/financial/consolidation?as_of=${encodeURIComponent(asOf)}`); }
   getPeopleSnapshot(): Promise<PeopleSnapshot> { return this.request("/v1/hr"); }
+  getWorkforceSnapshot(): Promise<WorkforceSnapshot> { return this.request("/v1/hr/workforce"); }
+  createShiftTemplate(command: CreateShiftTemplateCommand, key: string): Promise<ShiftTemplate> { return this.request("/v1/hr/shift-templates", { method: "POST", body: command, idempotencyKey: key }); }
+  transitionShiftTemplate(id: string, status: WorkforceStatus, reason: string, key: string): Promise<ShiftTemplate> { return this.request(`/v1/hr/shift-templates/${encodeURIComponent(id)}/transitions`, { method: "POST", body: { status, reason }, idempotencyKey: key }); }
+  createShiftAssignment(command: CreateShiftAssignmentCommand, key: string): Promise<ShiftAssignment> { return this.request("/v1/hr/shift-assignments", { method: "POST", body: command, idempotencyKey: key }); }
+  transitionShiftAssignment(id: string, status: WorkforceStatus, reason: string, key: string): Promise<ShiftAssignment> { return this.request(`/v1/hr/shift-assignments/${encodeURIComponent(id)}/transitions`, { method: "POST", body: { status, reason }, idempotencyKey: key }); }
+  registerEmployeeDocument(command: RegisterEmployeeDocumentCommand, key: string): Promise<EmployeeDocument> { return this.request("/v1/hr/employee-documents", { method: "POST", body: command, idempotencyKey: key }); }
+  generatePayrollArtifact(payrollId: string, command: GeneratePayrollArtifactCommand, key: string): Promise<PayrollArtifact> { return this.request(`/v1/hr/payroll-runs/${encodeURIComponent(payrollId)}/exports`, { method: "POST", body: command, idempotencyKey: key }); }
   createEmployee(command: CreateEmployeeCommand, key: string): Promise<Employee> { return this.request("/v1/hr/employees", { method: "POST", body: command, idempotencyKey: key }); }
   recordAttendance(command: AttendanceCommand, key: string): Promise<Attendance> { return this.request("/v1/hr/attendance", { method: "POST", body: command, idempotencyKey: key }); }
   createLeaveType(command: LeaveTypeCommand, key: string): Promise<LeaveType> { return this.request("/v1/hr/leave-types", { method: "POST", body: command, idempotencyKey: key }); }

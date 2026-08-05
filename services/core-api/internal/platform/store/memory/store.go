@@ -33,6 +33,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/treasury"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/workforce"
 )
 
 const testCatalogSnapshotToken = "00000000-0000-4000-8000-000000000001"
@@ -126,6 +127,10 @@ type state struct {
 	lotRegistrations          map[string]inventorycontrol.LotRegistration
 	lotBalances               map[string]inventorycontrol.LotBalance
 	inventoryCostHistory      map[string]inventorycontrol.CostHistory
+	shiftTemplates            map[string]workforce.ShiftTemplate
+	shiftAssignments          map[string]workforce.Assignment
+	employeeDocuments         map[string]workforce.EmployeeDocument
+	payrollArtifacts          map[string]workforce.PayrollArtifact
 }
 
 func newState() *state {
@@ -173,6 +178,10 @@ func newState() *state {
 		lotRegistrations:          make(map[string]inventorycontrol.LotRegistration),
 		lotBalances:               make(map[string]inventorycontrol.LotBalance),
 		inventoryCostHistory:      make(map[string]inventorycontrol.CostHistory),
+		shiftTemplates:            make(map[string]workforce.ShiftTemplate),
+		shiftAssignments:          make(map[string]workforce.Assignment),
+		employeeDocuments:         make(map[string]workforce.EmployeeDocument),
+		payrollArtifacts:          make(map[string]workforce.PayrollArtifact),
 	}
 }
 
@@ -988,6 +997,18 @@ func cloneState(source *state) *state {
 	}
 	for key, value := range source.inventoryCostHistory {
 		result.inventoryCostHistory[key] = value
+	}
+	for key, value := range source.shiftTemplates {
+		result.shiftTemplates[key] = value
+	}
+	for key, value := range source.shiftAssignments {
+		result.shiftAssignments[key] = value
+	}
+	for key, value := range source.employeeDocuments {
+		result.employeeDocuments[key] = value
+	}
+	for key, value := range source.payrollArtifacts {
+		result.payrollArtifacts[key] = value
 	}
 	return result
 }

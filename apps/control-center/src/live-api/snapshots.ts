@@ -29,8 +29,8 @@ export async function loadInventoryControlWorkspace(): Promise<LiveSnapshot<Inve
 export async function loadPeopleWorkspace(): Promise<LiveSnapshot<PeopleWorkspace>> {
   try {
     const repository = await createServerRepository();
-    const [context, people, accounts] = await Promise.all([repository.getWorkingContext(), repository.getPeopleSnapshot(), repository.listGLAccounts()]);
-    return { state: "ready", data: { context, people, accounts: accounts.items.filter((account) => account.status === "ACTIVE") } };
+    const [context, people, workforce, configuration, accounts] = await Promise.all([repository.getWorkingContext(), repository.getPeopleSnapshot(), repository.getWorkforceSnapshot(), repository.getConfigurationSnapshot(), repository.listGLAccounts()]);
+    return { state: "ready", data: { context, people, workforce, configurations: configuration.versions.filter((version) => version.status === "ACTIVE" && (version.category === "HR" || version.category === "INTEGRATIONS")), accounts: accounts.items.filter((account) => account.status === "ACTIVE") } };
   } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
 }
 

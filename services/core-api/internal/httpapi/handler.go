@@ -32,6 +32,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/treasury"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/workforce"
 )
 
 const maxBodyBytes = 1 << 20
@@ -54,6 +55,7 @@ type Handler struct {
 	configuration    *configuration.Service
 	commercial       *commercial.Service
 	inventorycontrol *inventorycontrol.Service
+	workforce        *workforce.Service
 	logger           *slog.Logger
 	authenticator    Authenticator
 }
@@ -215,6 +217,18 @@ func NewLiveWithInventoryControl(salesService *sales.Service, readService *readm
 	return handler, nil
 }
 
+func NewLiveWithWorkforce(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, bankingService *banking.Service, financialService *financialops.Service, reportingService *reporting.Service, advancedService *advancedfinance.Service, treasuryService *treasury.Service, groupService *groupfinance.Service, peopleService *people.Service, configurationService *configuration.Service, commercialService *commercial.Service, inventoryService *inventorycontrol.Service, workforceService *workforce.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLiveWithInventoryControl(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, commercialService, inventoryService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if workforceService == nil {
+		return nil, errors.New("workforce service is required")
+	}
+	handler.workforce = workforceService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
@@ -324,6 +338,15 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("POST /v1/inventory/policies", h.createInventoryPolicy)
 		mux.HandleFunc("POST /v1/inventory/policies/{policyID}/transitions", h.transitionInventoryPolicy)
 		mux.HandleFunc("POST /v1/inventory/goods-receipts/{receiptID}/lots", h.registerReceiptLots)
+	}
+	if h.workforce != nil {
+		mux.HandleFunc("GET /v1/hr/workforce", h.workforceSnapshot)
+		mux.HandleFunc("POST /v1/hr/shift-templates", h.createShiftTemplate)
+		mux.HandleFunc("POST /v1/hr/shift-templates/{templateID}/transitions", h.transitionShiftTemplate)
+		mux.HandleFunc("POST /v1/hr/shift-assignments", h.createShiftAssignment)
+		mux.HandleFunc("POST /v1/hr/shift-assignments/{assignmentID}/transitions", h.transitionShiftAssignment)
+		mux.HandleFunc("POST /v1/hr/employee-documents", h.registerEmployeeDocument)
+		mux.HandleFunc("POST /v1/hr/payroll-runs/{payrollID}/exports", h.generatePayrollArtifact)
 	}
 	if h.mobile != nil {
 		mux.HandleFunc("POST /v1/mobile/devices/enroll", h.enrollDevice)
@@ -1308,6 +1331,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, inventorycontrol.ErrInvalidTransition), errors.Is(err, inventorycontrol.ErrSeparationOfDuties), errors.Is(err, inventorycontrol.ErrLotReconciliation), errors.Is(err, inventorycontrol.ErrLotAllocation):
 		status, code = http.StatusConflict, "inventory_control_conflict"
+	case errors.Is(err, workforce.ErrInvalidCommand):
+		status, code = http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, workforce.ErrInvalidTransition), errors.Is(err, workforce.ErrSeparationOfDuties), errors.Is(err, workforce.ErrOverlap), errors.Is(err, workforce.ErrConfiguration), errors.Is(err, workforce.ErrPayrollNotPosted):
+		status, code = http.StatusConflict, "workforce_control_conflict"
 	}
 	if status == http.StatusInternalServerError {
 		h.logger.ErrorContext(request.Context(), "request failed", "method", request.Method, "path", request.URL.Path, "error", err)
