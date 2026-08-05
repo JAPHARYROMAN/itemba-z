@@ -90,6 +90,7 @@ type Sale struct {
 	Kind                 Kind                `json:"kind"`
 	Status               Status              `json:"status"`
 	CustomerID           string              `json:"customer_id"`
+	SourceDocumentID     string              `json:"source_document_id,omitempty"`
 	Currency             string              `json:"currency"`
 	SubtotalMinor        int64               `json:"subtotal_minor"`
 	TaxMinor             int64               `json:"tax_minor"`
@@ -147,6 +148,7 @@ type Payment struct {
 type CompleteCommand struct {
 	Scope                tenancy.Scope `json:"scope"`
 	CustomerID           string        `json:"customer_id"`
+	SourceDocumentID     string        `json:"source_document_id,omitempty"`
 	Kind                 Kind          `json:"kind"`
 	PaymentMethod        string        `json:"payment_method,omitempty"`
 	Lines                []CommandLine `json:"lines"`
@@ -175,6 +177,9 @@ func (c CompleteCommand) Validate() error {
 	}
 	if strings.TrimSpace(c.CustomerID) == "" || strings.TrimSpace(c.ActorID) == "" ||
 		strings.TrimSpace(c.IdempotencyKey) == "" || len(c.Lines) == 0 {
+		return ErrInvalidCommand
+	}
+	if c.SourceDocumentID != "" && (!identity.IsUUID(c.SourceDocumentID) || c.Offline || c.DeviceID != "") {
 		return ErrInvalidCommand
 	}
 	if c.Kind != KindCash && c.Kind != KindCredit {

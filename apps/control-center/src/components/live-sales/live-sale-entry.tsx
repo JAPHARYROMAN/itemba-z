@@ -65,6 +65,7 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
   const router = useRouter();
   const [kind, setKind] = useState<SaleKind>("CASH");
   const [customerId, setCustomerId] = useState("");
+  const [sourceDocumentId, setSourceDocumentId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
@@ -108,6 +109,7 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
     if (!knownCustomer || !knownProducts) return false;
     setKind(command.kind);
     setCustomerId(command.customer_id);
+	setSourceDocumentId(command.source_document_id ?? "");
     setPaymentMethod(command.payment_method || "CASH");
     setCart(command.lines.map((line) => ({ productId: line.product_id, quantity: line.quantity })));
     setReviewing(true);
@@ -142,6 +144,7 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
   function buildCommand(): CompleteSaleCommand {
     return {
       customer_id: customerId,
+	  ...(sourceDocumentId.trim() ? { source_document_id: sourceDocumentId.trim() } : {}),
       kind,
       ...(kind === "CASH" ? { payment_method: paymentMethod } : {}),
       lines: cart.map((line) => ({ product_id: line.productId, quantity: line.quantity })),
@@ -219,6 +222,7 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
             <div className="sale-field-grid">
               <label><span>{l(text("Customer", "Mteja"))}</span><select value={customerId} onChange={(event) => { setCustomerId(event.target.value); setReviewing(false); setProblem(null); }}><option value="">{l(text("Select an active customer", "Chagua mteja hai"))}</option>{bootstrap.customers.filter((customer) => customer.status === "active").map((customer) => <option key={customer.id} value={customer.id} disabled={kind === "CREDIT" && (customer.is_general_customer || !customer.credit_enabled)}>{customer.code} · {customer.name}{customer.is_general_customer ? ` · ${l(text("Cash only", "Fedha tu"))}` : ""}</option>)}</select></label>
               {kind === "CASH" ? <label><span>{l(text("Payment method", "Njia ya malipo"))}</span><select value={paymentMethod} onChange={(event) => { if (isPaymentMethod(event.target.value)) setPaymentMethod(event.target.value); setReviewing(false); }}>{PAYMENT_METHODS.map((method) => <option key={method} value={method}>{l(PAYMENT_METHOD_LABELS[method])}</option>)}</select></label> : <div className={`credit-policy ${selectedCustomer && !creditAllowed ? "credit-policy-blocked" : ""}`}><span>{l(text("Available credit", "Mkopo unaopatikana"))}</span><strong>{selectedCustomer ? formatMinorUnits(selectedCustomer.available_credit_minor, bootstrap.context.currency, locale) : "—"}</strong><small>{selectedCustomer ? (creditAllowed ? l(text("Account eligible", "Akaunti inastahili")) : l(text("Credit is not allowed", "Mkopo hauruhusiwi"))) : l(text("Select an eligible customer", "Chagua mteja anayestahili"))}</small></div>}
+			  <label><span>{l(text("Approved sales order (optional)", "Oda ya mauzo iliyoidhinishwa (hiari)"))}</span><input value={sourceDocumentId} onChange={(event) => { setSourceDocumentId(event.target.value); setReviewing(false); }} placeholder={l(text("Order UUID for atomic fulfilment", "UUID ya oda kwa utimizaji wa pamoja"))} /></label>
             </div>
           </section>
 

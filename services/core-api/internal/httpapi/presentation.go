@@ -18,6 +18,7 @@ type saleResponse struct {
 	Kind                 sales.Kind         `json:"kind"`
 	Status               sales.Status       `json:"status"`
 	CustomerID           string             `json:"customer_id"`
+	SourceDocumentID     string             `json:"source_document_id,omitempty"`
 	Currency             string             `json:"currency"`
 	SubtotalMinor        int64              `json:"subtotal_minor"`
 	TaxMinor             int64              `json:"tax_minor"`
@@ -77,7 +78,7 @@ func presentSale(value sales.Sale) saleResponse {
 	}
 	return saleResponse{
 		ID: value.ID, Scope: value.Scope, RecordType: value.RecordType, Kind: value.Kind, Status: value.Status,
-		CustomerID: value.CustomerID, Currency: value.Currency, SubtotalMinor: value.SubtotalMinor,
+		CustomerID: value.CustomerID, SourceDocumentID: value.SourceDocumentID, Currency: value.Currency, SubtotalMinor: value.SubtotalMinor,
 		TaxMinor: value.TaxMinor, TotalMinor: value.TotalMinor, PaymentMethod: value.PaymentMethod,
 		DeviceID: value.DeviceID, ClientTransactionID: value.ClientTransactionID,
 		ClientTimestamp: value.ClientTimestamp, AppVersion: value.AppVersion,

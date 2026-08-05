@@ -17,6 +17,7 @@ import (
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/dbrole"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
@@ -40,7 +41,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -69,6 +70,9 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 		otherBranchID    = "00000000-0000-4000-8000-00000000000e"
 		otherWarehouseID = "00000000-0000-4000-8000-00000000000f"
 		otherScopeID     = "00000000-0000-4000-8000-000000000010"
+		approverID       = "00000000-0000-4000-8000-000000000011"
+		approverScopeID  = "00000000-0000-4000-8000-000000000012"
+		supplierID       = "00000000-0000-4000-8000-000000000013"
 	)
 	var testTime time.Time
 	if err := pool.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&testTime); err != nil {
@@ -94,17 +98,21 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 		{`INSERT INTO branches(id,tenant_id,company_id,name) VALUES($1,$2,$3,'Other Branch')`, []any{otherBranchID, tenantID, companyID}},
 		{`INSERT INTO warehouses(id,tenant_id,company_id,branch_id,name) VALUES($1,$2,$3,$4,'Other Warehouse')`, []any{otherWarehouseID, tenantID, companyID, otherBranchID}},
 		{`INSERT INTO users(id,tenant_id,email) VALUES($1,$2,'user@example.test')`, []any{userID, tenantID}},
+		{`INSERT INTO users(id,tenant_id,email) VALUES($1,$2,'approver@example.test')`, []any{approverID, tenantID}},
 		{`INSERT INTO roles(id,tenant_id,name) VALUES($1,$2,'Manager')`, []any{roleID, tenantID}},
 		{`INSERT INTO role_permissions(tenant_id,role_id,permission_code) SELECT $1,$2,code FROM permissions`, []any{tenantID, roleID}},
 		{`INSERT INTO user_role_scopes(id,tenant_id,user_id,role_id,company_id,branch_id,warehouse_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, []any{scopeID, tenantID, userID, roleID, companyID, branchID, warehouseID}},
 		{`INSERT INTO user_role_scopes(id,tenant_id,user_id,role_id,company_id,branch_id,warehouse_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, []any{otherScopeID, tenantID, userID, roleID, companyID, otherBranchID, otherWarehouseID}},
+		{`INSERT INTO user_role_scopes(id,tenant_id,user_id,role_id,company_id,branch_id,warehouse_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, []any{approverScopeID, tenantID, approverID, roleID, companyID, branchID, warehouseID}},
 		{`INSERT INTO customer_accounts(id,tenant_id,company_id,code,name,active,is_general) VALUES($1,$2,$3,'GENERAL','General Customer',true,true)`, []any{customerID, tenantID, companyID}},
 		{`INSERT INTO customer_accounts(id,tenant_id,company_id,code,name,active,is_general,credit_enabled,credit_limit_minor) VALUES($1,$2,$3,'CREDIT','Credit Customer',true,false,true,1000000)`, []any{creditCustomerID, tenantID, companyID}},
 		{`INSERT INTO products(id,tenant_id,company_id,sku,name,currency,list_price_minor,standard_cost_minor,tax_code,revenue_account_id,cogs_account_id,inventory_account_id) VALUES($1,$2,$3,'SKU','Product','TZS',10000,6000,'VAT','revenue','cogs','inventory')`, []any{productID, tenantID, companyID}},
+		{`INSERT INTO suppliers(id,tenant_id,company_id,code,name,active,payment_terms_days) VALUES($1,$2,$3,'SUP','Supplier',true,30)`, []any{supplierID, tenantID, companyID}},
 		{`INSERT INTO tax_rules(id,tenant_id,company_id,code,basis_points,effective_from) VALUES($1,$2,$3,'VAT',1800,$4)`, []any{taxID, tenantID, companyID, testTime.AddDate(-1, 0, 0)}},
 		{`INSERT INTO fiscal_periods(id,tenant_id,company_id,starts_at,ends_at,is_open) VALUES($1,$2,$3,$4,$5,true)`, []any{periodID, tenantID, companyID, testTime.AddDate(0, -1, 0), testTime.AddDate(0, 1, 0)}},
 		{`INSERT INTO offline_posting_policies(id,tenant_id,company_id,accounting_time_basis,maximum_future_skew_seconds,require_same_fiscal_period,effective_from,created_by,created_at) VALUES(gen_random_uuid(),$1,$2,'SERVER_RECEIPT',14400,true,$3,$4,$5)`, []any{tenantID, companyID, testTime.AddDate(-1, 0, 0), userID, testTime}},
 		{`INSERT INTO sales_posting_config(tenant_id,company_id,receivable_account_id,tax_payable_account_id,cash_accounts) VALUES($1,$2,'receivable','tax-payable','{"CASH":"cash"}')`, []any{tenantID, companyID}},
+		{`INSERT INTO procurement_posting_config(tenant_id,company_id,grni_account_id,payable_account_id,inventory_adjustment_account_id,stock_in_transit_account_id,cash_accounts) VALUES($1,$2,'grni','payable','inventory-adjustment','stock-in-transit','{"CASH":"cash"}')`, []any{tenantID, companyID}},
 		{`INSERT INTO inventory_stock_ledger(id,tenant_id,company_id,branch_id,warehouse_id,product_id,source_type,source_id,quantity,occurred_at) VALUES($1,$2,$3,$4,$5,$6,'OPENING',$7,100,$8)`, []any{stockID, tenantID, companyID, branchID, warehouseID, productID, openingID, testTime.Add(-time.Hour)}},
 	}
 	for _, statement := range statements {
@@ -190,6 +198,72 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err != nil || !account.Aging.Reconciled || account.Aging.CalculatedExposure != 0 || len(account.OpenItems) != 0 {
 		t.Fatalf("reversed credit account: %+v err=%v", account, err)
 	}
+	operationsService, err := operations.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(2 * time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	createDocument := func(kind operations.DocumentType, party operations.PartyType, partyID, source, destination string, quantity, price int64, key string) operations.Document {
+		t.Helper()
+		value, createErr := operationsService.Create(ctx, operations.CreateCommand{Scope: scope, Type: kind, PartyType: party, PartyID: partyID, SourceDocumentID: source, DestinationWarehouseID: destination, Currency: "TZS", Reason: "Integration controlled workflow", Lines: []operations.CommandLine{{ProductID: productID, Quantity: quantity, UnitPriceMinor: price}}, ActorID: userID, IdempotencyKey: key})
+		if createErr != nil {
+			t.Fatalf("create %s: %v", kind, createErr)
+		}
+		return value
+	}
+	advance := func(value operations.Document, status operations.Status, actor, key string, transitionScope tenancy.Scope) operations.Document {
+		t.Helper()
+		changed, transitionErr := operationsService.Transition(ctx, operations.TransitionCommand{Scope: transitionScope, DocumentID: value.ID, ToStatus: status, Reason: "Integration authorized transition", PaymentMethod: map[bool]string{true: "CASH"}[value.Type == operations.SupplierPayment && status == operations.Posted], ActorID: actor, IdempotencyKey: key})
+		if transitionErr != nil {
+			t.Fatalf("transition %s to %s: %v", value.Type, status, transitionErr)
+		}
+		return changed
+	}
+	request := createDocument(operations.PurchaseRequest, operations.NoParty, "", "", "", 2, 0, "integration-pr-create")
+	request = advance(request, operations.Submitted, userID, "integration-pr-submit", scope)
+	request = advance(request, operations.Approved, approverID, "integration-pr-approve", scope)
+	order := createDocument(operations.PurchaseOrder, operations.SupplierParty, supplierID, request.ID, "", 2, 5000, "integration-po-create")
+	order = advance(order, operations.Submitted, userID, "integration-po-submit", scope)
+	order = advance(order, operations.Approved, approverID, "integration-po-approve", scope)
+	receipt := createDocument(operations.GoodsReceipt, operations.SupplierParty, supplierID, order.ID, "", 2, 5000, "integration-gr-create")
+	receipt = advance(receipt, operations.Submitted, userID, "integration-gr-submit", scope)
+	receipt = advance(receipt, operations.Approved, approverID, "integration-gr-approve", scope)
+	receipt = advance(receipt, operations.Posted, userID, "integration-gr-posted", scope)
+	invoice := createDocument(operations.SupplierInvoice, operations.SupplierParty, supplierID, receipt.ID, "", 2, 5000, "integration-si-create")
+	invoice = advance(invoice, operations.Submitted, userID, "integration-si-submit", scope)
+	invoice = advance(invoice, operations.Approved, approverID, "integration-si-approve", scope)
+	invoice = advance(invoice, operations.Posted, userID, "integration-si-posted", scope)
+	purchaseReturn := createDocument(operations.PurchaseReturn, operations.SupplierParty, supplierID, invoice.ID, "", 1, 5000, "integration-return-create")
+	purchaseReturn = advance(purchaseReturn, operations.Submitted, userID, "integration-return-submit", scope)
+	purchaseReturn = advance(purchaseReturn, operations.Approved, approverID, "integration-return-approve", scope)
+	purchaseReturn = advance(purchaseReturn, operations.Posted, userID, "integration-return-posted", scope)
+	payment := createDocument(operations.SupplierPayment, operations.SupplierParty, supplierID, invoice.ID, "", 1, 5000, "integration-sp-create")
+	payment = advance(payment, operations.Submitted, userID, "integration-sp-submit", scope)
+	payment = advance(payment, operations.Approved, approverID, "integration-sp-approve", scope)
+	payment = advance(payment, operations.Posted, userID, "integration-sp-posted", scope)
+	var supplierBalance int64
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(sum(amount_minor),0)::bigint FROM `+pgx.Identifier{schema}.Sanitize()+`.supplier_ledger WHERE tenant_id=$1 AND company_id=$2 AND supplier_id=$3`, tenantID, companyID, supplierID).Scan(&supplierBalance); err != nil || supplierBalance != 0 {
+		t.Fatalf("supplier balance=%d err=%v", supplierBalance, err)
+	}
+	transfer := createDocument(operations.StockTransfer, operations.NoParty, "", "", otherWarehouseID, 1, 0, "integration-st-create")
+	transfer = advance(transfer, operations.Submitted, userID, "integration-st-submit", scope)
+	transfer = advance(transfer, operations.Approved, approverID, "integration-st-approve", scope)
+	transfer = advance(transfer, operations.Dispatched, userID, "integration-st-dispatch", scope)
+	transfer = advance(transfer, operations.Received, userID, "integration-st-receive", otherScope)
+	if transfer.Status != operations.Received {
+		t.Fatalf("transfer status=%s", transfer.Status)
+	}
+	var destinationStock int64
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(sum(quantity),0)::bigint FROM `+pgx.Identifier{schema}.Sanitize()+`.inventory_stock_ledger WHERE tenant_id=$1 AND company_id=$2 AND warehouse_id=$3 AND product_id=$4`, tenantID, companyID, otherWarehouseID, productID).Scan(&destinationStock); err != nil || destinationStock != 1 {
+		t.Fatalf("destination stock=%d err=%v", destinationStock, err)
+	}
+	count := createDocument(operations.StockCount, operations.NoParty, "", "", "", 99, 0, "integration-count-create")
+	count = advance(count, operations.Submitted, userID, "integration-count-submit", scope)
+	count = advance(count, operations.Approved, approverID, "integration-count-approve", scope)
+	count = advance(count, operations.Posted, userID, "integration-count-posted", scope)
+	adjustment := createDocument(operations.StockAdjustment, operations.NoParty, "", "", "", 1, 0, "integration-adjust-create")
+	adjustment = advance(adjustment, operations.Submitted, userID, "integration-adjust-submit", scope)
+	adjustment = advance(adjustment, operations.Approved, approverID, "integration-adjust-approve", scope)
+	adjustment = advance(adjustment, operations.Posted, userID, "integration-adjust-posted", scope)
 	oldSnapshotToken := snapshotToken
 	if _, err := pool.Exec(ctx, `UPDATE `+pgx.Identifier{schema}.Sanitize()+`.products SET name='Published Product' WHERE tenant_id=$1 AND company_id=$2 AND id=$3`, tenantID, companyID, productID); err != nil {
 		t.Fatal(err)
@@ -543,7 +617,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 0 || salesCount != 7 || journalCount != 7 || outboxCount != 17 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 15 || outboxCount != 52 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }
@@ -583,7 +657,7 @@ func TestRestrictedRuntimeRoleEnforcesTenantRLS(t *testing.T) {
 		_, _ = clusterPool.Exec(context.Background(), "DROP ROLE "+pgx.Identifier{apiUser}.Sanitize())
 		_, _ = clusterPool.Exec(context.Background(), "DROP ROLE "+pgx.Identifier{workerUser}.Sanitize())
 	}()
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql"} {
 		applyTestMigration(t, ctx, adminPool, "itembaz", name)
 	}
 	const (

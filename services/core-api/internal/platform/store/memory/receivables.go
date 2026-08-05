@@ -8,6 +8,7 @@ import (
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
@@ -139,6 +140,77 @@ func receivableOutstanding(current *state, item customers.ReceivableItem) int64 
 		}
 	}
 	return item.AmountMinor - allocated
+}
+
+func (s *Store) ReceiveCustomerCollection(ctx context.Context, collection receivables.Collection, ids receivables.CollectionEffectIDs, event audit.Event, message outbox.Event, requestHash string) (receivables.Collection, error) {
+	var result receivables.Collection
+	err := s.WithTransaction(ctx, func(tx sales.Transaction) error {
+		current := tx.(*transaction).state
+		allowed, err := tx.Authorize(ctx, collection.Scope, collection.CreatedBy, "customers.collections.post")
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return sales.ErrForbidden
+		}
+		acquired, resultID, err := tx.ClaimIdempotency(ctx, collection.Scope, "customers.collection.receive.v1", collection.IdempotencyKey, requestHash)
+		if err != nil {
+			return err
+		}
+		if !acquired {
+			result = current.collections[companyEntityKey(collection.Scope.TenantID, collection.Scope.CompanyID, resultID)]
+			return nil
+		}
+		account, err := tx.Customer(ctx, collection.Scope, collection.CustomerID)
+		if err != nil {
+			return err
+		}
+		if !account.Active {
+			return sales.ErrCustomerInactive
+		}
+		invoice, err := tx.ReceivableItemBySource(ctx, collection.Scope, "SALE", collection.InvoiceSaleID)
+		if err != nil {
+			return err
+		}
+		if invoice.CustomerID != collection.CustomerID || invoice.Currency != collection.Currency || collection.AmountMinor > invoice.OutstandingMinor {
+			return customers.ErrReceivablesUnbalanced
+		}
+		posting, err := tx.SalesPostingConfig(ctx, collection.Scope)
+		if err != nil {
+			return err
+		}
+		collection.AccountID = posting.CashAccounts[collection.Method]
+		if collection.AccountID == "" {
+			return sales.ErrUnsupportedPayment
+		}
+		payload, _ := json.Marshal(collection)
+		event.Data, message.Payload = payload, payload
+		if err := tx.AppendCustomerLedgerEntry(ctx, customers.LedgerEntry{ID: ids.LedgerID, TenantID: collection.Scope.TenantID, CompanyID: collection.Scope.CompanyID, CustomerID: collection.CustomerID, SourceType: "CUSTOMER_COLLECTION", SourceID: collection.ID, AmountMinor: -collection.AmountMinor, Currency: collection.Currency, OccurredAt: collection.OccurredAt}); err != nil {
+			return err
+		}
+		if err := tx.AppendReceivableItem(ctx, customers.ReceivableItem{ID: ids.ItemID, TenantID: collection.Scope.TenantID, CompanyID: collection.Scope.CompanyID, CustomerID: collection.CustomerID, Kind: customers.ReceivableReceipt, SourceType: "CUSTOMER_COLLECTION", SourceID: collection.ID, AmountMinor: collection.AmountMinor, Currency: collection.Currency, DocumentAt: collection.OccurredAt, OccurredAt: collection.OccurredAt}); err != nil {
+			return err
+		}
+		if err := tx.AppendReceivableAllocation(ctx, customers.ReceivableAllocation{ID: ids.AllocationID, TenantID: collection.Scope.TenantID, CompanyID: collection.Scope.CompanyID, CustomerID: collection.CustomerID, DebitItemID: invoice.ID, CreditItemID: ids.ItemID, AmountMinor: collection.AmountMinor, OccurredAt: collection.OccurredAt}); err != nil {
+			return err
+		}
+		if err := tx.CreateJournal(ctx, finance.Journal{ID: ids.JournalID, TenantID: collection.Scope.TenantID, CompanyID: collection.Scope.CompanyID, SourceType: "CUSTOMER_COLLECTION", SourceID: collection.ID, Currency: collection.Currency, OccurredAt: collection.OccurredAt, Entries: []finance.JournalEntry{{AccountID: collection.AccountID, DebitMinor: collection.AmountMinor}, {AccountID: posting.ReceivableAccountID, CreditMinor: collection.AmountMinor}}}); err != nil {
+			return err
+		}
+		if err := tx.AppendAuditEvent(ctx, event); err != nil {
+			return err
+		}
+		if err := tx.AppendOutboxEvent(ctx, message); err != nil {
+			return err
+		}
+		if err := tx.CompleteIdempotency(ctx, collection.Scope, "customers.collection.receive.v1", collection.IdempotencyKey, collection.ID); err != nil {
+			return err
+		}
+		current.collections[companyEntityKey(collection.Scope.TenantID, collection.Scope.CompanyID, collection.ID)] = collection
+		result = collection
+		return nil
+	})
+	return result, err
 }
 
 func (s *Store) CustomerAccountDetail(_ context.Context, scope tenancy.Scope, actorID, customerID string, at time.Time) (customers.AccountDetail, error) {

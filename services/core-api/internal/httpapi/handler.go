@@ -17,6 +17,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
@@ -32,6 +33,7 @@ type Handler struct {
 	read          *readmodel.Service
 	mobile        *mobile.Service
 	receivables   *receivables.Service
+	operations    *operations.Service
 	logger        *slog.Logger
 	authenticator Authenticator
 }
@@ -61,11 +63,30 @@ func NewLive(salesService *sales.Service, readService *readmodel.Service, mobile
 	return handler, nil
 }
 
+func NewLiveWithOperations(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLive(salesService, readService, mobileService, receivablesService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if operationsService == nil {
+		return nil, errors.New("operations service is required")
+	}
+	handler.operations = operationsService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /readyz", h.health)
 	mux.HandleFunc("POST /v1/sales", h.completeSale)
+	if h.operations != nil {
+		mux.HandleFunc("GET /v1/operations/documents", h.listOperationDocuments)
+		mux.HandleFunc("POST /v1/operations/documents", h.createOperationDocument)
+		mux.HandleFunc("GET /v1/operations/documents/{documentID}", h.getOperationDocument)
+		mux.HandleFunc("POST /v1/operations/documents/{documentID}/transitions", h.transitionOperationDocument)
+		mux.HandleFunc("GET /v1/suppliers", h.listSuppliers)
+	}
 	if h.read != nil {
 		mux.HandleFunc("GET /v1/context", h.workingContext)
 		mux.HandleFunc("GET /v1/customers", h.listCustomers)
@@ -84,9 +105,171 @@ func (h *Handler) Routes() http.Handler {
 	}
 	mux.HandleFunc("GET /v1/customers/{customerID}/account", h.customerAccount)
 	mux.HandleFunc("POST /v1/customers/{customerID}/credit-policies", h.scheduleCustomerCreditPolicy)
+	mux.HandleFunc("POST /v1/customers/{customerID}/collections", h.receiveCustomerCollection)
 	mux.HandleFunc("GET /v1/sales/{saleID}", h.getSale)
 	mux.HandleFunc("POST /v1/sales/{saleID}/reversals", h.reverseSale)
 	return securityHeaders(correlationIDs(identity.UUIDGenerator{}, h.observe(mux)))
+}
+
+type receiveCustomerCollectionRequest struct {
+	InvoiceSaleID string `json:"invoice_sale_id"`
+	Method        string `json:"method"`
+	AmountMinor   int64  `json:"amount_minor"`
+	Currency      string `json:"currency"`
+}
+
+func (h *Handler) receiveCustomerCollection(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	idem, ok := requireIdempotencyKey(writer, request)
+	if !ok {
+		return
+	}
+	customerID, err := identity.CanonicalUUID(request.PathValue("customerID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "customerID must be a UUID")
+		return
+	}
+	var body receiveCustomerCollectionRequest
+	if !decodeJSON(writer, request, &body) {
+		return
+	}
+	result, err := h.receivables.ReceiveCollection(request.Context(), receivables.ReceiveCollectionCommand{Scope: principal.Scope, ActorID: principal.ActorID, CustomerID: customerID, InvoiceSaleID: body.InvoiceSaleID, Method: body.Method, AmountMinor: body.AmountMinor, Currency: body.Currency, IdempotencyKey: idem, CorrelationID: correlationID(writer)})
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, result)
+}
+
+func (h *Handler) listSuppliers(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	limit, ok := parsePageSize(writer, request)
+	if !ok {
+		return
+	}
+	result, err := h.operations.Suppliers(request.Context(), principal.Scope, principal.ActorID, request.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+
+type operationLineRequest struct {
+	ProductID      string `json:"product_id"`
+	Quantity       int64  `json:"quantity"`
+	UnitPriceMinor int64  `json:"unit_price_minor"`
+}
+type createOperationRequest struct {
+	Type                   operations.DocumentType `json:"type"`
+	PartyType              operations.PartyType    `json:"party_type"`
+	PartyID                string                  `json:"party_id,omitempty"`
+	SourceDocumentID       string                  `json:"source_document_id,omitempty"`
+	DestinationWarehouseID string                  `json:"destination_warehouse_id,omitempty"`
+	Currency               string                  `json:"currency"`
+	Reason                 string                  `json:"reason"`
+	Lines                  []operationLineRequest  `json:"lines"`
+}
+
+func (h *Handler) createOperationDocument(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	idem, ok := requireIdempotencyKey(writer, request)
+	if !ok {
+		return
+	}
+	var body createOperationRequest
+	if !decodeJSON(writer, request, &body) {
+		return
+	}
+	command := operations.CreateCommand{Scope: principal.Scope, Type: body.Type, PartyType: body.PartyType, PartyID: body.PartyID,
+		SourceDocumentID: body.SourceDocumentID, DestinationWarehouseID: body.DestinationWarehouseID, Currency: body.Currency,
+		Reason: body.Reason, ActorID: principal.ActorID, IdempotencyKey: idem, CorrelationID: correlationID(writer)}
+	for _, line := range body.Lines {
+		command.Lines = append(command.Lines, operations.CommandLine{ProductID: line.ProductID, Quantity: line.Quantity, UnitPriceMinor: line.UnitPriceMinor})
+	}
+	result, err := h.operations.Create(request.Context(), command)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writer.Header().Set("Location", "/v1/operations/documents/"+result.ID)
+	writeJSON(writer, http.StatusCreated, result)
+}
+
+func (h *Handler) listOperationDocuments(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	limit, ok := parsePageSize(writer, request)
+	if !ok {
+		return
+	}
+	result, err := h.operations.List(request.Context(), principal.Scope, principal.ActorID, operations.DocumentType(request.URL.Query().Get("type")), request.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+
+func (h *Handler) getOperationDocument(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	id, err := identity.CanonicalUUID(request.PathValue("documentID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "documentID must be a UUID")
+		return
+	}
+	result, err := h.operations.Get(request.Context(), principal.Scope, principal.ActorID, id)
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+
+type transitionOperationRequest struct {
+	Status        operations.Status `json:"status"`
+	Reason        string            `json:"reason"`
+	PaymentMethod string            `json:"payment_method,omitempty"`
+}
+
+func (h *Handler) transitionOperationDocument(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	idem, ok := requireIdempotencyKey(writer, request)
+	if !ok {
+		return
+	}
+	id, err := identity.CanonicalUUID(request.PathValue("documentID"))
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_request", "documentID must be a UUID")
+		return
+	}
+	var body transitionOperationRequest
+	if !decodeJSON(writer, request, &body) {
+		return
+	}
+	result, err := h.operations.Transition(request.Context(), operations.TransitionCommand{Scope: principal.Scope, DocumentID: id, ToStatus: body.Status, Reason: body.Reason, PaymentMethod: body.PaymentMethod, ActorID: principal.ActorID, IdempotencyKey: idem, CorrelationID: correlationID(writer)})
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
 }
 
 func (h *Handler) customerAccount(writer http.ResponseWriter, request *http.Request) {
@@ -466,10 +649,11 @@ func (h *Handler) resolveMobileReconciliationCase(writer http.ResponseWriter, re
 }
 
 type completeSaleRequest struct {
-	CustomerID    string              `json:"customer_id"`
-	Kind          sales.Kind          `json:"kind"`
-	PaymentMethod string              `json:"payment_method,omitempty"`
-	Lines         []sales.CommandLine `json:"lines"`
+	CustomerID       string              `json:"customer_id"`
+	SourceDocumentID string              `json:"source_document_id,omitempty"`
+	Kind             sales.Kind          `json:"kind"`
+	PaymentMethod    string              `json:"payment_method,omitempty"`
+	Lines            []sales.CommandLine `json:"lines"`
 }
 
 func (h *Handler) completeSale(writer http.ResponseWriter, request *http.Request) {
@@ -492,7 +676,8 @@ func (h *Handler) completeSale(writer http.ResponseWriter, request *http.Request
 	}
 	result, err := h.sales.Complete(request.Context(), sales.CompleteCommand{
 		Scope: principal.Scope, CustomerID: body.CustomerID, Kind: body.Kind,
-		PaymentMethod: body.PaymentMethod, Lines: body.Lines,
+		SourceDocumentID: body.SourceDocumentID,
+		PaymentMethod:    body.PaymentMethod, Lines: body.Lines,
 		ActorID: principal.ActorID, CorrelationID: correlationID(writer), IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
@@ -662,6 +847,8 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusConflict, "allocation_conflict"
 	case errors.Is(err, sales.ErrInsufficientStock):
 		status, code = http.StatusConflict, "insufficient_stock"
+	case errors.Is(err, operations.ErrInsufficientStock), errors.Is(err, operations.ErrOverReceipt), errors.Is(err, operations.ErrOverInvoice), errors.Is(err, operations.ErrPayableExceeded), errors.Is(err, operations.ErrInvalidTransition), errors.Is(err, operations.ErrSeparationOfDuties):
+		status, code = http.StatusConflict, "operations_conflict"
 	case errors.Is(err, sales.ErrFiscalPeriodClosed):
 		status, code = http.StatusConflict, "fiscal_period_closed"
 	case errors.Is(err, sales.ErrAlreadyReversed):
@@ -675,7 +862,7 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 	case errors.Is(err, sales.ErrGeneralCustomerCredit), errors.Is(err, sales.ErrCustomerCreditDisabled), errors.Is(err, sales.ErrCreditLimitExceeded), errors.Is(err, sales.ErrCustomerInactive), errors.Is(err, sales.ErrProductInactive), errors.Is(err, customers.ErrCreditRiskHold), errors.Is(err, customers.ErrCreditOverdue),
 		errors.Is(err, sales.ErrOfflineCredit), errors.Is(err, sales.ErrOfflinePaymentMethod), errors.Is(err, sales.ErrOfflineTaxUnsupported), errors.Is(err, sales.ErrUnsupportedPayment), errors.Is(err, devices.ErrNotActive), errors.Is(err, devices.ErrOfflineDisabled), errors.Is(err, devices.ErrMobileCreditUnsupported), errors.Is(err, devices.ErrAllocationExceeded), errors.Is(err, devices.ErrOfflineLimit), errors.Is(err, devices.ErrOfflineLeaseExpired), errors.Is(err, devices.ErrStaleMasterData), errors.Is(err, devices.ErrInvalidTimeZone), errors.Is(err, devices.ErrInvalidStatusTransition):
 		status, code = http.StatusUnprocessableEntity, "business_rule_violation"
-	case errors.Is(err, sales.ErrInvalidCommand), errors.Is(err, sales.ErrInvalidLine), errors.Is(err, sales.ErrDuplicateProductLine), errors.Is(err, sales.ErrInvalidSaleKind), errors.Is(err, sales.ErrPaymentMethodRequired):
+	case errors.Is(err, sales.ErrInvalidCommand), errors.Is(err, sales.ErrInvalidLine), errors.Is(err, sales.ErrDuplicateProductLine), errors.Is(err, sales.ErrInvalidSaleKind), errors.Is(err, sales.ErrPaymentMethodRequired), errors.Is(err, operations.ErrInvalidCommand):
 		status, code = http.StatusBadRequest, "invalid_request"
 	}
 	if status == http.StatusInternalServerError {

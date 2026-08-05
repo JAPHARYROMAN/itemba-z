@@ -198,7 +198,7 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 		}
 		sale := Sale{
 			ID: saleID, Scope: command.Scope, RecordType: RecordSale,
-			Kind: command.Kind, Status: StatusPosted, CustomerID: customer.ID,
+			Kind: command.Kind, Status: StatusPosted, CustomerID: customer.ID, SourceDocumentID: command.SourceDocumentID,
 			PaymentMethod: command.PaymentMethod, DeviceID: command.DeviceID,
 			ClientTransactionID: command.ClientTransactionID, Offline: command.Offline,
 			CreatedBy: command.ActorID, DocumentAt: documentAt, ReceivedAt: now,
@@ -218,6 +218,22 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (Sale, 
 			sale.CorrelationID = command.CorrelationID
 		} else {
 			sale.CorrelationID = sale.ID
+		}
+		if command.SourceDocumentID != "" {
+			releaseIDs := make([]string, len(command.Lines))
+			for index := range releaseIDs {
+				releaseIDs[index], err = s.ids.New()
+				if err != nil {
+					return err
+				}
+			}
+			transitionID, idErr := s.ids.New()
+			if idErr != nil {
+				return idErr
+			}
+			if err := tx.FulfillSalesOrder(ctx, command.Scope, command.SourceDocumentID, customer.ID, sale.ID, command.Lines, releaseIDs, transitionID, command.ActorID, sale.CorrelationID, now); err != nil {
+				return err
+			}
 		}
 		journalEntries := make([]finance.JournalEntry, 0, 2+len(command.Lines)*3)
 		for _, requested := range command.Lines {
@@ -714,6 +730,7 @@ func (s *Service) Get(ctx context.Context, scope tenancy.Scope, actorID, saleID 
 func normalizeCompleteCommand(command CompleteCommand) CompleteCommand {
 	command.Scope = command.Scope.Normalize()
 	command.CustomerID = identity.NormalizeClaim(command.CustomerID)
+	command.SourceDocumentID = identity.NormalizeClaim(command.SourceDocumentID)
 	command.ActorID = identity.NormalizeClaim(command.ActorID)
 	command.DeviceID = identity.NormalizeClaim(command.DeviceID)
 	command.ClientTransactionID = identity.NormalizeClaim(command.ClientTransactionID)

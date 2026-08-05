@@ -15,6 +15,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
@@ -220,10 +221,68 @@ func (t *transaction) AvailableStock(ctx context.Context, scope tenancy.Scope, p
 	}
 	var quantity int64
 	err := t.tx.QueryRow(ctx, `
-		SELECT COALESCE(sum(quantity), 0)::bigint FROM inventory_stock_ledger
-		WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3 AND warehouse_id = $4 AND product_id = $5`,
+		SELECT COALESCE((SELECT sum(quantity) FROM inventory_stock_ledger
+		WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND product_id=$5),0)::bigint
+		- COALESCE((SELECT sum(quantity) FROM inventory_reservation_ledger
+		WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND product_id=$5),0)::bigint`,
 		scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, productID).Scan(&quantity)
 	return quantity, normalizeError(err)
+}
+
+func (t *transaction) FulfillSalesOrder(ctx context.Context, scope tenancy.Scope, orderID, customerID, saleID string, lines []sales.CommandLine, releaseIDs []string, transitionID, actorID, correlationID string, at time.Time) error {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return err
+	}
+	var status, partyType, partyID string
+	if err := t.tx.QueryRow(ctx, `SELECT status,party_type,COALESCE(party_id::text,'') FROM operation_documents
+		WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND id=$5 FOR UPDATE`, scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, orderID).Scan(&status, &partyType, &partyID); err != nil {
+		return normalizeError(err)
+	}
+	if status != "APPROVED" || partyType != "CUSTOMER" || partyID != customerID || len(lines) != len(releaseIDs) {
+		return operations.ErrSourceMismatch
+	}
+	rows, err := t.tx.Query(ctx, `SELECT l.product_id::text,l.quantity,l.unit_price_minor,p.list_price_minor FROM operation_document_lines l JOIN products p ON p.tenant_id=l.tenant_id AND p.company_id=l.company_id AND p.id=l.product_id WHERE l.tenant_id=$1 AND l.company_id=$2 AND l.document_id=$3`, scope.TenantID, scope.CompanyID, orderID)
+	if err != nil {
+		return normalizeError(err)
+	}
+	ordered := make(map[string]int64, len(lines))
+	for rows.Next() {
+		var product string
+		var quantity, orderPrice, currentPrice int64
+		if err := rows.Scan(&product, &quantity, &orderPrice, &currentPrice); err != nil {
+			rows.Close()
+			return normalizeError(err)
+		}
+		if orderPrice != currentPrice {
+			rows.Close()
+			return operations.ErrSourceMismatch
+		}
+		ordered[product] = quantity
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil || len(ordered) != len(lines) {
+		if err != nil {
+			return normalizeError(err)
+		}
+		return operations.ErrSourceMismatch
+	}
+	for index, line := range lines {
+		if ordered[line.ProductID] != line.Quantity {
+			return operations.ErrSourceMismatch
+		}
+		if _, err := t.tx.Exec(ctx, `INSERT INTO inventory_reservation_ledger(id,tenant_id,company_id,branch_id,warehouse_id,product_id,source_type,source_id,quantity,occurred_at)
+			VALUES($1,$2,$3,$4,$5,$6,'SALES_ORDER_FULFILMENT',$7,$8,$9)`, releaseIDs[index], scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, line.ProductID, orderID, -line.Quantity, at); err != nil {
+			return normalizeError(err)
+		}
+	}
+	if _, err := t.tx.Exec(ctx, `UPDATE operation_documents SET status='CLOSED',posted_at=$6 WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND id=$5`, scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, orderID, at); err != nil {
+		return normalizeError(err)
+	}
+	if _, err := t.tx.Exec(ctx, `INSERT INTO operation_document_transitions(id,tenant_id,company_id,document_id,from_status,to_status,reason,actor_id,occurred_at,correlation_id)
+		VALUES($1,$2,$3,$4,'APPROVED','CLOSED',$5,$6,$7,$8)`, transitionID, scope.TenantID, scope.CompanyID, orderID, "Fulfilled by posted sale "+saleID, actorID, at, correlationID); err != nil {
+		return normalizeError(err)
+	}
+	return nil
 }
 
 func (t *transaction) CreditExposure(ctx context.Context, scope tenancy.Scope, customerID string) (int64, error) {
@@ -314,7 +373,7 @@ func (t *transaction) Sale(ctx context.Context, scope tenancy.Scope, saleID stri
 	}
 	var value sales.Sale
 	var paymentMethod, reversalReason pgtype.Text
-	var reversalOf pgtype.UUID
+	var reversalOf, sourceDocumentID pgtype.UUID
 	var deviceID, clientTransactionID pgtype.UUID
 	var catalogSnapshotToken pgtype.UUID
 	var clientTimestamp, reversedAt pgtype.Timestamptz
@@ -322,7 +381,7 @@ func (t *transaction) Sale(ctx context.Context, scope tenancy.Scope, saleID stri
 	var clientMasterDataVersion, clientPriceVersion pgtype.Int8
 	err := t.tx.QueryRow(ctx, `
 		SELECT id, tenant_id, company_id, branch_id, warehouse_id, record_type, sale_kind, status,
-		       customer_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor,
+		       customer_id, source_document_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor,
 		       payment_method, reversal_of, reversal_reason, device_id, client_transaction_id,
 		       client_timestamp, client_app_version, client_master_data_version, client_price_version, client_catalog_snapshot_token, offline,
 		       receipt_reference, fiscal_status, created_by, correlation_id,
@@ -330,7 +389,7 @@ func (t *transaction) Sale(ctx context.Context, scope tenancy.Scope, saleID stri
 		FROM sales WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3 AND warehouse_id = $4 AND id = $5 FOR UPDATE`,
 		scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, saleID).Scan(
 		&value.ID, &value.Scope.TenantID, &value.Scope.CompanyID, &value.Scope.BranchID, &value.Scope.WarehouseID,
-		&value.RecordType, &value.Kind, &value.Status, &value.CustomerID, &value.Currency,
+		&value.RecordType, &value.Kind, &value.Status, &value.CustomerID, &sourceDocumentID, &value.Currency,
 		&value.SubtotalMinor, &value.TaxMinor, &value.TotalMinor, &value.COGSMinor,
 		&paymentMethod, &reversalOf, &reversalReason, &deviceID, &clientTransactionID,
 		&clientTimestamp, &clientAppVersion, &clientMasterDataVersion, &clientPriceVersion, &catalogSnapshotToken, &value.Offline,
@@ -344,6 +403,9 @@ func (t *transaction) Sale(ctx context.Context, scope tenancy.Scope, saleID stri
 	}
 	if reversalOf.Valid {
 		value.ReversalOf = reversalOf.String()
+	}
+	if sourceDocumentID.Valid {
+		value.SourceDocumentID = sourceDocumentID.String()
 	}
 	if reversalReason.Valid {
 		value.ReversalReason = reversalReason.String
@@ -424,14 +486,14 @@ func (t *transaction) CreateSale(ctx context.Context, value sales.Sale) error {
 	_, err := t.tx.Exec(ctx, `
 		INSERT INTO sales (
 			id, tenant_id, company_id, branch_id, warehouse_id, record_type, sale_kind, status,
-			customer_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor,
+			customer_id, source_document_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor,
 			payment_method, reversal_of, reversal_reason, device_id, client_transaction_id,
 			client_timestamp, client_app_version, client_master_data_version, client_price_version, client_catalog_snapshot_token, offline,
 			receipt_reference, fiscal_status, created_by, correlation_id,
 			document_at, received_at, accounting_at, accounting_time_basis, created_at, reversed_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`,
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)`,
 		value.ID, value.Scope.TenantID, value.Scope.CompanyID, value.Scope.BranchID, value.Scope.WarehouseID,
-		value.RecordType, value.Kind, value.Status, value.CustomerID, value.Currency,
+		value.RecordType, value.Kind, value.Status, value.CustomerID, nullableText(value.SourceDocumentID), value.Currency,
 		value.SubtotalMinor, value.TaxMinor, value.TotalMinor, value.COGSMinor,
 		nullableText(value.PaymentMethod), nullableText(value.ReversalOf), nullableText(value.ReversalReason),
 		nullableText(value.DeviceID), nullableText(value.ClientTransactionID), nullableTime(value.ClientTimestamp),

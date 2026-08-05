@@ -23,10 +23,44 @@ import (
 )
 
 const creditPolicyOperation = "customers.credit-policy.schedule.v1"
+const collectionOperation = "customers.collection.receive.v1"
 
 type Repository interface {
 	CustomerAccountDetail(ctx context.Context, scope tenancy.Scope, actorID, customerID string, at time.Time) (customers.AccountDetail, error)
 	ScheduleCustomerCreditPolicy(ctx context.Context, policy customers.CreditPolicy, policyAudit audit.Event, policyEvent outbox.Event, commandAt time.Time) (customers.CreditPolicy, error)
+	ReceiveCustomerCollection(ctx context.Context, collection Collection, ids CollectionEffectIDs, collectionAudit audit.Event, collectionEvent outbox.Event, requestHash string) (Collection, error)
+}
+
+type Collection struct {
+	ID             string        `json:"id"`
+	Scope          tenancy.Scope `json:"scope"`
+	CustomerID     string        `json:"customer_id"`
+	InvoiceSaleID  string        `json:"invoice_sale_id"`
+	Method         string        `json:"method"`
+	AccountID      string        `json:"account_id"`
+	AmountMinor    int64         `json:"amount_minor"`
+	Currency       string        `json:"currency"`
+	OccurredAt     time.Time     `json:"occurred_at"`
+	CreatedBy      string        `json:"created_by"`
+	CorrelationID  string        `json:"correlation_id"`
+	IdempotencyKey string        `json:"-"`
+}
+type CollectionEffectIDs struct {
+	LedgerID     string
+	ItemID       string
+	AllocationID string
+	JournalID    string
+}
+type ReceiveCollectionCommand struct {
+	Scope          tenancy.Scope
+	ActorID        string
+	CustomerID     string `json:"customer_id"`
+	InvoiceSaleID  string `json:"invoice_sale_id"`
+	Method         string `json:"method"`
+	AmountMinor    int64  `json:"amount_minor"`
+	Currency       string `json:"currency"`
+	IdempotencyKey string
+	CorrelationID  string
 }
 
 type ScheduleCreditPolicyCommand struct {
@@ -154,6 +188,41 @@ func (s *Service) ScheduleCreditPolicy(ctx context.Context, command ScheduleCred
 		return customers.CreditPolicy{}, wire.ErrUnsafeInteger
 	}
 	return result, nil
+}
+
+func (s *Service) ReceiveCollection(ctx context.Context, command ReceiveCollectionCommand) (Collection, error) {
+	command.Scope = command.Scope.Normalize()
+	command.ActorID = identity.NormalizeClaim(command.ActorID)
+	command.CustomerID = identity.NormalizeClaim(command.CustomerID)
+	command.InvoiceSaleID = identity.NormalizeClaim(command.InvoiceSaleID)
+	command.Method = strings.ToUpper(strings.TrimSpace(command.Method))
+	command.Currency = strings.ToUpper(strings.TrimSpace(command.Currency))
+	command.IdempotencyKey = strings.TrimSpace(command.IdempotencyKey)
+	command.CorrelationID = identity.NormalizeClaim(command.CorrelationID)
+	if command.Scope.Validate() != nil || command.ActorID == "" || !identity.IsUUID(command.CustomerID) || !identity.IsUUID(command.InvoiceSaleID) || !sales.IsCanonicalPaymentMethod(command.Method) || command.AmountMinor <= 0 || !wire.IsSafeInteger(command.AmountMinor) || len(command.Currency) != 3 || len(command.IdempotencyKey) < 16 || len(command.IdempotencyKey) > 128 {
+		return Collection{}, sales.ErrInvalidCommand
+	}
+	canonical, _ := json.Marshal(struct {
+		CustomerID, InvoiceSaleID, Method, Currency string
+		AmountMinor                                 int64
+	}{command.CustomerID, command.InvoiceSaleID, command.Method, command.Currency, command.AmountMinor})
+	hash := sha256.Sum256(canonical)
+	values := make([]string, 7)
+	for index := range values {
+		value, err := s.ids.New()
+		if err != nil {
+			return Collection{}, err
+		}
+		values[index] = value
+	}
+	now := s.clock.Now().UTC()
+	correlation := command.CorrelationID
+	if correlation == "" {
+		correlation = values[0]
+	}
+	collection := Collection{ID: values[0], Scope: command.Scope, CustomerID: command.CustomerID, InvoiceSaleID: command.InvoiceSaleID, Method: command.Method, AmountMinor: command.AmountMinor, Currency: command.Currency, OccurredAt: now, CreatedBy: command.ActorID, CorrelationID: correlation, IdempotencyKey: command.IdempotencyKey}
+	payload, _ := json.Marshal(collection)
+	return s.repository.ReceiveCustomerCollection(ctx, collection, CollectionEffectIDs{LedgerID: values[1], ItemID: values[2], AllocationID: values[3], JournalID: values[4]}, audit.Event{ID: values[5], TenantID: command.Scope.TenantID, CompanyID: command.Scope.CompanyID, ActorID: command.ActorID, Action: "customer.collection_received", EntityType: "customer_collection", EntityID: collection.ID, CorrelationID: correlation, CausationID: collection.ID, Data: payload, OccurredAt: now}, outbox.Event{ID: values[6], TenantID: command.Scope.TenantID, CompanyID: command.Scope.CompanyID, AggregateType: "customer", AggregateID: command.CustomerID, EventType: "customer.collection_received", Version: 1, CorrelationID: correlation, CausationID: collection.ID, Payload: payload, OccurredAt: now}, hex.EncodeToString(hash[:]))
 }
 
 func validateAccountDetail(value customers.AccountDetail) error {

@@ -5,6 +5,7 @@ import { publicProblem } from "@/live-api/errors";
 import type {
   CustomerAccountWorkspace, CustomerAccountsWorkspace, DeviceManagementWorkspace, LiveSnapshot, MobileReconciliationStatus, ReconciliationDetailWorkspace,
   ReconciliationWorkspace, SaleDetailWorkspace, SalesBootstrap, SalesWorkspace,
+	OperationsWorkspace,
 } from "@/live-api/types";
 
 export async function loadCustomerAccounts(): Promise<LiveSnapshot<CustomerAccountsWorkspace>> {
@@ -15,6 +16,14 @@ export async function loadCustomerAccounts(): Promise<LiveSnapshot<CustomerAccou
   } catch (error) {
     return { state: "unavailable", problem: publicProblem(error) };
   }
+}
+
+export async function loadOperationsWorkspace(): Promise<LiveSnapshot<OperationsWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const [context, customers, products, suppliers, documents] = await Promise.all([repository.getWorkingContext(), repository.listCustomers(), repository.listProducts(), repository.listSuppliers(), repository.listOperationDocuments()]);
+    return { state: "ready", data: { context, customers: customers.items, products: products.items, suppliers: suppliers.items, documents: documents.items, nextCursor: documents.next_cursor ?? null } };
+  } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
 }
 
 export async function loadCustomerAccount(customerId: string): Promise<LiveSnapshot<CustomerAccountWorkspace>> {

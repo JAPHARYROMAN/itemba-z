@@ -32,7 +32,7 @@ export function LiveSalesList({ workspace }: { workspace: SalesWorkspace }) {
     <div className="page-stack live-sales-page">
       <section className="page-heading module-heading">
         <div><div className="heading-badges"><LiveBadge context={workspace.context} /><span className="scope-chip">{workspace.context.company_name} · {workspace.context.branch_name}</span></div><h1>{l(text("Live sales", "Mauzo hai"))}</h1><p>{l(text("Immutable posted sales from the authenticated ERP scope. Prices, tax, stock and ledgers are controlled by the server.", "Mauzo yaliyothibitishwa kutoka upeo wa ERP. Bei, kodi, bidhaa na madaftari yanadhibitiwa na seva."))}</p></div>
-        <div className="page-actions"><Link className="primary-button" href="/sales/new"><Plus size={17} />{l(text("Complete sale", "Kamilisha mauzo"))}</Link></div>
+        <div className="page-actions"><Link className="secondary-button" href="/sales/lifecycle">{l(text("Orders & collections", "Oda na makusanyo"))}</Link><Link className="primary-button" href="/sales/new"><Plus size={17} />{l(text("Complete sale", "Kamilisha mauzo"))}</Link></div>
       </section>
 
       <section className="metric-grid compact-metrics" aria-label={l(text("Live sales metrics", "Vipimo vya mauzo hai"))}>

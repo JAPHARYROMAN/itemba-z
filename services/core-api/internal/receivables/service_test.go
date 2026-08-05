@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/memory"
@@ -35,12 +36,42 @@ func newFixture(t *testing.T, general bool) (*memory.Store, *receivables.Service
 	ids := &identity.SequenceGenerator{Values: []string{
 		"00000000-0000-4000-8000-000000000201", "00000000-0000-4000-8000-000000000202", "00000000-0000-4000-8000-000000000203",
 		"00000000-0000-4000-8000-000000000204", "00000000-0000-4000-8000-000000000205", "00000000-0000-4000-8000-000000000206",
+		"00000000-0000-4000-8000-000000000207",
 	}}
 	service, err := receivables.NewService(store, ids, clock.Fixed{Time: now})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return store, service, scope
+}
+
+func TestCollectionAllocatesInvoiceAndPostsBalancedJournal(t *testing.T) {
+	store, service, scope := newFixture(t, false)
+	invoiceID := "00000000-0000-4000-8000-000000000301"
+	itemID := "00000000-0000-4000-8000-000000000302"
+	store.SeedPermission(scope, actorID, "customers.collections.post")
+	store.SeedPostingConfig(scope.TenantID, scope.CompanyID, finance.SalesPostingConfig{ReceivableAccountID: "receivable", TaxPayableAccountID: "tax", CashAccounts: map[string]string{sales.PaymentBankTransfer: "bank"}})
+	store.SeedCustomerLedger(customers.LedgerEntry{ID: "opening", TenantID: scope.TenantID, CompanyID: scope.CompanyID, CustomerID: customerID, SourceType: "SALE", SourceID: invoiceID, AmountMinor: 1000, Currency: "TZS", OccurredAt: now.Add(-time.Hour)})
+	due := now.AddDate(0, 0, 30)
+	store.SeedReceivableItem(customers.ReceivableItem{ID: itemID, TenantID: scope.TenantID, CompanyID: scope.CompanyID, CustomerID: customerID, Kind: customers.ReceivableInvoice, SourceType: "SALE", SourceID: invoiceID, AmountMinor: 1000, Currency: "TZS", DocumentAt: now.Add(-time.Hour), DueAt: &due, OccurredAt: now.Add(-time.Hour)})
+	created, err := service.ReceiveCollection(context.Background(), receivables.ReceiveCollectionCommand{Scope: scope, ActorID: actorID, CustomerID: customerID, InvoiceSaleID: invoiceID, Method: sales.PaymentBankTransfer, AmountMinor: 600, Currency: "TZS", IdempotencyKey: "collection-request-001"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.AccountID != "bank" {
+		t.Fatalf("account=%s", created.AccountID)
+	}
+	detail, err := service.Account(context.Background(), scope, actorID, customerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Aging.LedgerBalanceMinor != 400 || detail.Aging.OpenInvoiceMinor != 400 || !detail.Aging.Reconciled {
+		t.Fatalf("aging=%+v", detail.Aging)
+	}
+	snapshot := store.Snapshot()
+	if len(snapshot.Journals) != 1 || snapshot.Journals[0].Validate() != nil {
+		t.Fatalf("journal=%+v", snapshot.Journals)
+	}
 }
 
 func TestSchedulePolicyIsEffectiveDatedAndIdempotent(t *testing.T) {

@@ -17,8 +17,10 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
@@ -81,6 +83,10 @@ type state struct {
 	reconciliationCases       map[string]mobile.ReconciliationCase
 	reconciliationByCommand   map[string]string
 	reconciliationIdempotency map[string]string
+	operationDocuments        map[string]operations.Document
+	suppliers                 map[string]operations.Supplier
+	collections               map[string]receivables.Collection
+	reservations              []inventory.Movement
 }
 
 func newState() *state {
@@ -96,6 +102,9 @@ func newState() *state {
 		reconciliationCases:       make(map[string]mobile.ReconciliationCase),
 		reconciliationByCommand:   make(map[string]string),
 		reconciliationIdempotency: make(map[string]string),
+		operationDocuments:        make(map[string]operations.Document),
+		suppliers:                 make(map[string]operations.Supplier),
+		collections:               make(map[string]receivables.Collection),
 	}
 }
 
@@ -209,6 +218,17 @@ func (s *Store) SeedStock(value inventory.Movement) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.state.movements = append(s.state.movements, value)
+}
+
+func (s *Store) SeedCustomerLedger(value customers.LedgerEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.ledger = append(s.state.ledger, value)
+}
+func (s *Store) SeedReceivableItem(value customers.ReceivableItem) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.receivableItems[companyEntityKey(value.TenantID, value.CompanyID, value.ID)] = value
 }
 
 func (s *Store) SeedContext(scope tenancy.Scope, value readmodel.WorkingContext) {
@@ -407,7 +427,39 @@ func (t *transaction) AvailableStock(_ context.Context, scope tenancy.Scope, pro
 			quantity += value.Quantity
 		}
 	}
+	for _, value := range t.state.reservations {
+		if value.TenantID == scope.TenantID && value.CompanyID == scope.CompanyID && value.BranchID == scope.BranchID && value.WarehouseID == scope.WarehouseID && value.ProductID == productID {
+			quantity -= value.Quantity
+		}
+	}
 	return quantity, nil
+}
+
+func (t *transaction) FulfillSalesOrder(_ context.Context, scope tenancy.Scope, orderID, customerID, _ string, lines []sales.CommandLine, releaseIDs []string, _ string, _ string, _ string, at time.Time) error {
+	key := operationKey(scope, orderID)
+	document, ok := t.state.operationDocuments[key]
+	if !ok {
+		return sales.ErrNotFound
+	}
+	if document.Type != operations.SalesOrder || document.Status != operations.Approved || document.PartyType != operations.CustomerParty || document.PartyID != customerID || len(document.Lines) != len(lines) || len(lines) != len(releaseIDs) {
+		return operations.ErrSourceMismatch
+	}
+	quantities := make(map[string]int64, len(document.Lines))
+	for _, line := range document.Lines {
+		product,ok:=t.state.products[companyEntityKey(scope.TenantID,scope.CompanyID,line.ProductID)];if !ok||product.ListPriceMinor!=line.UnitPriceMinor{return operations.ErrSourceMismatch}
+		quantities[line.ProductID] = line.Quantity
+	}
+	for _, line := range lines {
+		if quantities[line.ProductID] != line.Quantity {
+			return operations.ErrSourceMismatch
+		}
+	}
+	for index, line := range lines {
+		t.state.reservations = append(t.state.reservations, inventory.Movement{ID: releaseIDs[index], TenantID: scope.TenantID, CompanyID: scope.CompanyID, BranchID: scope.BranchID, WarehouseID: scope.WarehouseID, ProductID: line.ProductID, SourceType: "SALES_ORDER_FULFILMENT", SourceID: orderID, Quantity: -line.Quantity, OccurredAt: at})
+	}
+	document.Status, document.PostedAt = operations.Closed, &at
+	t.state.operationDocuments[key] = document
+	return nil
 }
 
 func (t *transaction) CreditExposure(_ context.Context, scope tenancy.Scope, customerID string) (int64, error) {
@@ -687,6 +739,7 @@ func cloneState(source *state) *state {
 		result.sales[key] = cloneSale(value)
 	}
 	result.movements = append([]inventory.Movement(nil), source.movements...)
+	result.reservations = append([]inventory.Movement(nil), source.reservations...)
 	result.ledger = append([]customers.LedgerEntry(nil), source.ledger...)
 	result.creditPolicies = append([]customers.CreditPolicy(nil), source.creditPolicies...)
 	for key, value := range source.receivableItems {
@@ -735,6 +788,16 @@ func cloneState(source *state) *state {
 	}
 	for key, value := range source.reconciliationIdempotency {
 		result.reconciliationIdempotency[key] = value
+	}
+	for key, value := range source.operationDocuments {
+		value.Lines = append([]operations.DocumentLine(nil), value.Lines...)
+		result.operationDocuments[key] = value
+	}
+	for key, value := range source.suppliers {
+		result.suppliers[key] = value
+	}
+	for key, value := range source.collections {
+		result.collections[key] = value
 	}
 	return result
 }

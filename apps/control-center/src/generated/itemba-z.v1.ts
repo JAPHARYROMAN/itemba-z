@@ -140,6 +140,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/customers/{customer_id}/collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Receive and allocate a customer collection */
+        post: operations["receiveCustomerCollection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/suppliers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List active and inactive suppliers in company scope */
+        get: operations["listSuppliers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operations/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List scoped commercial and inventory documents */
+        get: operations["listOperationDocuments"];
+        put?: never;
+        /** Create a controlled workflow document draft */
+        post: operations["createOperationDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operations/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a scoped workflow document */
+        get: operations["getOperationDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operations/documents/{document_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply an authorized workflow transition and its atomic effects */
+        post: operations["transitionOperationDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sales": {
         parameters: {
             query?: never;
@@ -559,6 +645,11 @@ export interface components {
         CompleteSaleCommand: {
             /** Format: uuid */
             customer_id: string;
+            /**
+             * Format: uuid
+             * @description Approved online sales order fulfilled atomically by this sale.
+             */
+            source_document_id?: string;
             kind: components["schemas"]["SaleKind"];
             payment_method?: components["schemas"]["PaymentMethod"];
             lines: components["schemas"]["SaleLineCommand"][];
@@ -583,6 +674,8 @@ export interface components {
             status: components["schemas"]["SaleStatus"];
             /** Format: uuid */
             customer_id: string;
+            /** Format: uuid */
+            source_document_id?: string;
             currency: string;
             subtotal_minor: components["schemas"]["SafeNonNegativeInteger"];
             tax_minor: components["schemas"]["SafeNonNegativeInteger"];
@@ -640,6 +733,107 @@ export interface components {
         SalePage: {
             items: components["schemas"]["Sale"][];
             next_cursor: string | null;
+        };
+        /** @enum {string} */
+        OperationDocumentType: "QUOTATION" | "SALES_ORDER" | "PURCHASE_REQUEST" | "PURCHASE_ORDER" | "GOODS_RECEIPT" | "SUPPLIER_INVOICE" | "SUPPLIER_PAYMENT" | "PURCHASE_RETURN" | "STOCK_TRANSFER" | "STOCK_COUNT" | "STOCK_ADJUSTMENT";
+        /** @enum {string} */
+        OperationStatus: "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED" | "POSTED" | "DISPATCHED" | "RECEIVED" | "CLOSED" | "REVERSED";
+        OperationLineCommand: {
+            /** Format: uuid */
+            product_id: string;
+            /** Format: int64 */
+            quantity: number;
+            unit_price_minor: components["schemas"]["SafeNonNegativeInteger"];
+        };
+        CreateOperationCommand: {
+            type: components["schemas"]["OperationDocumentType"];
+            /** @enum {string} */
+            party_type: "CUSTOMER" | "SUPPLIER" | "NONE";
+            /** Format: uuid */
+            party_id?: string;
+            /** Format: uuid */
+            source_document_id?: string;
+            /** Format: uuid */
+            destination_warehouse_id?: string;
+            currency: string;
+            reason: string;
+            lines: components["schemas"]["OperationLineCommand"][];
+        };
+        TransitionOperationCommand: {
+            status: components["schemas"]["OperationStatus"];
+            reason: string;
+            payment_method?: components["schemas"]["PaymentMethod"];
+        };
+        OperationLine: components["schemas"]["OperationLineCommand"] & {
+            /** Format: uuid */
+            id: string;
+            amount_minor: components["schemas"]["SafeNonNegativeInteger"];
+        };
+        OperationDocument: {
+            /** Format: uuid */
+            id: string;
+            number: string;
+            type: components["schemas"]["OperationDocumentType"];
+            status: components["schemas"]["OperationStatus"];
+            /** @enum {string} */
+            party_type: "CUSTOMER" | "SUPPLIER" | "NONE";
+            /** Format: uuid */
+            party_id?: string;
+            /** Format: uuid */
+            source_document_id?: string;
+            /** Format: uuid */
+            destination_warehouse_id?: string;
+            currency: string;
+            total_minor: components["schemas"]["SafeNonNegativeInteger"];
+            reason: string;
+            /** Format: date-time */
+            created_at: string;
+            lines: components["schemas"]["OperationLine"][];
+        } & {
+            [key: string]: unknown;
+        };
+        OperationPage: {
+            items: components["schemas"]["OperationDocument"][];
+            next_cursor: string | null;
+        };
+        Supplier: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            name: string;
+            active: boolean;
+            payment_terms_days: number;
+        } & {
+            [key: string]: unknown;
+        };
+        SupplierPage: {
+            items: components["schemas"]["Supplier"][];
+            next_cursor: string | null;
+        };
+        ReceiveCustomerCollectionCommand: {
+            /** Format: uuid */
+            invoice_sale_id: string;
+            method: components["schemas"]["PaymentMethod"];
+            amount_minor: components["schemas"]["SafePositiveInteger"];
+            currency: string;
+        };
+        CustomerCollection: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            customer_id: string;
+            /** Format: uuid */
+            invoice_sale_id: string;
+            method: components["schemas"]["PaymentMethod"];
+            account_id: string;
+            amount_minor: components["schemas"]["SafePositiveInteger"];
+            currency: string;
+            /** Format: date-time */
+            occurred_at: string;
+            /** Format: uuid */
+            correlation_id: string;
+        } & {
+            [key: string]: unknown;
         };
         ReverseSaleCommand: {
             reason: string;
@@ -1161,6 +1355,168 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    receiveCustomerCollection: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path: {
+                customer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReceiveCustomerCollectionCommand"];
+            };
+        };
+        responses: {
+            /** @description Collection allocated and posted exactly once. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerCollection"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listSuppliers: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                page_size?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scoped supplier master data. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierPage"];
+                };
+            };
+        };
+    };
+    listOperationDocuments: {
+        parameters: {
+            query?: {
+                type?: components["schemas"]["OperationDocumentType"];
+                cursor?: components["parameters"]["Cursor"];
+                page_size?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scoped immutable workflow documents. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createOperationDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOperationCommand"];
+            };
+        };
+        responses: {
+            /** @description Draft created exactly once. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationDocument"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getOperationDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable workflow document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationDocument"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    transitionOperationDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Correlation-ID"?: components["parameters"]["CorrelationId"];
+            };
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionOperationCommand"];
+            };
+        };
+        responses: {
+            /** @description Transition committed exactly once. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationDocument"];
+                };
+            };
+            409: components["responses"]["Conflict"];
         };
     };
     listSales: {

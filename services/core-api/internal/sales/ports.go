@@ -46,6 +46,7 @@ type Transaction interface {
 	OfflineLeaseValid(ctx context.Context, lease devices.OfflineLease, clientTimestamp time.Time) (bool, error)
 	OfflineAllocation(ctx context.Context, scope tenancy.Scope, deviceID, productID string) (int64, error)
 	OfflineSalesTotal(ctx context.Context, scope tenancy.Scope, deviceID string, startsAt, endsAt time.Time) (int64, error)
+	FulfillSalesOrder(ctx context.Context, scope tenancy.Scope, orderID, customerID, saleID string, lines []CommandLine, releaseIDs []string, transitionID, actorID, correlationID string, at time.Time) error
 
 	Sale(ctx context.Context, scope tenancy.Scope, saleID string) (Sale, error)
 	CreateSale(ctx context.Context, sale Sale) error

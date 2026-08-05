@@ -211,6 +211,87 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /v1/customers/{customer_id}/collections:
+    post:
+      summary: Receive and allocate a customer collection
+      operationId: receiveCustomerCollection
+      tags: [Customers, Finance]
+      x-implementation-status: implemented
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReceiveCustomerCollectionCommand' } } } }
+      responses:
+        '201': { description: Collection allocated and posted exactly once., content: { application/json: { schema: { $ref: '#/components/schemas/CustomerCollection' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/suppliers:
+    get:
+      summary: List active and inactive suppliers in company scope
+      operationId: listSuppliers
+      tags: [Purchases]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200': { description: Scoped supplier master data., content: { application/json: { schema: { $ref: '#/components/schemas/SupplierPage' } } } }
+  /v1/operations/documents:
+    get:
+      summary: List scoped commercial and inventory documents
+      operationId: listOperationDocuments
+      tags: [Operations]
+      x-implementation-status: implemented
+      parameters:
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/OperationDocumentType' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200': { description: Scoped immutable workflow documents., content: { application/json: { schema: { $ref: '#/components/schemas/OperationPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a controlled workflow document draft
+      operationId: createOperationDocument
+      tags: [Operations]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateOperationCommand' } } } }
+      responses:
+        '201': { description: Draft created exactly once., content: { application/json: { schema: { $ref: '#/components/schemas/OperationDocument' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/operations/documents/{document_id}:
+    get:
+      summary: Get a scoped workflow document
+      operationId: getOperationDocument
+      tags: [Operations]
+      x-implementation-status: implemented
+      parameters:
+        - { name: document_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Immutable workflow document., content: { application/json: { schema: { $ref: '#/components/schemas/OperationDocument' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/operations/documents/{document_id}/transitions:
+    post:
+      summary: Apply an authorized workflow transition and its atomic effects
+      operationId: transitionOperationDocument
+      tags: [Operations]
+      x-implementation-status: implemented
+      parameters:
+        - { name: document_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TransitionOperationCommand' } } } }
+      responses:
+        '200': { description: Transition committed exactly once., content: { application/json: { schema: { $ref: '#/components/schemas/OperationDocument' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
   /v1/sales:
     post:
       summary: Complete and atomically post a sale
@@ -859,6 +940,7 @@ components:
       required: [customer_id, kind, lines]
       properties:
         customer_id: { type: string, format: uuid }
+        source_document_id: { type: string, format: uuid, description: Approved online sales order fulfilled atomically by this sale. }
         kind: { $ref: '#/components/schemas/SaleKind' }
         payment_method: { $ref: '#/components/schemas/PaymentMethod' }
         lines:
@@ -888,6 +970,7 @@ components:
         kind: { $ref: '#/components/schemas/SaleKind' }
         status: { $ref: '#/components/schemas/SaleStatus' }
         customer_id: { type: string, format: uuid }
+        source_document_id: { type: string, format: uuid }
         currency: { type: string, pattern: '^[A-Z]{3}$' }
         subtotal_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
         tax_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
@@ -939,6 +1022,112 @@ components:
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Sale' } }
         next_cursor: { type: [string, 'null'] }
+    OperationDocumentType:
+      type: string
+      enum: [QUOTATION, SALES_ORDER, PURCHASE_REQUEST, PURCHASE_ORDER, GOODS_RECEIPT, SUPPLIER_INVOICE, SUPPLIER_PAYMENT, PURCHASE_RETURN, STOCK_TRANSFER, STOCK_COUNT, STOCK_ADJUSTMENT]
+    OperationStatus:
+      type: string
+      enum: [DRAFT, SUBMITTED, APPROVED, REJECTED, POSTED, DISPATCHED, RECEIVED, CLOSED, REVERSED]
+    OperationLineCommand:
+      type: object
+      additionalProperties: false
+      required: [product_id, quantity, unit_price_minor]
+      properties:
+        product_id: { type: string, format: uuid }
+        quantity: { type: integer, format: int64, minimum: -9007199254740991, maximum: 9007199254740991 }
+        unit_price_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+    CreateOperationCommand:
+      type: object
+      additionalProperties: false
+      required: [type, party_type, currency, reason, lines]
+      properties:
+        type: { $ref: '#/components/schemas/OperationDocumentType' }
+        party_type: { type: string, enum: [CUSTOMER, SUPPLIER, NONE] }
+        party_id: { type: string, format: uuid }
+        source_document_id: { type: string, format: uuid }
+        destination_warehouse_id: { type: string, format: uuid }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        lines: { type: array, minItems: 1, maxItems: 60, items: { $ref: '#/components/schemas/OperationLineCommand' } }
+    TransitionOperationCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties:
+        status: { $ref: '#/components/schemas/OperationStatus' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
+    OperationLine:
+      allOf:
+        - $ref: '#/components/schemas/OperationLineCommand'
+        - type: object
+          required: [id, amount_minor]
+          properties:
+            id: { type: string, format: uuid }
+            amount_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+    OperationDocument:
+      type: object
+      additionalProperties: true
+      required: [id, number, type, status, party_type, currency, total_minor, reason, created_at, lines]
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        type: { $ref: '#/components/schemas/OperationDocumentType' }
+        status: { $ref: '#/components/schemas/OperationStatus' }
+        party_type: { type: string, enum: [CUSTOMER, SUPPLIER, NONE] }
+        party_id: { type: string, format: uuid }
+        source_document_id: { type: string, format: uuid }
+        destination_warehouse_id: { type: string, format: uuid }
+        currency: { type: string }
+        total_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
+        lines: { type: array, items: { $ref: '#/components/schemas/OperationLine' } }
+    OperationPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/OperationDocument' } }
+        next_cursor: { type: [string, 'null'] }
+    Supplier:
+      type: object
+      additionalProperties: true
+      required: [id, code, name, active, payment_terms_days]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        active: { type: boolean }
+        payment_terms_days: { type: integer, minimum: 0, maximum: 365 }
+    SupplierPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Supplier' } }
+        next_cursor: { type: [string, 'null'] }
+    ReceiveCustomerCollectionCommand:
+      type: object
+      additionalProperties: false
+      required: [invoice_sale_id, method, amount_minor, currency]
+      properties:
+        invoice_sale_id: { type: string, format: uuid }
+        method: { $ref: '#/components/schemas/PaymentMethod' }
+        amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+    CustomerCollection:
+      type: object
+      additionalProperties: true
+      required: [id, customer_id, invoice_sale_id, method, account_id, amount_minor, currency, occurred_at, correlation_id]
+      properties:
+        id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        invoice_sale_id: { type: string, format: uuid }
+        method: { $ref: '#/components/schemas/PaymentMethod' }
+        account_id: { type: string }
+        amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        currency: { type: string }
+        occurred_at: { type: string, format: date-time }
+        correlation_id: { type: string, format: uuid }
     ReverseSaleCommand:
       type: object
       additionalProperties: false

@@ -5,6 +5,9 @@ import type {
   MobileDevice, MobileDevicePage, MobileReconciliationCase, MobileReconciliationPage,
   MobileReconciliationStatus, ProductPage, PublicProblem, ResolveMobileReconciliationCommand,
   ReverseSaleCommand, Sale, SalePage, ScheduleCreditPolicyCommand, CreditPolicy, WorkingContext,
+	CreateOperationCommand, OperationDocument, OperationDocumentType, OperationPage, TransitionOperationCommand,
+	SupplierPage,
+	CustomerCollection, ReceiveCustomerCollectionCommand,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -210,6 +213,23 @@ export class ItembaApiClient {
       body: command,
       idempotencyKey,
     });
+  }
+
+  listOperationDocuments(type?: OperationDocumentType, cursor?: string): Promise<OperationPage> {
+    const query = new URLSearchParams({ page_size: "100" }); if (type) query.set("type", type); if (cursor) query.set("cursor", cursor);
+    return this.request(`/v1/operations/documents?${query.toString()}`);
+  }
+
+  listSuppliers(): Promise<SupplierPage> { return this.request("/v1/suppliers?page_size=200"); }
+
+  receiveCustomerCollection(customerId: string, command: ReceiveCustomerCollectionCommand, idempotencyKey: string): Promise<CustomerCollection> { return this.request(`/v1/customers/${encodeURIComponent(customerId)}/collections`, { method: "POST", body: command, idempotencyKey }); }
+
+  createOperationDocument(command: CreateOperationCommand, idempotencyKey: string): Promise<OperationDocument> {
+    return this.request("/v1/operations/documents", { method: "POST", body: command, idempotencyKey });
+  }
+
+  transitionOperationDocument(documentId: string, command: TransitionOperationCommand, idempotencyKey: string): Promise<OperationDocument> {
+    return this.request(`/v1/operations/documents/${encodeURIComponent(documentId)}/transitions`, { method: "POST", body: command, idempotencyKey });
   }
 
   listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
