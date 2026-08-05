@@ -230,7 +230,7 @@ assert.equal(mobileFirst.state, "synced");
 assert.equal(mobileFirst.client_transaction_id, clientTransactionId);
 assert.equal(mobileFirst.idempotent_replay, false);
 assert.equal(mobileFirst.sale.offline, true);
-assert.equal(mobileFirst.sale.client_timestamp, mobileCommand.client_timestamp);
+assert.equal(Date.parse(mobileFirst.sale.client_timestamp), Date.parse(mobileCommand.client_timestamp));
 assert.equal(mobileFirst.sale.app_version, mobileCommand.app_version);
 assert.equal(mobileFirst.sale.master_data_version, mobileCommand.master_data_version);
 assert.equal(mobileFirst.sale.price_version, mobileCommand.price_version);
