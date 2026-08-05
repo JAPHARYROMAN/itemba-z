@@ -26,6 +26,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/treasury"
 )
 
 const maxBodyBytes = 1 << 20
@@ -42,6 +43,7 @@ type Handler struct {
 	financialops    *financialops.Service
 	reporting       *reporting.Service
 	advancedfinance *advancedfinance.Service
+	treasury        *treasury.Service
 	logger          *slog.Logger
 	authenticator   Authenticator
 }
@@ -131,6 +133,18 @@ func NewLiveWithAdvancedFinance(salesService *sales.Service, readService *readmo
 	return handler, nil
 }
 
+func NewLiveWithTreasury(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, bankingService *banking.Service, financialService *financialops.Service, reportingService *reporting.Service, advancedService *advancedfinance.Service, treasuryService *treasury.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLiveWithAdvancedFinance(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if treasuryService == nil {
+		return nil, errors.New("treasury service is required")
+	}
+	handler.treasury = treasuryService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
@@ -191,6 +205,12 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("POST /v1/finance/assets/{assetID}/transitions", h.transitionAsset)
 		mux.HandleFunc("POST /v1/finance/assets/{assetID}/depreciation", h.depreciateAsset)
 		mux.HandleFunc("POST /v1/finance/assets/{assetID}/disposal", h.disposeAsset)
+	}
+	if h.treasury != nil {
+		mux.HandleFunc("GET /v1/finance/facilities", h.listTreasuryFacilities)
+		mux.HandleFunc("POST /v1/finance/facilities", h.createTreasuryFacility)
+		mux.HandleFunc("POST /v1/finance/facilities/{facilityID}/transitions", h.transitionTreasuryFacility)
+		mux.HandleFunc("POST /v1/finance/facilities/{facilityID}/transactions", h.postTreasuryTransaction)
 	}
 	if h.mobile != nil {
 		mux.HandleFunc("POST /v1/mobile/devices/enroll", h.enrollDevice)
@@ -1151,6 +1171,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, advancedfinance.ErrInvalidTransition), errors.Is(err, advancedfinance.ErrSeparationOfDuties), errors.Is(err, advancedfinance.ErrAssetFullyDepreciated):
 		status, code = http.StatusConflict, "advanced_finance_conflict"
+	case errors.Is(err, treasury.ErrInvalidCommand):
+		status, code = http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, treasury.ErrInvalidTransition), errors.Is(err, treasury.ErrSeparationOfDuties), errors.Is(err, treasury.ErrLimitExceeded):
+		status, code = http.StatusConflict, "treasury_conflict"
 	}
 	if status == http.StatusInternalServerError {
 		h.logger.ErrorContext(request.Context(), "request failed", "method", request.Method, "path", request.URL.Path, "error", err)

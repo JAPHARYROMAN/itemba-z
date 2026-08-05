@@ -27,6 +27,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/treasury"
 )
 
 const testCatalogSnapshotToken = "00000000-0000-4000-8000-000000000001"
@@ -101,6 +102,7 @@ type state struct {
 	budgets                   map[string]advancedfinance.Budget
 	assets                    map[string]advancedfinance.Asset
 	depreciation              map[string]advancedfinance.Depreciation
+	facilities                map[string]treasury.Facility
 }
 
 func newState() *state {
@@ -129,6 +131,7 @@ func newState() *state {
 		budgets:                   make(map[string]advancedfinance.Budget),
 		assets:                    make(map[string]advancedfinance.Asset),
 		depreciation:              make(map[string]advancedfinance.Depreciation),
+		facilities:                make(map[string]treasury.Facility),
 	}
 }
 
@@ -881,6 +884,10 @@ func cloneState(source *state) *state {
 	}
 	for key, value := range source.depreciation {
 		result.depreciation[key] = value
+	}
+	for key, value := range source.facilities {
+		value.Transactions = append([]treasury.Transaction(nil), value.Transactions...)
+		result.facilities[key] = value
 	}
 	return result
 }

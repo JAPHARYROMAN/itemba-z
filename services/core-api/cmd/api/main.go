@@ -24,6 +24,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/treasury"
 )
 
 func main() {
@@ -156,7 +157,17 @@ func main() {
 		logger.Error("initialize advanced finance service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithAdvancedFinance(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, logger, authenticator)
+	treasuryRepository, ok := repository.(treasury.Repository)
+	if !ok {
+		logger.Error("repository does not implement treasury")
+		os.Exit(1)
+	}
+	treasuryService, err := treasury.NewService(treasuryRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize treasury service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithTreasury(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)

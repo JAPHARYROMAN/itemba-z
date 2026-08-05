@@ -31,6 +31,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/treasury"
 )
 
 func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
@@ -46,7 +47,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -265,6 +266,38 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	asset, err = advancedService.Dispose(ctx, advancedfinance.DisposeCommand{Scope: scope, AssetID: asset.ID, ProceedsMinor: 10000, ProceedsAccountID: "cash", Reason: "Approved integration asset disposal", ActorID: approverID, IdempotencyKey: "integration-asset-dispose1"})
 	if err != nil || asset.Status != advancedfinance.Disposed {
 		t.Fatalf("dispose asset: %+v %v", asset, err)
+	}
+	treasuryService, err := treasury.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(95 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	facility, err := treasuryService.CreateFacility(ctx, treasury.CreateFacilityCommand{Scope: scope, Reference: "INT-LOAN-1", Lender: "Integration Bank", Type: treasury.TermLoan, Currency: "TZS", LimitMinor: 10000, AnnualInterestBasisPoints: 1200, StartDate: testTime.AddDate(0, -1, 0), MaturityDate: testTime.AddDate(1, 0, 0), BankAccountID: "cash", PrincipalAccountID: "payable", InterestExpenseAccountID: "expense", AccruedInterestAccountID: "tax-payable", Reason: "Approved integration working capital facility", ActorID: userID, IdempotencyKey: "integration-facility-create"})
+	if err != nil {
+		t.Fatalf("create facility: %v", err)
+	}
+	facility, err = treasuryService.TransitionFacility(ctx, treasury.TransitionCommand{Scope: scope, FacilityID: facility.ID, Status: treasury.Submitted, Reason: "Facility evidence ready for review", ActorID: userID, IdempotencyKey: "integration-facility-submit"})
+	if err != nil {
+		t.Fatalf("submit facility: %v", err)
+	}
+	facility, err = treasuryService.TransitionFacility(ctx, treasury.TransitionCommand{Scope: scope, FacilityID: facility.ID, Status: treasury.Active, Reason: "Independent facility approval complete", ActorID: approverID, IdempotencyKey: "integration-facility-active"})
+	if err != nil {
+		t.Fatalf("approve facility: %v", err)
+	}
+	for index, posting := range []struct {
+		kind   treasury.TransactionType
+		amount int64
+	}{{treasury.Drawdown, 10000}, {treasury.InterestAccrual, 1000}, {treasury.PrincipalRepayment, 10000}, {treasury.InterestPayment, 1000}} {
+		facility, err = treasuryService.PostTransaction(ctx, treasury.PostTransactionCommand{Scope: scope, FacilityID: facility.ID, Type: posting.kind, AmountMinor: posting.amount, OccurredAt: testTime, Reason: "Approved integration treasury posting", ActorID: approverID, IdempotencyKey: []string{"integration-drawdown-0001", "integration-interest-accrual", "integration-principal-repay", "integration-interest-payment"}[index]})
+		if err != nil {
+			t.Fatalf("post treasury %s: %v", posting.kind, err)
+		}
+	}
+	if facility.OutstandingPrincipalMinor != 0 || facility.AccruedInterestMinor != 0 || len(facility.Transactions) != 4 {
+		t.Fatalf("treasury balances: %+v", facility)
+	}
+	facility, err = treasuryService.TransitionFacility(ctx, treasury.TransitionCommand{Scope: scope, FacilityID: facility.ID, Status: treasury.Closed, Reason: "Facility fully settled and reconciled", ActorID: approverID, IdempotencyKey: "integration-facility-close1"})
+	if err != nil || facility.Status != treasury.Closed {
+		t.Fatalf("close facility: %+v %v", facility, err)
 	}
 	closeRequest, err := financialService.RequestPeriodAction(ctx, financialops.PeriodCommand{Scope: scope, PeriodID: periodID, Action: financialops.ClosePeriod, Reason: "Integration reconciliations ready for close", ActorID: userID, IdempotencyKey: "integration-period-close-01"})
 	if err != nil {
@@ -750,7 +783,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 1 || salesCount != 7 || journalCount != 19 || outboxCount != 71 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 23 || outboxCount != 79 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }

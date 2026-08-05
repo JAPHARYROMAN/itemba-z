@@ -644,6 +644,39 @@ paths:
       parameters: [{ name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DisposeFixedAssetCommand' } } } }
       responses: { '200': { description: Disposed fixed asset., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAsset' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/facilities:
+    get:
+      summary: List governed borrowing facilities and ledger-derived balances
+      operationId: listTreasuryFacilities
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses: { '200': { description: Treasury facilities., content: { application/json: { schema: { $ref: '#/components/schemas/TreasuryFacilityPage' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+    post:
+      summary: Create an immutable draft borrowing facility
+      operationId: createTreasuryFacility
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateTreasuryFacilityCommand' } } } }
+      responses: { '201': { description: Draft treasury facility., content: { application/json: { schema: { $ref: '#/components/schemas/TreasuryFacility' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/facilities/{facility_id}/transitions:
+    post:
+      summary: Submit, independently decide, or settle-close a treasury facility
+      operationId: transitionTreasuryFacility
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: facility_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TreasuryTransitionCommand' } } } }
+      responses: { '200': { description: Current treasury facility., content: { application/json: { schema: { $ref: '#/components/schemas/TreasuryFacility' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/facilities/{facility_id}/transactions:
+    post:
+      summary: Post a drawdown, interest accrual, principal repayment, or interest payment
+      operationId: postTreasuryTransaction
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: facility_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PostTreasuryTransactionCommand' } } } }
+      responses: { '201': { description: Facility with posted transaction and current balances., content: { application/json: { schema: { $ref: '#/components/schemas/TreasuryFacility' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
   /v1/sales:
     post:
       summary: Complete and atomically post a sale
@@ -1167,6 +1200,63 @@ components:
       additionalProperties: false
       required: [id, asset_id, period, amount_minor, journal_id, posted_by, posted_at]
       properties: { id: { type: string, format: uuid }, asset_id: { type: string, format: uuid }, period: { type: string, format: date-time }, amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, journal_id: { type: string, format: uuid }, posted_by: { type: string, format: uuid }, posted_at: { type: string, format: date-time } }
+    TreasuryStatus: { type: string, enum: [DRAFT, SUBMITTED, ACTIVE, REJECTED, CLOSED] }
+    TreasuryFacilityType: { type: string, enum: [TERM_LOAN, OVERDRAFT] }
+    TreasuryTransactionType: { type: string, enum: [DRAWDOWN, PRINCIPAL_REPAYMENT, INTEREST_ACCRUAL, INTEREST_PAYMENT] }
+    TreasuryTransaction:
+      type: object
+      additionalProperties: false
+      required: [id, facility_id, type, amount_minor, occurred_at, reason, journal_id, posted_by, posted_at]
+      properties: { id: { type: string, format: uuid }, facility_id: { type: string, format: uuid }, type: { $ref: '#/components/schemas/TreasuryTransactionType' }, amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, occurred_at: { type: string, format: date-time }, reason: { type: string }, journal_id: { type: string, format: uuid }, posted_by: { type: string, format: uuid }, posted_at: { type: string, format: date-time } }
+    TreasuryFacility:
+      type: object
+      additionalProperties: false
+      required: [id, scope, reference, lender, type, status, currency, limit_minor, annual_interest_basis_points, start_date, maturity_date, bank_account_id, principal_account_id, interest_expense_account_id, accrued_interest_account_id, outstanding_principal_minor, accrued_interest_minor, available_minor, reason, created_by, created_at, transactions]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        reference: { type: string }
+        lender: { type: string }
+        type: { $ref: '#/components/schemas/TreasuryFacilityType' }
+        status: { $ref: '#/components/schemas/TreasuryStatus' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        limit_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        annual_interest_basis_points: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        start_date: { type: string, format: date-time }
+        maturity_date: { type: string, format: date-time }
+        bank_account_id: { type: string }
+        principal_account_id: { type: string }
+        interest_expense_account_id: { type: string }
+        accrued_interest_account_id: { type: string }
+        outstanding_principal_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        accrued_interest_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        available_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        reason: { type: string }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+        closed_at: { type: string, format: date-time }
+        transactions: { type: array, items: { $ref: '#/components/schemas/TreasuryTransaction' } }
+    TreasuryFacilityPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/TreasuryFacility' } } }
+    CreateTreasuryFacilityCommand:
+      type: object
+      additionalProperties: false
+      required: [reference, lender, type, currency, limit_minor, annual_interest_basis_points, start_date, maturity_date, bank_account_id, principal_account_id, interest_expense_account_id, accrued_interest_account_id, reason]
+      properties: { reference: { type: string, minLength: 2, maxLength: 60 }, lender: { type: string, minLength: 3, maxLength: 160 }, type: { $ref: '#/components/schemas/TreasuryFacilityType' }, currency: { type: string, pattern: '^[A-Z]{3}$' }, limit_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, annual_interest_basis_points: { type: integer, minimum: 0, maximum: 100000 }, start_date: { type: string, format: date }, maturity_date: { type: string, format: date }, bank_account_id: { type: string }, principal_account_id: { type: string }, interest_expense_account_id: { type: string }, accrued_interest_account_id: { type: string }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    TreasuryTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties: { status: { $ref: '#/components/schemas/TreasuryStatus' }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    PostTreasuryTransactionCommand:
+      type: object
+      additionalProperties: false
+      required: [type, amount_minor, occurred_at, reason]
+      properties: { type: { $ref: '#/components/schemas/TreasuryTransactionType' }, amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, occurred_at: { type: string, format: date-time }, reason: { type: string, minLength: 8, maxLength: 500 } }
     Health:
       type: object
       additionalProperties: false

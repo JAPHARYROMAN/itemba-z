@@ -725,6 +725,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/finance/facilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List governed borrowing facilities and ledger-derived balances */
+        get: operations["listTreasuryFacilities"];
+        put?: never;
+        /** Create an immutable draft borrowing facility */
+        post: operations["createTreasuryFacility"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/facilities/{facility_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit, independently decide, or settle-close a treasury facility */
+        post: operations["transitionTreasuryFacility"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/finance/facilities/{facility_id}/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post a drawdown, interest accrual, principal repayment, or interest payment */
+        post: operations["postTreasuryTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sales": {
         parameters: {
             query?: never;
@@ -1072,6 +1124,93 @@ export interface components {
             posted_by: string;
             /** Format: date-time */
             posted_at: string;
+        };
+        /** @enum {string} */
+        TreasuryStatus: "DRAFT" | "SUBMITTED" | "ACTIVE" | "REJECTED" | "CLOSED";
+        /** @enum {string} */
+        TreasuryFacilityType: "TERM_LOAN" | "OVERDRAFT";
+        /** @enum {string} */
+        TreasuryTransactionType: "DRAWDOWN" | "PRINCIPAL_REPAYMENT" | "INTEREST_ACCRUAL" | "INTEREST_PAYMENT";
+        TreasuryTransaction: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            facility_id: string;
+            type: components["schemas"]["TreasuryTransactionType"];
+            amount_minor: components["schemas"]["SafePositiveInteger"];
+            /** Format: date-time */
+            occurred_at: string;
+            reason: string;
+            /** Format: uuid */
+            journal_id: string;
+            /** Format: uuid */
+            posted_by: string;
+            /** Format: date-time */
+            posted_at: string;
+        };
+        TreasuryFacility: {
+            /** Format: uuid */
+            id: string;
+            scope: components["schemas"]["Scope"];
+            reference: string;
+            lender: string;
+            type: components["schemas"]["TreasuryFacilityType"];
+            status: components["schemas"]["TreasuryStatus"];
+            currency: string;
+            limit_minor: components["schemas"]["SafePositiveInteger"];
+            annual_interest_basis_points: components["schemas"]["SafeNonNegativeInteger"];
+            /** Format: date-time */
+            start_date: string;
+            /** Format: date-time */
+            maturity_date: string;
+            bank_account_id: string;
+            principal_account_id: string;
+            interest_expense_account_id: string;
+            accrued_interest_account_id: string;
+            outstanding_principal_minor: components["schemas"]["SafeNonNegativeInteger"];
+            accrued_interest_minor: components["schemas"]["SafeNonNegativeInteger"];
+            available_minor: components["schemas"]["SafeNonNegativeInteger"];
+            reason: string;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            approved_by?: string;
+            /** Format: date-time */
+            closed_at?: string;
+            transactions: components["schemas"]["TreasuryTransaction"][];
+        };
+        TreasuryFacilityPage: {
+            items: components["schemas"]["TreasuryFacility"][];
+        };
+        CreateTreasuryFacilityCommand: {
+            reference: string;
+            lender: string;
+            type: components["schemas"]["TreasuryFacilityType"];
+            currency: string;
+            limit_minor: components["schemas"]["SafePositiveInteger"];
+            annual_interest_basis_points: number;
+            /** Format: date */
+            start_date: string;
+            /** Format: date */
+            maturity_date: string;
+            bank_account_id: string;
+            principal_account_id: string;
+            interest_expense_account_id: string;
+            accrued_interest_account_id: string;
+            reason: string;
+        };
+        TreasuryTransitionCommand: {
+            status: components["schemas"]["TreasuryStatus"];
+            reason: string;
+        };
+        PostTreasuryTransactionCommand: {
+            type: components["schemas"]["TreasuryTransactionType"];
+            amount_minor: components["schemas"]["SafePositiveInteger"];
+            /** Format: date-time */
+            occurred_at: string;
+            reason: string;
         };
         Health: {
             /** @enum {string} */
@@ -3487,6 +3626,115 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FixedAsset"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listTreasuryFacilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Treasury facilities. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreasuryFacilityPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createTreasuryFacility: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTreasuryFacilityCommand"];
+            };
+        };
+        responses: {
+            /** @description Draft treasury facility. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreasuryFacility"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    transitionTreasuryFacility: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                facility_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TreasuryTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Current treasury facility. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreasuryFacility"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    postTreasuryTransaction: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                facility_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostTreasuryTransactionCommand"];
+            };
+        };
+        responses: {
+            /** @description Facility with posted transaction and current balances. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreasuryFacility"];
                 };
             };
             403: components["responses"]["Forbidden"];

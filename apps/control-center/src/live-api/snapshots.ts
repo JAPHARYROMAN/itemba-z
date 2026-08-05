@@ -10,7 +10,16 @@ import type {
 	FinanceControlWorkspace,
 	FinancialReportsWorkspace,
 	AdvancedFinanceWorkspace,
+	TreasuryWorkspace,
 } from "@/live-api/types";
+
+export async function loadTreasuryWorkspace(): Promise<LiveSnapshot<TreasuryWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const [context, accounts, facilities] = await Promise.all([repository.getWorkingContext(), repository.listGLAccounts(), repository.listTreasuryFacilities()]);
+    return { state: "ready", data: { context, accounts: accounts.items.filter((account) => account.status === "ACTIVE"), facilities: facilities.items } };
+  } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
+}
 
 export async function loadAdvancedFinanceWorkspace(): Promise<LiveSnapshot<AdvancedFinanceWorkspace>> {
   try {

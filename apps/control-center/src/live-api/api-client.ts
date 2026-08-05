@@ -13,6 +13,7 @@ import type {
 	CreateGLAccountCommand, CreatePostingMappingCommand, GLAccount, GLAccountPage, GovernanceDecisionCommand, PostingMapping, PostingMappingPage,
 	BalanceSheet, CashFlow, ExportFinancialReportCommand, GeneralLedger, ProfitAndLoss, ReportExportArtifact, TrialBalance,
 	AdvancedFinanceTransitionCommand, Budget, BudgetActual, BudgetPage, CreateBudgetCommand, CreateFixedAssetCommand, DepreciateFixedAssetCommand, DisposeFixedAssetCommand, FixedAsset, FixedAssetDepreciation, FixedAssetPage,
+	CreateTreasuryFacilityCommand, PostTreasuryTransactionCommand, TreasuryFacility, TreasuryFacilityPage, TreasuryTransitionCommand,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -271,6 +272,10 @@ export class ItembaApiClient {
   transitionFixedAsset(id: string, command: AdvancedFinanceTransitionCommand, idempotencyKey: string): Promise<FixedAsset> { return this.request(`/v1/finance/assets/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey }); }
   depreciateFixedAsset(id: string, command: DepreciateFixedAssetCommand, idempotencyKey: string): Promise<FixedAssetDepreciation> { return this.request(`/v1/finance/assets/${encodeURIComponent(id)}/depreciation`, { method: "POST", body: command, idempotencyKey }); }
   disposeFixedAsset(id: string, command: DisposeFixedAssetCommand, idempotencyKey: string): Promise<FixedAsset> { return this.request(`/v1/finance/assets/${encodeURIComponent(id)}/disposal`, { method: "POST", body: command, idempotencyKey }); }
+  listTreasuryFacilities(): Promise<TreasuryFacilityPage> { return this.request("/v1/finance/facilities"); }
+  createTreasuryFacility(command: CreateTreasuryFacilityCommand, idempotencyKey: string): Promise<TreasuryFacility> { return this.request("/v1/finance/facilities", { method: "POST", body: command, idempotencyKey }); }
+  transitionTreasuryFacility(id: string, command: TreasuryTransitionCommand, idempotencyKey: string): Promise<TreasuryFacility> { return this.request(`/v1/finance/facilities/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey }); }
+  postTreasuryTransaction(id: string, command: PostTreasuryTransactionCommand, idempotencyKey: string): Promise<TreasuryFacility> { return this.request(`/v1/finance/facilities/${encodeURIComponent(id)}/transactions`, { method: "POST", body: command, idempotencyKey }); }
 
   listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
     const query = new URLSearchParams({ page_size: "100" });

@@ -9,12 +9,15 @@ import {
 import { AdvancedFinance } from "@/components/finance/advanced-finance";
 import { loadAdvancedFinanceWorkspace } from "@/live-api/snapshots";
 import { BudgetActual } from "@/components/finance/budget-actual";
+import { TreasuryWorkbench } from "@/components/finance/treasury-workbench";
+import { loadTreasuryWorkspace } from "@/live-api/snapshots";
 export const dynamic = "force-dynamic";
 export default async function FinancePage() {
-  const [banking, controls, advanced] = await Promise.all([
+  const [banking, controls, advanced, treasury] = await Promise.all([
     loadBankingWorkspace(),
     loadFinanceControlWorkspace(),
     loadAdvancedFinanceWorkspace(),
+    loadTreasuryWorkspace(),
   ]);
   if (banking.state === "unavailable")
     return <LiveUnavailable problem={banking.problem} />;
@@ -22,12 +25,15 @@ export default async function FinancePage() {
     return <LiveUnavailable problem={controls.problem} />;
   if (advanced.state === "unavailable")
     return <LiveUnavailable problem={advanced.problem} />;
+  if (treasury.state === "unavailable")
+    return <LiveUnavailable problem={treasury.problem} />;
   return (
     <>
       <AccountGovernance workspace={controls.data} />
       <FinanceControls workspace={controls.data} />
       <AdvancedFinance workspace={advanced.data} />
       <BudgetActual workspace={advanced.data} />
+      <TreasuryWorkbench workspace={treasury.data} />
       <BankingWorkbench workspace={banking.data} />
     </>
   );

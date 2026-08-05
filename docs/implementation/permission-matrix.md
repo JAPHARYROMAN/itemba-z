@@ -40,3 +40,9 @@ read/manage/approve/depreciate/dispose permissions. Budget and capitalization
 approval reject the originating maker. Depreciation and disposal remain
 separate ledger-posting capabilities and must be assigned only to finance roles
 authorized for the relevant legal company and operating scope.
+
+Treasury separates `finance.treasury.read`, `manage`, `approve`, and
+`transact`. Facility activation rejects the originating maker; closure requires
+fully reconciled principal and accrued interest. Transaction authority posts
+only the four governed borrowing movements and does not permit facility-master
+mutation, approval, fiscal-period override, or account remapping.
