@@ -15,6 +15,7 @@ import type {
 	AdvancedFinanceTransitionCommand, Budget, BudgetActual, BudgetPage, CreateBudgetCommand, CreateFixedAssetCommand, CreatePurchasedFixedAssetCommand, DepreciateFixedAssetCommand, DisposeFixedAssetCommand, FixedAsset, FixedAssetDepreciation, FixedAssetPage,
 	CreateTreasuryFacilityCommand, PostTreasuryTransactionCommand, TreasuryFacility, TreasuryFacilityPage, TreasuryTransitionCommand,
 	CreateIntercompanyCommand, GroupConsolidation, IntercompanyPage, IntercompanyTransaction, IntercompanyTransitionCommand,
+	Attendance, AttendanceCommand, CreateEmployeeCommand, Employee, EmployeeLoan, LeaveCommand, LeaveRequest, LeaveType, LeaveTypeCommand, LoanCommand, PayrollCommand, PayrollRun, PeopleSnapshot, PeopleTransitionCommand,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -282,6 +283,16 @@ export class ItembaApiClient {
   createIntercompanyTransaction(command: CreateIntercompanyCommand, idempotencyKey: string): Promise<IntercompanyTransaction> { return this.request("/v1/finance/intercompany", { method: "POST", body: command, idempotencyKey }); }
   transitionIntercompanyTransaction(id: string, command: IntercompanyTransitionCommand, idempotencyKey: string): Promise<IntercompanyTransaction> { return this.request(`/v1/finance/intercompany/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey }); }
   groupConsolidation(asOf: string): Promise<GroupConsolidation> { return this.request(`/v1/reports/financial/consolidation?as_of=${encodeURIComponent(asOf)}`); }
+  getPeopleSnapshot(): Promise<PeopleSnapshot> { return this.request("/v1/hr"); }
+  createEmployee(command: CreateEmployeeCommand, key: string): Promise<Employee> { return this.request("/v1/hr/employees", { method: "POST", body: command, idempotencyKey: key }); }
+  recordAttendance(command: AttendanceCommand, key: string): Promise<Attendance> { return this.request("/v1/hr/attendance", { method: "POST", body: command, idempotencyKey: key }); }
+  createLeaveType(command: LeaveTypeCommand, key: string): Promise<LeaveType> { return this.request("/v1/hr/leave-types", { method: "POST", body: command, idempotencyKey: key }); }
+  createLeave(command: LeaveCommand, key: string): Promise<LeaveRequest> { return this.request("/v1/hr/leave-requests", { method: "POST", body: command, idempotencyKey: key }); }
+  transitionLeave(id: string, command: PeopleTransitionCommand, key: string): Promise<LeaveRequest> { return this.request(`/v1/hr/leave-requests/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey: key }); }
+  createEmployeeLoan(command: LoanCommand, key: string): Promise<EmployeeLoan> { return this.request("/v1/hr/loans", { method: "POST", body: command, idempotencyKey: key }); }
+  transitionEmployeeLoan(id: string, command: PeopleTransitionCommand, key: string): Promise<EmployeeLoan> { return this.request(`/v1/hr/loans/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey: key }); }
+  createPayroll(command: PayrollCommand, key: string): Promise<PayrollRun> { return this.request("/v1/hr/payroll-runs", { method: "POST", body: command, idempotencyKey: key }); }
+  transitionPayroll(id: string, command: PeopleTransitionCommand, key: string): Promise<PayrollRun> { return this.request(`/v1/hr/payroll-runs/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey: key }); }
 
   listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
     const query = new URLSearchParams({ page_size: "100" });

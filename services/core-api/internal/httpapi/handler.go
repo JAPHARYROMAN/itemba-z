@@ -22,6 +22,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/people"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
@@ -46,6 +47,7 @@ type Handler struct {
 	advancedfinance *advancedfinance.Service
 	treasury        *treasury.Service
 	groupfinance    *groupfinance.Service
+	people          *people.Service
 	logger          *slog.Logger
 	authenticator   Authenticator
 }
@@ -159,6 +161,18 @@ func NewLiveWithGroupFinance(salesService *sales.Service, readService *readmodel
 	return handler, nil
 }
 
+func NewLiveWithPeople(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, bankingService *banking.Service, financialService *financialops.Service, reportingService *reporting.Service, advancedService *advancedfinance.Service, treasuryService *treasury.Service, groupService *groupfinance.Service, peopleService *people.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLiveWithGroupFinance(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if peopleService == nil {
+		return nil, errors.New("people service is required")
+	}
+	handler.people = peopleService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
@@ -232,6 +246,18 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("POST /v1/finance/intercompany", h.createIntercompany)
 		mux.HandleFunc("POST /v1/finance/intercompany/{transactionID}/transitions", h.transitionIntercompany)
 		mux.HandleFunc("GET /v1/reports/financial/consolidation", h.consolidation)
+	}
+	if h.people != nil {
+		mux.HandleFunc("GET /v1/hr", h.peopleSnapshot)
+		mux.HandleFunc("POST /v1/hr/employees", h.createEmployee)
+		mux.HandleFunc("POST /v1/hr/attendance", h.recordAttendance)
+		mux.HandleFunc("POST /v1/hr/leave-types", h.createLeaveType)
+		mux.HandleFunc("POST /v1/hr/leave-requests", h.createLeave)
+		mux.HandleFunc("POST /v1/hr/leave-requests/{leaveID}/transitions", h.transitionLeave)
+		mux.HandleFunc("POST /v1/hr/loans", h.createLoan)
+		mux.HandleFunc("POST /v1/hr/loans/{loanID}/transitions", h.transitionLoan)
+		mux.HandleFunc("POST /v1/hr/payroll-runs", h.createPayroll)
+		mux.HandleFunc("POST /v1/hr/payroll-runs/{payrollID}/transitions", h.transitionPayroll)
 	}
 	if h.mobile != nil {
 		mux.HandleFunc("POST /v1/mobile/devices/enroll", h.enrollDevice)
@@ -1200,6 +1226,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, groupfinance.ErrInvalidTransition), errors.Is(err, groupfinance.ErrSeparationOfDuties), errors.Is(err, groupfinance.ErrCounterpartyApproval):
 		status, code = http.StatusConflict, "group_finance_conflict"
+	case errors.Is(err, people.ErrInvalidCommand):
+		status, code = http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, people.ErrInvalidTransition), errors.Is(err, people.ErrSeparationOfDuties), errors.Is(err, people.ErrOverlap), errors.Is(err, people.ErrInsufficientLoanBalance):
+		status, code = http.StatusConflict, "people_workflow_conflict"
 	}
 	if status == http.StatusInternalServerError {
 		h.logger.ErrorContext(request.Context(), "request failed", "method", request.Method, "path", request.URL.Path, "error", err)

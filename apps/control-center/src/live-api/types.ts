@@ -21,6 +21,22 @@ export type MobileDevice = components["schemas"]["MobileDeviceEnrollment"];
 export type MobileDevicePage = components["schemas"]["MobileDevicePage"];
 export type ChangeMobileDeviceStatusCommand = components["schemas"]["ChangeMobileDeviceStatusCommand"];
 export type ChangeMobileDeviceAllocationCommand = components["schemas"]["ChangeMobileDeviceAllocationCommand"];
+export type Employee = components["schemas"]["Employee"];
+export type Attendance = components["schemas"]["Attendance"];
+export type LeaveType = components["schemas"]["LeaveType"];
+export type LeaveRequest = components["schemas"]["LeaveRequest"];
+export type EmployeeLoan = components["schemas"]["EmployeeLoan"];
+export type PayrollLine = components["schemas"]["PayrollLine"];
+export type PayrollRun = components["schemas"]["PayrollRun"];
+export type PeopleSnapshot = components["schemas"]["PeopleSnapshot"];
+export type CreateEmployeeCommand = components["schemas"]["CreateEmployeeCommand"];
+export type AttendanceCommand = components["schemas"]["AttendanceCommand"];
+export type LeaveTypeCommand = components["schemas"]["LeaveTypeCommand"];
+export type LeaveCommand = components["schemas"]["LeaveCommand"];
+export type PeopleTransitionCommand = components["schemas"]["PeopleTransitionCommand"];
+export type LoanCommand = components["schemas"]["LoanCommand"];
+export type PayrollCommand = components["schemas"]["PayrollCommand"];
+export interface PeopleWorkspace { context: WorkingContext; people: PeopleSnapshot; accounts: GLAccount[] }
 
 export interface PublicProblem {
   type: string;

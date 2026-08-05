@@ -23,6 +23,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/people"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/dbrole"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
@@ -48,7 +49,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -338,6 +339,62 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	consolidated, err := groupService.Consolidated(ctx, scope, approverID, testTime.Add(time.Hour))
 	if err != nil || consolidated.IntercompanyBalanceEliminationMinor != 5000 || consolidated.IntercompanyActivityEliminationMinor != 5000 || !consolidated.Balanced {
 		t.Fatalf("consolidation: %+v %v", consolidated, err)
+	}
+	peopleService, err := people.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: testTime.Add(105 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	employee, err := peopleService.CreateEmployee(ctx, people.CreateEmployeeCommand{Scope: scope, Number: "EMP-INT-1", FullName: "Asha Integration", JobTitle: "Accountant", Department: "Finance", Currency: "TZS", HireDate: testTime.AddDate(-1, 0, 0), BaseSalaryMinor: 100000, ActorID: userID, IdempotencyKey: "integration-employee-create"})
+	if err != nil {
+		t.Fatalf("create employee: %v", err)
+	}
+	leaveType, err := peopleService.CreateLeaveType(ctx, people.LeaveTypeCommand{Scope: scope, Code: "ANNUAL", NameEN: "Annual leave", NameSW: "Likizo ya mwaka", AnnualEntitlementDays: 28, EffectiveFrom: testTime, ActorID: userID, IdempotencyKey: "integration-leave-type-01"})
+	if err != nil {
+		t.Fatalf("create leave type: %v", err)
+	}
+	leave, err := peopleService.CreateLeave(ctx, people.LeaveCommand{Scope: scope, EmployeeID: employee.ID, LeaveTypeID: leaveType.ID, StartsOn: testTime.AddDate(0, 0, 2), EndsOn: testTime.AddDate(0, 0, 4), Reason: "Integration annual leave evidence", ActorID: userID, IdempotencyKey: "integration-leave-create1"})
+	if err != nil {
+		t.Fatalf("create leave: %v", err)
+	}
+	leave, err = peopleService.TransitionLeave(ctx, people.TransitionCommand{Scope: scope, ID: leave.ID, Status: people.Submitted, Reason: "Leave evidence submitted for review", ActorID: userID, IdempotencyKey: "integration-leave-submit1"})
+	if err != nil {
+		t.Fatalf("submit leave: %v", err)
+	}
+	leave, err = peopleService.TransitionLeave(ctx, people.TransitionCommand{Scope: scope, ID: leave.ID, Status: people.Approved, Reason: "Independent leave approval complete", ActorID: approverID, IdempotencyKey: "integration-leave-approve"})
+	if err != nil || leave.Status != people.Approved {
+		t.Fatalf("approve leave: %+v %v", leave, err)
+	}
+	loan, err := peopleService.CreateLoan(ctx, people.LoanCommand{Scope: scope, EmployeeID: employee.ID, Reference: "INT-STAFF-LOAN", Currency: "TZS", PrincipalMinor: 20000, ReceivableAccountID: "ic-receivable", BankAccountID: "cash", Reason: "Integration employee loan evidence", ActorID: userID, IdempotencyKey: "integration-loan-create01"})
+	if err != nil {
+		t.Fatalf("create loan: %v", err)
+	}
+	for i, status := range []people.WorkflowStatus{people.Submitted, people.Approved, people.Posted} {
+		actor := userID
+		if status != people.Submitted {
+			actor = approverID
+		}
+		loan, err = peopleService.TransitionLoan(ctx, people.TransitionCommand{Scope: scope, ID: loan.ID, Status: status, Reason: "Employee loan controlled lifecycle evidence", ActorID: actor, IdempotencyKey: []string{"integration-loan-submit01", "integration-loan-approve1", "integration-loan-posting1"}[i]})
+		if err != nil {
+			t.Fatalf("loan %s: %v", status, err)
+		}
+	}
+	payroll, err := peopleService.CreatePayroll(ctx, people.PayrollCommand{Scope: scope, Reference: "INT-PAYROLL-AUG", Currency: "TZS", PeriodStart: testTime, PeriodEnd: testTime.AddDate(0, 0, 20), PaymentDate: testTime, SalaryExpenseAccountID: "expense", PayrollPayableAccountID: "payable", DeductionLiabilityAccountID: "tax-payable", Reason: "Integration payroll posting evidence", Lines: []people.PayrollLine{{EmployeeID: employee.ID, GrossMinor: 100000, OtherDeductionsMinor: 10000, LoanDeductionMinor: 5000}}, ActorID: userID, IdempotencyKey: "integration-payroll-create"})
+	if err != nil {
+		t.Fatalf("create payroll: %v", err)
+	}
+	for i, status := range []people.WorkflowStatus{people.Submitted, people.Approved, people.Posted} {
+		actor := userID
+		if status != people.Submitted {
+			actor = approverID
+		}
+		payroll, err = peopleService.TransitionPayroll(ctx, people.TransitionCommand{Scope: scope, ID: payroll.ID, Status: status, Reason: "Payroll independently approved and posted", ActorID: actor, IdempotencyKey: []string{"integration-payroll-submit", "integration-payroll-approve", "integration-payroll-posted"}[i]})
+		if err != nil {
+			t.Fatalf("payroll %s: %v", status, err)
+		}
+	}
+	peopleView, err := peopleService.Get(ctx, scope, approverID)
+	if err != nil || payroll.NetMinor != 85000 || len(peopleView.PayrollRuns) != 1 || peopleView.Loans[0].OutstandingMinor != 15000 {
+		t.Fatalf("people snapshot: %+v %v", peopleView, err)
 	}
 	closeRequest, err := financialService.RequestPeriodAction(ctx, financialops.PeriodCommand{Scope: scope, PeriodID: periodID, Action: financialops.ClosePeriod, Reason: "Integration reconciliations ready for close", ActorID: userID, IdempotencyKey: "integration-period-close-01"})
 	if err != nil {
@@ -835,7 +892,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 1 || salesCount != 7 || journalCount != 26 || outboxCount != 86 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 28 || outboxCount != 99 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }

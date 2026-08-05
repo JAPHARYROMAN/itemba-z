@@ -846,6 +846,176 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/hr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Load the authorized people and payroll workspace */
+        get: operations["getPeopleSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/employees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an employee master record */
+        post: operations["createEmployee"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/attendance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record or reverse an append-only attendance entry */
+        post: operations["recordAttendance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/leave-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create effective-dated bilingual leave configuration */
+        post: operations["createLeaveType"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/leave-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a leave request */
+        post: operations["createLeaveRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/leave-requests/{leave_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit, independently approve, or reject leave */
+        post: operations["transitionLeaveRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/loans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an employee loan */
+        post: operations["createEmployeeLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/loans/{loan_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit, independently approve, post, or reject a loan */
+        post: operations["transitionEmployeeLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/payroll-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a payroll run with employee payslip lines */
+        post: operations["createPayrollRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hr/payroll-runs/{payroll_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit, independently approve, post, or reject payroll */
+        post: operations["transitionPayrollRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sales": {
         parameters: {
             query?: never;
@@ -2438,6 +2608,208 @@ export interface components {
          * @description Positive JSON integer constrained to the JavaScript Number safe-integer range.
          */
         SafePositiveInteger: number;
+        Employee: {
+            /** Format: uuid */
+            id: string;
+            scope: components["schemas"]["Scope"];
+            number: string;
+            full_name: string;
+            job_title?: string;
+            department?: string;
+            currency: string;
+            /** Format: date-time */
+            hire_date: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "INACTIVE";
+            base_salary_minor: components["schemas"]["SafeNonNegativeInteger"];
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+        } & {
+            [key: string]: unknown;
+        };
+        Attendance: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            employee_id: string;
+            /** Format: date-time */
+            work_date: string;
+            regular_minutes: number;
+            overtime_minutes: number;
+            reason: string;
+            /** Format: uuid */
+            reversal_of?: string;
+            /** Format: uuid */
+            recorded_by: string;
+            /** Format: date-time */
+            recorded_at: string;
+        } & {
+            [key: string]: unknown;
+        };
+        LeaveType: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            name_en: string;
+            name_sw: string;
+            annual_entitlement_days: number;
+            /** Format: date-time */
+            effective_from: string;
+            /** Format: date-time */
+            effective_to?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        LeaveRequest: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            employee_id: string;
+            /** Format: uuid */
+            leave_type_id: string;
+            /** Format: date-time */
+            starts_on: string;
+            /** Format: date-time */
+            ends_on: string;
+            days: components["schemas"]["SafePositiveInteger"];
+            reason: string;
+            status: components["schemas"]["PeopleWorkflowStatus"];
+            /** Format: uuid */
+            created_by: string;
+            /** Format: uuid */
+            approved_by?: string;
+            /** Format: date-time */
+            created_at: string;
+        } & {
+            [key: string]: unknown;
+        };
+        EmployeeLoan: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            employee_id: string;
+            reference: string;
+            currency: string;
+            principal_minor: components["schemas"]["SafePositiveInteger"];
+            outstanding_minor: components["schemas"]["SafeNonNegativeInteger"];
+            receivable_account_id?: string;
+            bank_account_id?: string;
+            status: components["schemas"]["PeopleWorkflowStatus"];
+            /** Format: uuid */
+            journal_id?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        PayrollLine: {
+            /** Format: uuid */
+            employee_id: string;
+            gross_minor: components["schemas"]["SafeNonNegativeInteger"];
+            other_deductions_minor: components["schemas"]["SafeNonNegativeInteger"];
+            loan_deduction_minor: components["schemas"]["SafeNonNegativeInteger"];
+            net_minor: components["schemas"]["SafeNonNegativeInteger"];
+        };
+        PayrollRun: {
+            /** Format: uuid */
+            id: string;
+            reference: string;
+            currency: string;
+            /** Format: date-time */
+            period_start: string;
+            /** Format: date-time */
+            period_end: string;
+            /** Format: date-time */
+            payment_date: string;
+            status: components["schemas"]["PeopleWorkflowStatus"];
+            lines: components["schemas"]["PayrollLine"][];
+            gross_minor: components["schemas"]["SafeNonNegativeInteger"];
+            deductions_minor: components["schemas"]["SafeNonNegativeInteger"];
+            net_minor: components["schemas"]["SafeNonNegativeInteger"];
+            /** Format: uuid */
+            journal_id?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        PeopleSnapshot: {
+            employees: components["schemas"]["Employee"][];
+            attendance: components["schemas"]["Attendance"][];
+            leave_types: components["schemas"]["LeaveType"][];
+            leave_requests: components["schemas"]["LeaveRequest"][];
+            loans: components["schemas"]["EmployeeLoan"][];
+            payroll_runs: components["schemas"]["PayrollRun"][];
+        };
+        /** @enum {string} */
+        PeopleWorkflowStatus: "DRAFT" | "SUBMITTED" | "APPROVED" | "POSTED" | "REJECTED";
+        CreateEmployeeCommand: {
+            number: string;
+            full_name: string;
+            job_title: string;
+            department: string;
+            currency: string;
+            /** Format: date */
+            hire_date: string;
+            base_salary_minor: components["schemas"]["SafeNonNegativeInteger"];
+        };
+        AttendanceCommand: {
+            /** Format: uuid */
+            employee_id: string;
+            /** Format: date */
+            work_date: string;
+            regular_minutes: number;
+            overtime_minutes: number;
+            reason: string;
+            /** Format: uuid */
+            reversal_of?: string;
+        };
+        LeaveTypeCommand: {
+            code: string;
+            name_en: string;
+            name_sw: string;
+            annual_entitlement_days: number;
+            /** Format: date */
+            effective_from: string;
+        };
+        LeaveCommand: {
+            /** Format: uuid */
+            employee_id: string;
+            /** Format: uuid */
+            leave_type_id: string;
+            /** Format: date */
+            starts_on: string;
+            /** Format: date */
+            ends_on: string;
+            reason: string;
+        };
+        PeopleTransitionCommand: {
+            status: components["schemas"]["PeopleWorkflowStatus"];
+            reason: string;
+        };
+        LoanCommand: {
+            /** Format: uuid */
+            employee_id: string;
+            reference: string;
+            currency: string;
+            principal_minor: components["schemas"]["SafePositiveInteger"];
+            receivable_account_id: string;
+            bank_account_id: string;
+            reason: string;
+        };
+        PayrollCommand: {
+            reference: string;
+            currency: string;
+            /** Format: date */
+            period_start: string;
+            /** Format: date */
+            period_end: string;
+            /** Format: date */
+            payment_date: string;
+            salary_expense_account_id: string;
+            payroll_payable_account_id: string;
+            deduction_liability_account_id: string;
+            reason: string;
+            lines: components["schemas"]["PayrollLine"][];
+        };
         Problem: {
             /** Format: uri-reference */
             type: string;
@@ -4048,6 +4420,285 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getPeopleSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description People workspace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeopleSnapshot"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createEmployee: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEmployeeCommand"];
+            };
+        };
+        responses: {
+            /** @description Employee. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Employee"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    recordAttendance: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttendanceCommand"];
+            };
+        };
+        responses: {
+            /** @description Attendance entry. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attendance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createLeaveType: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeaveTypeCommand"];
+            };
+        };
+        responses: {
+            /** @description Leave type. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaveType"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createLeaveRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeaveCommand"];
+            };
+        };
+        responses: {
+            /** @description Leave request. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaveRequest"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    transitionLeaveRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                leave_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeopleTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Leave request. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaveRequest"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createEmployeeLoan: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoanCommand"];
+            };
+        };
+        responses: {
+            /** @description Employee loan. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeLoan"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    transitionEmployeeLoan: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeopleTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Employee loan. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeLoan"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createPayrollRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollCommand"];
+            };
+        };
+        responses: {
+            /** @description Payroll run. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollRun"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    transitionPayrollRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                payroll_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeopleTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Posted payroll and payslips. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollRun"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
         };
     };
     listSales: {

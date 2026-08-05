@@ -23,6 +23,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/people"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
@@ -105,6 +106,12 @@ type state struct {
 	depreciation              map[string]advancedfinance.Depreciation
 	facilities                map[string]treasury.Facility
 	intercompany              map[string]groupfinance.Transaction
+	employees                 map[string]people.Employee
+	attendance                map[string]people.Attendance
+	leaveTypes                map[string]people.LeaveType
+	leaveRequests             map[string]people.LeaveRequest
+	employeeLoans             map[string]people.Loan
+	payrollRuns               map[string]people.PayrollRun
 }
 
 func newState() *state {
@@ -135,6 +142,12 @@ func newState() *state {
 		depreciation:              make(map[string]advancedfinance.Depreciation),
 		facilities:                make(map[string]treasury.Facility),
 		intercompany:              make(map[string]groupfinance.Transaction),
+		employees:                 make(map[string]people.Employee),
+		attendance:                make(map[string]people.Attendance),
+		leaveTypes:                make(map[string]people.LeaveType),
+		leaveRequests:             make(map[string]people.LeaveRequest),
+		employeeLoans:             make(map[string]people.Loan),
+		payrollRuns:               make(map[string]people.PayrollRun),
 	}
 }
 
@@ -894,6 +907,25 @@ func cloneState(source *state) *state {
 	}
 	for key, value := range source.intercompany {
 		result.intercompany[key] = value
+	}
+	for key, value := range source.employees {
+		result.employees[key] = value
+	}
+	for key, value := range source.attendance {
+		result.attendance[key] = value
+	}
+	for key, value := range source.leaveTypes {
+		result.leaveTypes[key] = value
+	}
+	for key, value := range source.leaveRequests {
+		result.leaveRequests[key] = value
+	}
+	for key, value := range source.employeeLoans {
+		result.employeeLoans[key] = value
+	}
+	for key, value := range source.payrollRuns {
+		value.Lines = append([]people.PayrollLine(nil), value.Lines...)
+		result.payrollRuns[key] = value
 	}
 	return result
 }

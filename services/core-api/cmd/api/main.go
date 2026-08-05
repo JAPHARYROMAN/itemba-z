@@ -17,6 +17,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/httpapi"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/people"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/memory"
@@ -178,7 +179,17 @@ func main() {
 		logger.Error("initialize group finance service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithGroupFinance(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, logger, authenticator)
+	peopleRepository, ok := repository.(people.Repository)
+	if !ok {
+		logger.Error("repository does not implement people and payroll")
+		os.Exit(1)
+	}
+	peopleService, err := people.NewService(peopleRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize people service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithPeople(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)
