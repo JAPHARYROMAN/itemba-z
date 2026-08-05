@@ -4,6 +4,74 @@
  */
 
 export interface paths {
+    "/v1/inventory/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the governed inventory-control workspace */
+        get: operations["getInventoryControlWorkspace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/inventory/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an inventory policy revision */
+        post: operations["createInventoryPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/inventory/policies/{policyID}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit, activate, or reject an inventory policy */
+        post: operations["transitionInventoryPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/inventory/goods-receipts/{receiptID}/lots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register exact lot allocations for an approved goods receipt */
+        post: operations["registerReceiptLots"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/commercial": {
         parameters: {
             query?: never;
@@ -3306,6 +3374,139 @@ export interface components {
             quotes: components["schemas"]["SupplierQuote"][];
             awards: components["schemas"]["SourcingAward"][];
         };
+        /** @enum {string} */
+        InventoryPolicyStatus: "DRAFT" | "SUBMITTED" | "ACTIVE" | "REJECTED";
+        /** @enum {string} */
+        InventoryCostMethod: "STANDARD" | "MOVING_AVERAGE";
+        InventoryPolicy: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            product_id: string;
+            status: components["schemas"]["InventoryPolicyStatus"];
+            cost_method: components["schemas"]["InventoryCostMethod"];
+            lot_controlled: boolean;
+            reorder_point: components["schemas"]["SafeNonNegativeInteger"];
+            reorder_quantity: components["schemas"]["SafePositiveInteger"];
+            maximum_stock: components["schemas"]["SafeNonNegativeInteger"];
+            safety_stock: components["schemas"]["SafeNonNegativeInteger"];
+            lead_time_days: number;
+            /** Format: uuid */
+            preferred_supplier_id?: string;
+            reason: string;
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            approved_by?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CreateInventoryPolicyCommand: {
+            /** Format: uuid */
+            product_id: string;
+            cost_method: components["schemas"]["InventoryCostMethod"];
+            lot_controlled: boolean;
+            reorder_point: components["schemas"]["SafeNonNegativeInteger"];
+            reorder_quantity: components["schemas"]["SafePositiveInteger"];
+            maximum_stock: components["schemas"]["SafeNonNegativeInteger"];
+            safety_stock: components["schemas"]["SafeNonNegativeInteger"];
+            lead_time_days: number;
+            /** Format: uuid */
+            preferred_supplier_id?: string;
+            reason: string;
+        };
+        InventoryPolicyTransitionCommand: {
+            /** @enum {string} */
+            status: "SUBMITTED" | "ACTIVE" | "REJECTED";
+            reason: string;
+        };
+        LotRegistrationLine: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            product_id: string;
+            lot_number: string;
+            quantity: components["schemas"]["SafePositiveInteger"];
+            /** Format: date-time */
+            manufactured_at?: string;
+            /** Format: date-time */
+            expires_at?: string;
+        };
+        LotRegistration: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            goods_receipt_id: string;
+            reason: string;
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            lines: components["schemas"]["LotRegistrationLine"][];
+        } & {
+            [key: string]: unknown;
+        };
+        RegisterReceiptLotsCommand: {
+            reason: string;
+            lines: {
+                /** Format: uuid */
+                product_id: string;
+                lot_number: string;
+                quantity: components["schemas"]["SafePositiveInteger"];
+                /** Format: date-time */
+                manufactured_at?: string;
+                /** Format: date-time */
+                expires_at?: string;
+            }[];
+        };
+        InventoryLotBalance: {
+            /** Format: uuid */
+            lot_id: string;
+            /** Format: uuid */
+            product_id: string;
+            lot_number: string;
+            /** Format: date-time */
+            manufactured_at?: string;
+            /** Format: date-time */
+            expires_at?: string;
+            quantity: number;
+        };
+        ReplenishmentRecommendation: {
+            /** Format: uuid */
+            product_id: string;
+            on_hand: number;
+            reserved: number;
+            available: number;
+            incoming: number;
+            projected: number;
+            reorder_point: number;
+            recommended_quantity: number;
+            /** Format: uuid */
+            preferred_supplier_id?: string;
+            action_required: boolean;
+        };
+        InventoryCostHistory: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            product_id: string;
+            /** Format: uuid */
+            source_id: string;
+            method: components["schemas"]["InventoryCostMethod"];
+            quantity_before: number;
+            quantity_received: number;
+            cost_before_minor: number;
+            receipt_cost_minor: number;
+            cost_after_minor: number;
+            /** Format: date-time */
+            occurred_at: string;
+        };
+        InventoryControlWorkspace: {
+            policies: components["schemas"]["InventoryPolicy"][];
+            registrations: components["schemas"]["LotRegistration"][];
+            lots: components["schemas"]["InventoryLotBalance"][];
+            replenishments: components["schemas"]["ReplenishmentRecommendation"][];
+            cost_history: components["schemas"]["InventoryCostHistory"][];
+        };
         Problem: {
             /** Format: uri-reference */
             type: string;
@@ -3400,6 +3601,112 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getInventoryControlWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Inventory-control workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryControlWorkspace"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createInventoryPolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInventoryPolicyCommand"];
+            };
+        };
+        responses: {
+            /** @description Policy created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    transitionInventoryPolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                policyID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventoryPolicyTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Policy transitioned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryPolicy"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    registerReceiptLots: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                receiptID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterReceiptLotsCommand"];
+            };
+        };
+        responses: {
+            /** @description Lot allocation registered */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LotRegistration"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
     getCommercialWorkspace: {
         parameters: {
             query?: never;

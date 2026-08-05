@@ -565,7 +565,10 @@ func (t *transaction) AppendStockMovement(ctx context.Context, value inventory.M
 		id, tenant_id, company_id, branch_id, warehouse_id, product_id, source_type, source_id, quantity, occurred_at
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, value.ID, value.TenantID, value.CompanyID,
 		value.BranchID, value.WarehouseID, value.ProductID, value.SourceType, value.SourceID, value.Quantity, value.OccurredAt)
-	return normalizeError(err)
+	if err != nil {
+		return normalizeError(err)
+	}
+	return t.applyControlledLotMovement(ctx, value)
 }
 
 func (t *transaction) StockMovementsBySource(ctx context.Context, scope tenancy.Scope, sourceType, sourceID string) ([]inventory.Movement, error) {

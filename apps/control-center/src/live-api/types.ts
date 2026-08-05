@@ -63,6 +63,14 @@ export interface CommercialWorkspace { context: WorkingContext; commercial: Comm
 export interface CreateMasterRevisionCommand { entity_type: MasterEntityType; entity_id?: string; supplier?: SupplierMasterData; product?: ProductMasterData; reason: string }
 export interface CreateRFQCommand { currency: string; response_due_at: string; reason: string; lines: Array<{ product_id: string; quantity: number }> }
 export interface CreateSupplierQuoteCommand { rfq_id: string; supplier_id: string; reference: string; currency: string; delivery_days: number; payment_terms_days: number; valid_until: string; reason: string; lines: Array<{ product_id: string; quantity: number; unit_price_minor: number }> }
+export type InventoryPolicy = components["schemas"]["InventoryPolicy"];
+export type InventoryPolicyStatus = components["schemas"]["InventoryPolicyStatus"];
+export type InventoryControlSnapshot = components["schemas"]["InventoryControlWorkspace"];
+export type CreateInventoryPolicyCommand = components["schemas"]["CreateInventoryPolicyCommand"];
+export type InventoryPolicyTransitionCommand = components["schemas"]["InventoryPolicyTransitionCommand"];
+export type RegisterReceiptLotsCommand = components["schemas"]["RegisterReceiptLotsCommand"];
+export type LotRegistration = components["schemas"]["LotRegistration"];
+export interface InventoryControlWorkspace { context: WorkingContext; inventory: InventoryControlSnapshot; products: ProductSummary[]; suppliers: SupplierSummary[]; receipts: OperationDocument[] }
 
 export interface PublicProblem {
   type: string;

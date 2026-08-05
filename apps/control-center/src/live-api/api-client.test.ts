@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ItembaApiClient, LiveApiError } from "@/live-api/api-client";
-import type { CompleteSaleCommand, ScheduleCreditPolicyCommand } from "@/live-api/types";
+import type { CompleteSaleCommand, CreateInventoryPolicyCommand, ScheduleCreditPolicyCommand } from "@/live-api/types";
 
 const bearerIdentity = { kind: "bearer" as const, token: "server-only-token" };
 const correlationId = "00000000-0000-4000-8000-000000000099";
@@ -146,5 +146,22 @@ describe("ItembaApiClient", () => {
     expect(String(resolutionUrl)).toBe("http://core-api:8080/v1/mobile/reconciliation-cases/case%2Fid/resolutions");
     expect(new Headers(resolutionRequest?.headers).get("Idempotency-Key")).toBe("reconciliation-idempotency-0001");
     expect(JSON.parse(String(resolutionRequest?.body))).toEqual({ action: "CASH_REFUNDED", reason: "Cash returned to customer" });
+  });
+
+  it("encodes inventory policy transitions and preserves governed policy commands", async () => {
+    const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      void input; void init;
+      return Response.json({ id: "policy-id", status: "SUBMITTED" });
+    });
+    const client = new ItembaApiClient({ baseUrl: "http://core-api:8080", identity: bearerIdentity, fetchImplementation, createCorrelationId: () => correlationId });
+    const command: CreateInventoryPolicyCommand = { product_id: "00000000-0000-4000-8000-000000000011", cost_method: "MOVING_AVERAGE", lot_controlled: true, reorder_point: 20, reorder_quantity: 30, maximum_stock: 100, safety_stock: 10, lead_time_days: 7, reason: "Govern warehouse replenishment" };
+    await client.createInventoryPolicy(command, "inventory-policy-create-0001");
+    await client.transitionInventoryPolicy("policy/id", "SUBMITTED", "Submit for independent review", "inventory-policy-submit-0001");
+    const [createUrl, createRequest] = fetchImplementation.mock.calls[0] ?? [];
+    const [transitionUrl, transitionRequest] = fetchImplementation.mock.calls[1] ?? [];
+    expect(String(createUrl)).toBe("http://core-api:8080/v1/inventory/policies");
+    expect(JSON.parse(String(createRequest?.body))).toEqual(command);
+    expect(String(transitionUrl)).toBe("http://core-api:8080/v1/inventory/policies/policy%2Fid/transitions");
+    expect(new Headers(transitionRequest?.headers).get("Idempotency-Key")).toBe("inventory-policy-submit-0001");
   });
 });

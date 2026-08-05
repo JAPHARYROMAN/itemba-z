@@ -18,6 +18,7 @@ import type {
 	Attendance, AttendanceCommand, CreateEmployeeCommand, Employee, EmployeeLoan, LeaveCommand, LeaveRequest, LeaveType, LeaveTypeCommand, LoanCommand, PayrollCommand, PayrollRun, PeopleSnapshot, PeopleTransitionCommand,
 	ConfigurationSnapshot, ConfigurationVersion, ConfigurationTransitionCommand, CreateConfigurationCommand, CreateNumberSequenceCommand, NumberAllocation, NumberSequence,
 	CommercialSnapshot, CreateMasterRevisionCommand, MasterRevision, MasterRevisionStatus, CreateRFQCommand, RFQ, RFQStatus, CreateSupplierQuoteCommand, SupplierQuote, SourcingAward,
+	CreateInventoryPolicyCommand, InventoryControlSnapshot, InventoryPolicy, InventoryPolicyStatus, LotRegistration, RegisterReceiptLotsCommand,
 } from "@/live-api/types";
 import { firstUnsafeIntegerPath } from "@/live-api/integer-safety";
 
@@ -304,6 +305,10 @@ export class ItembaApiClient {
 	createSupplierQuote(command:CreateSupplierQuoteCommand,key:string):Promise<SupplierQuote>{return this.request("/v1/purchases/supplier-quotes",{method:"POST",body:command,idempotencyKey:key});}
 	submitSupplierQuote(id:string,reason:string,key:string):Promise<SupplierQuote>{return this.request(`/v1/purchases/supplier-quotes/${id}/submission`,{method:"POST",body:{reason},idempotencyKey:key});}
 	awardRFQ(rfqId:string,quoteId:string,reason:string,key:string):Promise<SourcingAward>{return this.request(`/v1/purchases/rfqs/${rfqId}/award`,{method:"POST",body:{quote_id:quoteId,reason},idempotencyKey:key});}
+	getInventoryControlSnapshot():Promise<InventoryControlSnapshot>{return this.request("/v1/inventory/control");}
+	createInventoryPolicy(command:CreateInventoryPolicyCommand,key:string):Promise<InventoryPolicy>{return this.request("/v1/inventory/policies",{method:"POST",body:command,idempotencyKey:key});}
+	transitionInventoryPolicy(id:string,status:InventoryPolicyStatus,reason:string,key:string):Promise<InventoryPolicy>{return this.request(`/v1/inventory/policies/${encodeURIComponent(id)}/transitions`,{method:"POST",body:{status,reason},idempotencyKey:key});}
+	registerReceiptLots(receiptId:string,command:RegisterReceiptLotsCommand,key:string):Promise<LotRegistration>{return this.request(`/v1/inventory/goods-receipts/${encodeURIComponent(receiptId)}/lots`,{method:"POST",body:command,idempotencyKey:key});}
   createConfiguration(command: CreateConfigurationCommand, key: string): Promise<ConfigurationVersion> { return this.request("/v1/settings/configurations", { method: "POST", body: command, idempotencyKey: key }); }
   transitionConfiguration(id: string, command: ConfigurationTransitionCommand, key: string): Promise<ConfigurationVersion> { return this.request(`/v1/settings/configurations/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey: key }); }
   createNumberSequence(command: CreateNumberSequenceCommand, key: string): Promise<NumberSequence> { return this.request("/v1/settings/number-sequences", { method: "POST", body: command, idempotencyKey: key }); }

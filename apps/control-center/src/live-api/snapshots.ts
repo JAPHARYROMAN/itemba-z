@@ -15,7 +15,16 @@ import type {
 	PeopleWorkspace,
 	ConfigurationWorkspace,
 	CommercialWorkspace,
+	InventoryControlWorkspace,
 } from "@/live-api/types";
+
+export async function loadInventoryControlWorkspace(): Promise<LiveSnapshot<InventoryControlWorkspace>> {
+	try {
+		const repository = await createServerRepository();
+		const [context, inventory, products, suppliers, documents] = await Promise.all([repository.getWorkingContext(), repository.getInventoryControlSnapshot(), repository.listProducts(), repository.listSuppliers(), repository.listOperationDocuments()]);
+		return { state: "ready", data: { context, inventory, products: products.items, suppliers: suppliers.items, receipts: documents.items.filter((document) => document.type === "GOODS_RECEIPT" && document.status === "APPROVED") } };
+	} catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
+}
 
 export async function loadPeopleWorkspace(): Promise<LiveSnapshot<PeopleWorkspace>> {
   try {

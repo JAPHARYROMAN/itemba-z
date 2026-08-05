@@ -22,6 +22,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/inventorycontrol"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/people"
@@ -38,22 +39,23 @@ const maxBodyBytes = 1 << 20
 var correlationIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
 
 type Handler struct {
-	sales           *sales.Service
-	read            *readmodel.Service
-	mobile          *mobile.Service
-	receivables     *receivables.Service
-	operations      *operations.Service
-	banking         *banking.Service
-	financialops    *financialops.Service
-	reporting       *reporting.Service
-	advancedfinance *advancedfinance.Service
-	treasury        *treasury.Service
-	groupfinance    *groupfinance.Service
-	people          *people.Service
-	configuration   *configuration.Service
-	commercial      *commercial.Service
-	logger          *slog.Logger
-	authenticator   Authenticator
+	sales            *sales.Service
+	read             *readmodel.Service
+	mobile           *mobile.Service
+	receivables      *receivables.Service
+	operations       *operations.Service
+	banking          *banking.Service
+	financialops     *financialops.Service
+	reporting        *reporting.Service
+	advancedfinance  *advancedfinance.Service
+	treasury         *treasury.Service
+	groupfinance     *groupfinance.Service
+	people           *people.Service
+	configuration    *configuration.Service
+	commercial       *commercial.Service
+	inventorycontrol *inventorycontrol.Service
+	logger           *slog.Logger
+	authenticator    Authenticator
 }
 
 func New(salesService *sales.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
@@ -201,6 +203,18 @@ func NewLiveWithCommercial(salesService *sales.Service, readService *readmodel.S
 	return handler, nil
 }
 
+func NewLiveWithInventoryControl(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, bankingService *banking.Service, financialService *financialops.Service, reportingService *reporting.Service, advancedService *advancedfinance.Service, treasuryService *treasury.Service, groupService *groupfinance.Service, peopleService *people.Service, configurationService *configuration.Service, commercialService *commercial.Service, inventoryService *inventorycontrol.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLiveWithCommercial(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, commercialService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if inventoryService == nil {
+		return nil, errors.New("inventory control service is required")
+	}
+	handler.inventorycontrol = inventoryService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
@@ -304,6 +318,12 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("POST /v1/purchases/supplier-quotes/{quoteID}/submission", h.submitSupplierQuote)
 		mux.HandleFunc("GET /v1/purchases/rfqs/{rfqID}/comparison", h.rfqComparison)
 		mux.HandleFunc("POST /v1/purchases/rfqs/{rfqID}/award", h.awardRFQ)
+	}
+	if h.inventorycontrol != nil {
+		mux.HandleFunc("GET /v1/inventory/control", h.inventoryControlWorkspace)
+		mux.HandleFunc("POST /v1/inventory/policies", h.createInventoryPolicy)
+		mux.HandleFunc("POST /v1/inventory/policies/{policyID}/transitions", h.transitionInventoryPolicy)
+		mux.HandleFunc("POST /v1/inventory/goods-receipts/{receiptID}/lots", h.registerReceiptLots)
 	}
 	if h.mobile != nil {
 		mux.HandleFunc("POST /v1/mobile/devices/enroll", h.enrollDevice)
@@ -1284,6 +1304,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, commercial.ErrInvalidTransition), errors.Is(err, commercial.ErrSeparationOfDuties), errors.Is(err, commercial.ErrSourceMismatch), errors.Is(err, commercial.ErrAwardExists):
 		status, code = http.StatusConflict, "commercial_conflict"
+	case errors.Is(err, inventorycontrol.ErrInvalidCommand):
+		status, code = http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, inventorycontrol.ErrInvalidTransition), errors.Is(err, inventorycontrol.ErrSeparationOfDuties), errors.Is(err, inventorycontrol.ErrLotReconciliation), errors.Is(err, inventorycontrol.ErrLotAllocation):
+		status, code = http.StatusConflict, "inventory_control_conflict"
 	}
 	if status == http.StatusInternalServerError {
 		h.logger.ErrorContext(request.Context(), "request failed", "method", request.Method, "path", request.URL.Path, "error", err)

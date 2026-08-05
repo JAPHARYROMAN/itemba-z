@@ -22,6 +22,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/inventorycontrol"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
@@ -121,6 +122,10 @@ type state struct {
 	rfqs                      map[string]commercial.RFQ
 	supplierQuotes            map[string]commercial.SupplierQuote
 	sourcingAwards            map[string]commercial.Award
+	inventoryPolicies         map[string]inventorycontrol.Policy
+	lotRegistrations          map[string]inventorycontrol.LotRegistration
+	lotBalances               map[string]inventorycontrol.LotBalance
+	inventoryCostHistory      map[string]inventorycontrol.CostHistory
 }
 
 func newState() *state {
@@ -164,6 +169,10 @@ func newState() *state {
 		rfqs:                      make(map[string]commercial.RFQ),
 		supplierQuotes:            make(map[string]commercial.SupplierQuote),
 		sourcingAwards:            make(map[string]commercial.Award),
+		inventoryPolicies:         make(map[string]inventorycontrol.Policy),
+		lotRegistrations:          make(map[string]inventorycontrol.LotRegistration),
+		lotBalances:               make(map[string]inventorycontrol.LotBalance),
+		inventoryCostHistory:      make(map[string]inventorycontrol.CostHistory),
 	}
 }
 
@@ -966,6 +975,19 @@ func cloneState(source *state) *state {
 	}
 	for key, value := range source.sourcingAwards {
 		result.sourcingAwards[key] = value
+	}
+	for key, value := range source.inventoryPolicies {
+		result.inventoryPolicies[key] = value
+	}
+	for key, value := range source.lotRegistrations {
+		value.Lines = append([]inventorycontrol.LotRegistrationLine(nil), value.Lines...)
+		result.lotRegistrations[key] = value
+	}
+	for key, value := range source.lotBalances {
+		result.lotBalances[key] = value
+	}
+	for key, value := range source.inventoryCostHistory {
+		result.inventoryCostHistory[key] = value
 	}
 	return result
 }

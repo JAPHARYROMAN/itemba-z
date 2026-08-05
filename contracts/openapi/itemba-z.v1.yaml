@@ -41,7 +41,51 @@ tags:
     description: Effective-dated policy, integration, template, and numbering configuration.
   - name: Commercial
     description: Governed supplier/product masters, RFQs, quotations, comparisons, and awards.
+  - name: Inventory Control
+    description: Replenishment policies, lot and expiry traceability, and costing evidence.
 paths:
+  /v1/inventory/control:
+    get:
+      summary: Get the governed inventory-control workspace
+      operationId: getInventoryControlWorkspace
+      tags: [Inventory Control]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Inventory-control workspace, content: { application/json: { schema: { $ref: '#/components/schemas/InventoryControlWorkspace' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/inventory/policies:
+    post:
+      summary: Create an inventory policy revision
+      operationId: createInventoryPolicy
+      tags: [Inventory Control]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateInventoryPolicyCommand' } } } }
+      responses:
+        '201': { description: Policy created, content: { application/json: { schema: { $ref: '#/components/schemas/InventoryPolicy' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/inventory/policies/{policyID}/transitions:
+    post:
+      summary: Submit, activate, or reject an inventory policy
+      operationId: transitionInventoryPolicy
+      tags: [Inventory Control]
+      x-implementation-status: implemented
+      parameters: [ { name: policyID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InventoryPolicyTransitionCommand' } } } }
+      responses:
+        '200': { description: Policy transitioned, content: { application/json: { schema: { $ref: '#/components/schemas/InventoryPolicy' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/inventory/goods-receipts/{receiptID}/lots:
+    post:
+      summary: Register exact lot allocations for an approved goods receipt
+      operationId: registerReceiptLots
+      tags: [Inventory Control]
+      x-implementation-status: implemented
+      parameters: [ { name: receiptID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RegisterReceiptLotsCommand' } } } }
+      responses:
+        '201': { description: Lot allocation registered, content: { application/json: { schema: { $ref: '#/components/schemas/LotRegistration' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
   /v1/commercial:
     get:
       summary: Get the governed commercial sourcing workspace
@@ -2801,6 +2845,18 @@ components:
     AwardRFQCommand: { type: object, additionalProperties: false, required: [quote_id, reason], properties: { quote_id: { type: string, format: uuid }, reason: { type: string } } }
     SourcingAward: { type: object, additionalProperties: true, required: [id, rfq_id, quote_id, supplier_id, purchase_order_id, reason, selected_by, selected_at], properties: { id: { type: string, format: uuid }, rfq_id: { type: string, format: uuid }, quote_id: { type: string, format: uuid }, supplier_id: { type: string, format: uuid }, purchase_order_id: { type: string, format: uuid }, reason: { type: string }, selected_by: { type: string }, selected_at: { type: string, format: date-time } } }
     CommercialWorkspace: { type: object, additionalProperties: false, required: [revisions, rfqs, quotes, awards], properties: { revisions: { type: array, items: { $ref: '#/components/schemas/MasterRevision' } }, rfqs: { type: array, items: { $ref: '#/components/schemas/RFQ' } }, quotes: { type: array, items: { $ref: '#/components/schemas/SupplierQuote' } }, awards: { type: array, items: { $ref: '#/components/schemas/SourcingAward' } } } }
+    InventoryPolicyStatus: { type: string, enum: [DRAFT, SUBMITTED, ACTIVE, REJECTED] }
+    InventoryCostMethod: { type: string, enum: [STANDARD, MOVING_AVERAGE] }
+    InventoryPolicy: { type: object, additionalProperties: true, required: [id, product_id, status, cost_method, lot_controlled, reorder_point, reorder_quantity, maximum_stock, safety_stock, lead_time_days, reason, created_by, created_at], properties: { id: { type: string, format: uuid }, product_id: { type: string, format: uuid }, status: { $ref: '#/components/schemas/InventoryPolicyStatus' }, cost_method: { $ref: '#/components/schemas/InventoryCostMethod' }, lot_controlled: { type: boolean }, reorder_point: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, reorder_quantity: { $ref: '#/components/schemas/SafePositiveInteger' }, maximum_stock: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, safety_stock: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, lead_time_days: { type: integer, minimum: 0, maximum: 3650 }, preferred_supplier_id: { type: string, format: uuid }, reason: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time }, approved_by: { type: string } } }
+    CreateInventoryPolicyCommand: { type: object, additionalProperties: false, required: [product_id, cost_method, lot_controlled, reorder_point, reorder_quantity, maximum_stock, safety_stock, lead_time_days, reason], properties: { product_id: { type: string, format: uuid }, cost_method: { $ref: '#/components/schemas/InventoryCostMethod' }, lot_controlled: { type: boolean }, reorder_point: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, reorder_quantity: { $ref: '#/components/schemas/SafePositiveInteger' }, maximum_stock: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, safety_stock: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, lead_time_days: { type: integer, minimum: 0, maximum: 3650 }, preferred_supplier_id: { type: string, format: uuid }, reason: { type: string, minLength: 8, maxLength: 500 } } }
+    InventoryPolicyTransitionCommand: { type: object, additionalProperties: false, required: [status, reason], properties: { status: { type: string, enum: [SUBMITTED, ACTIVE, REJECTED] }, reason: { type: string, minLength: 8, maxLength: 500 } } }
+    LotRegistrationLine: { type: object, additionalProperties: false, required: [id, product_id, lot_number, quantity], properties: { id: { type: string, format: uuid }, product_id: { type: string, format: uuid }, lot_number: { type: string }, quantity: { $ref: '#/components/schemas/SafePositiveInteger' }, manufactured_at: { type: string, format: date-time }, expires_at: { type: string, format: date-time } } }
+    LotRegistration: { type: object, additionalProperties: true, required: [id, goods_receipt_id, reason, created_by, created_at, lines], properties: { id: { type: string, format: uuid }, goods_receipt_id: { type: string, format: uuid }, reason: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time }, lines: { type: array, items: { $ref: '#/components/schemas/LotRegistrationLine' } } } }
+    RegisterReceiptLotsCommand: { type: object, additionalProperties: false, required: [reason, lines], properties: { reason: { type: string, minLength: 8, maxLength: 500 }, lines: { type: array, minItems: 1, maxItems: 200, items: { type: object, additionalProperties: false, required: [product_id, lot_number, quantity], properties: { product_id: { type: string, format: uuid }, lot_number: { type: string, minLength: 1, maxLength: 100 }, quantity: { $ref: '#/components/schemas/SafePositiveInteger' }, manufactured_at: { type: string, format: date-time }, expires_at: { type: string, format: date-time } } } } } }
+    InventoryLotBalance: { type: object, additionalProperties: false, required: [lot_id, product_id, lot_number, quantity], properties: { lot_id: { type: string, format: uuid }, product_id: { type: string, format: uuid }, lot_number: { type: string }, manufactured_at: { type: string, format: date-time }, expires_at: { type: string, format: date-time }, quantity: { type: integer, minimum: -9007199254740991, maximum: 9007199254740991 } } }
+    ReplenishmentRecommendation: { type: object, additionalProperties: false, required: [product_id, on_hand, reserved, available, incoming, projected, reorder_point, recommended_quantity, action_required], properties: { product_id: { type: string, format: uuid }, on_hand: { type: integer }, reserved: { type: integer }, available: { type: integer }, incoming: { type: integer }, projected: { type: integer }, reorder_point: { type: integer }, recommended_quantity: { type: integer }, preferred_supplier_id: { type: string, format: uuid }, action_required: { type: boolean } } }
+    InventoryCostHistory: { type: object, additionalProperties: false, required: [id, product_id, source_id, method, quantity_before, quantity_received, cost_before_minor, receipt_cost_minor, cost_after_minor, occurred_at], properties: { id: { type: string, format: uuid }, product_id: { type: string, format: uuid }, source_id: { type: string, format: uuid }, method: { $ref: '#/components/schemas/InventoryCostMethod' }, quantity_before: { type: integer }, quantity_received: { type: integer }, cost_before_minor: { type: integer }, receipt_cost_minor: { type: integer }, cost_after_minor: { type: integer }, occurred_at: { type: string, format: date-time } } }
+    InventoryControlWorkspace: { type: object, additionalProperties: false, required: [policies, registrations, lots, replenishments, cost_history], properties: { policies: { type: array, items: { $ref: '#/components/schemas/InventoryPolicy' } }, registrations: { type: array, items: { $ref: '#/components/schemas/LotRegistration' } }, lots: { type: array, items: { $ref: '#/components/schemas/InventoryLotBalance' } }, replenishments: { type: array, items: { $ref: '#/components/schemas/ReplenishmentRecommendation' } }, cost_history: { type: array, items: { $ref: '#/components/schemas/InventoryCostHistory' } } } }
     Problem:
       type: object
       additionalProperties: true

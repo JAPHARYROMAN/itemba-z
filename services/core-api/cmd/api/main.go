@@ -17,6 +17,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/httpapi"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/inventorycontrol"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/people"
@@ -211,7 +212,17 @@ func main() {
 		logger.Error("initialize commercial service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithCommercial(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, commercialService, logger, authenticator)
+	inventoryRepository, ok := repository.(inventorycontrol.Repository)
+	if !ok {
+		logger.Error("repository does not implement inventory control")
+		os.Exit(1)
+	}
+	inventoryService, err := inventorycontrol.NewService(inventoryRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize inventory control service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithInventoryControl(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, commercialService, inventoryService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)

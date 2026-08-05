@@ -517,6 +517,9 @@ func (t *transaction) postGoodsReceipt(ctx context.Context, document operations.
 		if err := t.AppendStockMovement(ctx, inventory.Movement{ID: effects.MovementIDs[index], TenantID: document.Scope.TenantID, CompanyID: document.Scope.CompanyID, BranchID: document.Scope.BranchID, WarehouseID: document.Scope.WarehouseID, ProductID: line.ProductID, SourceType: string(document.Type), SourceID: document.ID, Quantity: line.Quantity, OccurredAt: at}); err != nil {
 			return err
 		}
+		if err := t.applyGoodsReceiptInventoryControls(ctx, document, line, effects.MovementIDs[index], product, at); err != nil {
+			return err
+		}
 		journal.Entries = append(journal.Entries, finance.JournalEntry{AccountID: product.InventoryAccountID, DebitMinor: line.AmountMinor, Memo: "Goods received"})
 	}
 	journal.Entries = append(journal.Entries, finance.JournalEntry{AccountID: config.GRNIAccountID, CreditMinor: document.TotalMinor, Memo: "Goods received not invoiced"})
