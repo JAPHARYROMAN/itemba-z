@@ -14,5 +14,6 @@ FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 WORKDIR /app
 COPY --from=build /out/api /out/migrate /out/worker /out/devseed /out/devdbrole /app/
 COPY migrations /app/migrations
+USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/app/api"]
