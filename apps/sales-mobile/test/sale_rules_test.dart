@@ -292,29 +292,33 @@ void main() {
       expect(await store.readSyncQueue(), isEmpty);
     });
 
-    test('draft is rejected when its catalog token has been superseded', () async {
-      final store = InMemoryEncryptedLocalStore();
-      final controller = SalesController(store: store);
-      final draft = controller.createNewSale()..addProduct(demoProducts.first);
-      controller.device = controller.device.copyWithVersions(
-        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
-        masterDataVersion: controller.device.masterDataVersion,
-        priceVersion: controller.device.priceVersion,
-      );
+    test(
+      'draft is rejected when its catalog token has been superseded',
+      () async {
+        final store = InMemoryEncryptedLocalStore();
+        final controller = SalesController(store: store);
+        final draft =
+            controller.createNewSale()..addProduct(demoProducts.first);
+        controller.device = controller.device.copyWithVersions(
+          catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
+          masterDataVersion: controller.device.masterDataVersion,
+          priceVersion: controller.device.priceVersion,
+        );
 
-      await expectLater(
-        controller.completeSale(draft),
-        throwsA(
-          isA<SaleRuleException>().having(
-            (error) => error.violations.map((value) => value.code),
-            'violations',
-            contains(SaleRuleCode.staleDraftContext),
+        await expectLater(
+          controller.completeSale(draft),
+          throwsA(
+            isA<SaleRuleException>().having(
+              (error) => error.violations.map((value) => value.code),
+              'violations',
+              contains(SaleRuleCode.staleDraftContext),
+            ),
           ),
-        ),
-      );
-      expect(await store.readSales(), isEmpty);
-      expect(await store.readSyncQueue(), isEmpty);
-    });
+        );
+        expect(await store.readSales(), isEmpty);
+        expect(await store.readSyncQueue(), isEmpty);
+      },
+    );
 
     test('connection loss rejects a previously selected bank card', () async {
       final store = InMemoryEncryptedLocalStore();

@@ -43,6 +43,8 @@ tags:
     description: Governed supplier/product masters, RFQs, quotations, comparisons, and awards.
   - name: Inventory Control
     description: Replenishment policies, lot and expiry traceability, and costing evidence.
+  - name: Audit
+    description: Immutable, actor-attributed timelines for governed records.
 paths:
   /v1/inventory/control:
     get:
@@ -1059,6 +1061,18 @@ paths:
       x-implementation-status: implemented
       parameters: [{ name: sequence_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
       responses: { '201': { description: Number allocation., content: { application/json: { schema: { $ref: '#/components/schemas/NumberAllocation' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/audit/{entity_type}/{entity_id}:
+    get:
+      summary: List the immutable audit timeline for one governed record
+      operationId: getAuditTrail
+      tags: [Audit]
+      x-implementation-status: implemented
+      parameters:
+        - { name: entity_type, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 80, pattern: '^[a-z0-9_.-]+$' } }
+        - { name: entity_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Scope-bound immutable audit timeline., content: { application/json: { schema: { $ref: '#/components/schemas/AuditTrail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /v1/sales:
     post:
       summary: Complete and atomically post a sale
@@ -1483,6 +1497,25 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    AuditRecord:
+      type: object
+      additionalProperties: false
+      required: [id, actor_id, action, entity_type, entity_id, correlation_id, causation_id, data, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        actor_id: { type: string, format: uuid }
+        action: { type: string }
+        entity_type: { type: string }
+        entity_id: { type: string, format: uuid }
+        correlation_id: { type: string, format: uuid }
+        causation_id: { type: string }
+        data: { type: object, additionalProperties: true }
+        occurred_at: { type: string, format: date-time }
+    AuditTrail:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/AuditRecord' } } }
     AdvancedFinanceStatus: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, REJECTED, ACTIVE, DISPOSED] }
     BudgetLine:
       type: object

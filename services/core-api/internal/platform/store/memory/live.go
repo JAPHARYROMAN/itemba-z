@@ -337,6 +337,22 @@ func (s *Store) ListSales(_ context.Context, scope tenancy.Scope, actorID string
 	return items, nil
 }
 
+func (s *Store) ListAuditEvents(_ context.Context, scope tenancy.Scope, actorID, entityType, entityID string) ([]readmodel.AuditRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.state.permissions[permissionKey(scope, actorID, "audit.read")] {
+		return nil, sales.ErrForbidden
+	}
+	result := []readmodel.AuditRecord{}
+	for _, event := range s.state.audits {
+		if event.TenantID == scope.TenantID && event.CompanyID == scope.CompanyID && event.EntityType == entityType && event.EntityID == entityID {
+			result = append(result, readmodel.AuditRecord{ID: event.ID, ActorID: event.ActorID, Action: event.Action, EntityType: event.EntityType, EntityID: event.EntityID, CorrelationID: event.CorrelationID, CausationID: event.CausationID, Data: event.Data, OccurredAt: event.OccurredAt})
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].OccurredAt.After(result[j].OccurredAt) })
+	return result, nil
+}
+
 func (t *transaction) MobileDevice(_ context.Context, scope tenancy.Scope, actorID, deviceID string) (devices.Device, error) {
 	value, ok := t.state.devices[deviceKey(scope.TenantID, deviceID)]
 	if !ok {

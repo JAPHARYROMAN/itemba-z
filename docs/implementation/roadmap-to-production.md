@@ -10,14 +10,14 @@ ITEMBA-Z may claim 100% production readiness only when every mandatory release g
 
 ## Starting position
 
-The repository currently reports 94.1% weighted core ERP functional coverage. The Go modular monolith, PostgreSQL transaction boundary, Control Center, Android POS foundations, immutable ledgers, governed finance, commercial, inventory, payroll, reporting, offline synchronization, audit, and outbox capabilities are substantial.
+The repository now reports 100% of the Wave 1 approved repository core ERP functional scope after provider/statutory work was assigned to Wave 3. The Go modular monolith, PostgreSQL transaction boundary, Control Center, Android POS foundations, immutable ledgers, governed finance, commercial, inventory, payroll, reporting, offline synchronization, audit, and outbox capabilities are substantial.
 
 The remaining path is not 5.9% of the total launch effort. Production identity, statutory calculations, TRA and provider integrations, bank adapters, deployment controls, secrets, recovery evidence, source-data migration, professional validation, pilot operation, and signed reconciliations remain outside the core functional-coverage score.
 
 The initial production-readiness baseline must be established in Wave 0 from evidence. Until then, the defensible status is:
 
-- core ERP functional coverage: 94.1%;
-- implemented OpenAPI operations: 105;
+- approved repository core ERP functional coverage: 100%;
+- implemented OpenAPI operations: 106;
 - planned OpenAPI operations: 0; future work must add reviewed contracts before implementation;
 - production release gates: open;
 - production launch authorization: not granted.
@@ -81,9 +81,9 @@ Execution evidence: [`evidence/wave-0`](evidence/wave-0/README.md). Repository i
 
 Planning range: 3–5 weeks, parallel with Waves 2 and 3
 
-Execution record: [`wave-1-execution.md`](wave-1-execution.md). The governed
-executive dashboard slice is complete in the repository; the remainder of this
-wave is still open.
+Execution record: [`wave-1-execution.md`](wave-1-execution.md). Repository Wave
+1 is complete. Provider-backed printing and outbound communications, statutory
+payroll policy and certification remain Wave 3 gates; human UAT remains Wave 5.
 
 ### Core ERP and contracts
 
@@ -92,12 +92,12 @@ wave is still open.
 - Complete professionally specified inventory-costing requirements beyond the existing standard and moving-average evidence only where Itemba policy requires them.
 - Remove generic demonstration workflows from production navigation or replace them with authoritative APIs.
 - Complete cross-module acceptance tests for order-to-cash, procure-to-pay, inventory, record-to-report and hire-to-retire.
-- Reconcile the 94.1% core coverage document against executable evidence and close or explicitly defer every remaining item.
+- Reconcile the core coverage document against executable evidence and close or explicitly defer every remaining item.
 
 ### Control Center
 
 - Apply the frontend audit: fix clipped mobile controls, horizontal context overflow, undersized text, weak confirmation summaries and misleading truth states.
-- Make the approval inbox, notification center, global search, saved filters and record audit drawers authoritative across Release 1 modules.
+- Make the approval inbox, notification center and global search authoritative; provide a reusable immutable record-audit API and drawer. Persisted personal saved filters were removed from Release 1 during scope reconciliation and remain post-launch UX work.
 - Complete English and Swahili coverage for content, validation, API errors, accessible names, documents and financial terminology.
 - Verify keyboard navigation, focus management, contrast, zoom, screen-reader semantics and responsive layouts.
 - Add explicit LIVE, PREVIEW and UNAVAILABLE states to every metric-bearing surface.

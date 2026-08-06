@@ -270,6 +270,7 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("GET /v1/customers", h.listCustomers)
 		mux.HandleFunc("GET /v1/products", h.listProducts)
 		mux.HandleFunc("GET /v1/sales", h.listSales)
+		mux.HandleFunc("GET /v1/audit/{entityType}/{entityID}", h.auditTrail)
 	}
 	if h.reporting != nil {
 		mux.HandleFunc("GET /v1/dashboard", h.dashboard)
@@ -944,6 +945,19 @@ func (h *Handler) listSales(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	writeJSON(writer, http.StatusOK, presentSalePage(result))
+}
+
+func (h *Handler) auditTrail(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := h.requestContext(writer, request)
+	if !ok {
+		return
+	}
+	result, err := h.read.Audit(request.Context(), principal.Scope, principal.ActorID, request.PathValue("entityType"), request.PathValue("entityID"))
+	if err != nil {
+		h.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
 }
 
 type enrollDeviceRequest struct {

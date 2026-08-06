@@ -729,10 +729,9 @@ class SaleDetailsSheet extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed:
-                      sale.syncStatus == SyncStatus.synced ? () {} : null,
+                  onPressed: () => _showPrinterStatus(context),
                   icon: const Icon(Icons.print_outlined),
-                  label: Text(strings.t('reprint')),
+                  label: Text(strings.t('printerStatus')),
                 ),
               ),
               const SizedBox(width: 10),
@@ -750,6 +749,39 @@ class SaleDetailsSheet extends StatelessWidget {
     );
   }
 
+  void _showPrinterStatus(BuildContext context) {
+    final strings = AppStrings.of(context);
+    showDialog<void>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            icon: const Icon(Icons.print_disabled_outlined),
+            title: Text(strings.t('printerUnavailable')),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(strings.t('printerUnavailableHelp')),
+                const SizedBox(height: 12),
+                Text(
+                  '${strings.t('receiptNumber')}: ${sale.receiptReference}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  '${strings.t('fiscalStatus')}: ${strings.t('fiscal_${sale.fiscalStatus.name}')}',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(strings.t('close')),
+              ),
+            ],
+          ),
+    );
+  }
+
   void _showCorrection(BuildContext context) {
     final strings = AppStrings.of(context);
     showDialog<void>(
@@ -758,29 +790,23 @@ class SaleDetailsSheet extends StatelessWidget {
           (dialogContext) => AlertDialog(
             title: Text(strings.t('correctionTitle')),
             content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(strings.t('correctionHelp')),
                 const SizedBox(height: 14),
-                TextField(
-                  maxLines: 3,
-                  decoration: InputDecoration(labelText: strings.t('reason')),
+                Text(strings.t('correctionControlCenter')),
+                const SizedBox(height: 14),
+                SelectableText(
+                  '${strings.t('receiptNumber')}: ${sale.receiptReference}\nClient transaction: ${sale.clientTransactionId}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ],
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
-                child: Text(strings.t('cancel')),
-              ),
-              FilledButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(strings.t('requestSent'))),
-                  );
-                },
-                child: Text(strings.t('submitRequest')),
+                child: Text(strings.t('close')),
               ),
             ],
           ),

@@ -16,6 +16,13 @@ Permissions combine action, module, tenant, legal-company, branch, warehouse, ow
 | Finance Manager | Finance approvals, periods, closing, and statements | Reopening and reversal actions require reason and audit |
 | Auditor | Scoped read-only data and audit reports | No mutations or approvals |
 
+`audit.read` permits immutable timeline retrieval, including the retained
+evidence payload, only in the actor's verified tenant and legal-company scope.
+It does not authorize the underlying business-record endpoint, mutations or
+approvals. Because evidence may contain sensitive financial detail, this grant
+is restricted to approved audit/compliance roles and is tested independently
+from ordinary module-read permissions.
+
 The seed matrix is a starting policy. Named users, value thresholds, substitutes, delegations, and emergency access require signed business-owner approval before production.
 
 Executive overview access uses `dashboard.read` in addition to

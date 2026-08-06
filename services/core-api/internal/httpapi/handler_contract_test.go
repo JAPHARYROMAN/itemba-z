@@ -79,12 +79,26 @@ func TestWebIdempotencyKeyBoundsAreEnforced(t *testing.T) {
 }
 
 func TestPublicSalePresentationOmitsInternalCostFacts(t *testing.T) {
-	response := presentSale(sales.Sale{ID: "10000000-0000-4000-8000-000000000001", COGSMinor: 700, Lines: []sales.Line{{ID: "10000000-0000-4000-8000-000000000002", ProductID: "10000000-0000-4000-8000-000000000003", UnitCostMinor: 700, COGSMinor: 700}}})
+	postedAt := time.Date(2026, time.August, 6, 8, 30, 0, 0, time.UTC)
+	response := presentSale(sales.Sale{
+		ID: "10000000-0000-4000-8000-000000000001", COGSMinor: 700,
+		DocumentAt: postedAt, ReceivedAt: postedAt, AccountingAt: postedAt,
+		AccountingTimeBasis: sales.AccountingTimeServerReceipt,
+		Lines: []sales.Line{{
+			ID: "10000000-0000-4000-8000-000000000002", ProductID: "10000000-0000-4000-8000-000000000003",
+			UnitCostMinor: 700, COGSMinor: 700,
+		}},
+	})
 	encoded, err := json.Marshal(response)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(encoded), "cogs_minor") || strings.Contains(string(encoded), "unit_cost_minor") {
 		t.Fatalf("public presentation leaked cost facts: %s", encoded)
+	}
+	for _, field := range []string{"document_at", "received_at", "accounting_at", "accounting_time_basis"} {
+		if !strings.Contains(string(encoded), `"`+field+`"`) {
+			t.Fatalf("public presentation omitted required posting time field %q: %s", field, encoded)
+		}
 	}
 }

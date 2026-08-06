@@ -15,8 +15,11 @@ import type {
 	PeopleWorkspace,
 	ConfigurationWorkspace,
 	CommercialWorkspace,
+	SupplierWorkspace,
+	GlobalSearchWorkspace,
 	InventoryControlWorkspace,
 } from "@/live-api/types";
+import { text } from "@/lib/i18n";
 
 export async function loadDashboardWorkspace(): Promise<LiveSnapshot<DashboardWorkspace>> {
   try {
@@ -55,6 +58,89 @@ export async function loadConfigurationWorkspace(): Promise<LiveSnapshot<Configu
 export async function loadCommercialWorkspace(): Promise<LiveSnapshot<CommercialWorkspace>> {
 	try { const repository=await createServerRepository(); const [context,commercial,products,suppliers]=await Promise.all([repository.getWorkingContext(),repository.getCommercialSnapshot(),repository.listProducts(),repository.listSuppliers()]); return {state:"ready",data:{context,commercial,products:products.items,suppliers:suppliers.items}}; }
 	catch(error){return {state:"unavailable",problem:publicProblem(error)};}
+}
+
+export async function loadSupplierWorkspace(): Promise<LiveSnapshot<SupplierWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const [context, suppliers, commercial] = await Promise.all([
+      repository.getWorkingContext(), repository.listSuppliers(), repository.getCommercialSnapshot(),
+    ]);
+    return { state: "ready", data: { context, suppliers: suppliers.items, commercial } };
+  } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
+}
+
+export async function loadGlobalSearch(rawQuery: string): Promise<LiveSnapshot<GlobalSearchWorkspace>> {
+  try {
+    const query = rawQuery.trim().slice(0, 120);
+    const repository = await createServerRepository();
+    const context = await repository.getWorkingContext();
+    if (query.length < 2) return { state: "ready", data: { context, query, results: [], searchedSources: [] } };
+    const needle = query.toLocaleLowerCase("en");
+    const allowed = (permission: string) => context.permissions.includes(permission);
+    const sources: Array<Promise<void>> = [];
+    const results: GlobalSearchWorkspace["results"] = [];
+    const searchedSources: GlobalSearchWorkspace["searchedSources"] = [];
+    const matches = (...values: Array<string | undefined>) => values.some((value) => value?.toLocaleLowerCase("en").includes(needle));
+
+    if (allowed("customers.read")) {
+      searchedSources.push(text("Customers", "Wateja"));
+      sources.push(repository.listCustomers().then(({ items }) => items.filter((item) => matches(item.code, item.name, item.id)).forEach((item) => results.push({
+        id: item.id, module: "customers", moduleLabel: text("Customer", "Mteja"), title: text(item.name, item.name),
+        subtitle: `${item.code} · ${item.current_exposure_minor.toLocaleString()} ${context.currency}`,
+        href: `/customers/${item.id}`, status: { label: text(item.status === "active" ? "Active" : "Inactive", item.status === "active" ? "Hai" : "Isiyotumika"), tone: item.status === "active" ? "success" : "neutral" },
+      }))));
+    }
+    if (allowed("products.read")) {
+      searchedSources.push(text("Products", "Bidhaa"));
+      sources.push(repository.listProducts().then(({ items }) => items.filter((item) => matches(item.code, item.name, item.id)).forEach((item) => results.push({
+        id: item.id, module: "inventory", moduleLabel: text("Product", "Bidhaa"), title: text(item.name, item.name),
+        subtitle: `${item.code} · ${item.available_quantity.toLocaleString()} ${item.unit}`,
+        href: `/inventory?product=${encodeURIComponent(item.id)}`, status: { label: text(item.available_quantity > 0 ? "Available" : "Out of stock", item.available_quantity > 0 ? "Inapatikana" : "Imeisha"), tone: item.available_quantity > 0 ? "success" : "danger" },
+      }))));
+    }
+    if (allowed("sales.read")) {
+      searchedSources.push(text("Sales", "Mauzo"));
+      sources.push(repository.listSales().then(({ items }) => items.filter((item) => matches(item.receipt_reference, item.id, item.customer_id)).forEach((item) => results.push({
+        id: item.id, module: "sales", moduleLabel: text("Sale", "Mauzo"), title: text(item.receipt_reference, item.receipt_reference),
+        subtitle: `${item.total_minor.toLocaleString()} ${item.currency} · ${item.kind}`,
+        href: `/sales/${item.id}`, status: { label: text(item.status, item.status === "POSTED" ? "IMECHAPISHWA" : "IMEBATILISHWA"), tone: item.status === "POSTED" ? "success" : "warning" },
+      }))));
+    }
+    if (allowed("operations.read")) {
+      searchedSources.push(text("Suppliers and operations", "Wasambazaji na shughuli"));
+      sources.push(Promise.all([repository.listSuppliers(), repository.listOperationDocuments()]).then(([suppliers, documents]) => {
+        suppliers.items.filter((item) => matches(item.code, item.name, item.id)).forEach((item) => results.push({
+          id: item.id, module: "suppliers", moduleLabel: text("Supplier", "Msambazaji"), title: text(item.name, item.name),
+          subtitle: `${item.code} · ${item.payment_terms_days} days`, href: `/suppliers?supplier=${encodeURIComponent(item.id)}`,
+          status: { label: text(item.active ? "Active" : "Inactive", item.active ? "Hai" : "Isiyotumika"), tone: item.active ? "success" : "neutral" },
+        }));
+        documents.items.filter((item) => matches(item.number, item.id, item.party_id, item.type)).forEach((item) => {
+          const href = item.type.startsWith("PURCHASE") || item.type === "GOODS_RECEIPT" || item.type.startsWith("SUPPLIER") ? `/purchases?document=${encodeURIComponent(item.id)}` : item.type.startsWith("STOCK") ? `/inventory?document=${encodeURIComponent(item.id)}` : `/sales/lifecycle?document=${encodeURIComponent(item.id)}`;
+          results.push({ id: item.id, module: "operations", moduleLabel: text("Operation", "Shughuli"), title: text(item.number, item.number), subtitle: `${item.type} · ${item.total_minor.toLocaleString()} ${item.currency}`, href, status: { label: text(item.status, item.status), tone: item.status === "REJECTED" || item.status === "REVERSED" ? "danger" : item.status === "CLOSED" || item.status === "POSTED" || item.status === "RECEIVED" ? "success" : "info" } });
+        });
+      }));
+    }
+    if (allowed("finance.accounts.read")) {
+      searchedSources.push(text("Chart of accounts", "Orodha ya akaunti"));
+      sources.push(repository.listGLAccounts().then(({ items }) => items.filter((item) => matches(item.code, item.name, item.id)).forEach((item) => results.push({
+        id: item.record_id, module: "finance", moduleLabel: text("GL account", "Akaunti ya leja"), title: text(item.name, item.name),
+        subtitle: `${item.code} · ${item.type}`, href: `/finance?account=${encodeURIComponent(item.record_id)}`,
+        status: { label: text(item.status, item.status), tone: item.status === "ACTIVE" ? "success" : item.status === "REJECTED" ? "danger" : "neutral" },
+      }))));
+    }
+    if (allowed("hr.people.read")) {
+      searchedSources.push(text("Employees", "Wafanyakazi"));
+      sources.push(repository.getPeopleSnapshot().then(({ employees }) => employees.filter((item) => matches(item.number, item.full_name, item.job_title, item.department, item.id)).forEach((item) => results.push({
+        id: item.id, module: "human-resources", moduleLabel: text("Employee", "Mfanyakazi"), title: text(item.full_name, item.full_name),
+        subtitle: `${item.number} · ${item.job_title ?? item.department ?? "—"}`, href: `/human-resources?employee=${encodeURIComponent(item.id)}`,
+        status: { label: text(item.status, item.status === "ACTIVE" ? "HAI" : "ISiyotumika"), tone: item.status === "ACTIVE" ? "success" : "neutral" },
+      }))));
+    }
+    await Promise.all(sources);
+    results.sort((left, right) => left.title.en.localeCompare(right.title.en));
+    return { state: "ready", data: { context, query, results: results.slice(0, 50), searchedSources } };
+  } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
 }
 
 export async function loadGroupFinanceWorkspace(): Promise<LiveSnapshot<GroupFinanceWorkspace>> {

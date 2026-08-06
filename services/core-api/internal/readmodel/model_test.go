@@ -31,6 +31,9 @@ func (unsafeReadRepository) ListProducts(context.Context, tenancy.Scope, string,
 func (unsafeReadRepository) ListSales(context.Context, tenancy.Scope, string, ListOptions) ([]sales.Sale, error) {
 	return []sales.Sale{{ID: "sale", TotalMinor: sales.MaxWireSafeInteger + 1}}, nil
 }
+func (unsafeReadRepository) ListAuditEvents(context.Context, tenancy.Scope, string, string, string) ([]AuditRecord, error) {
+	return nil, nil
+}
 
 func TestPublicReadModelsRejectUnsafeExistingDatabaseIntegers(t *testing.T) {
 	service, err := NewService(unsafeReadRepository{})

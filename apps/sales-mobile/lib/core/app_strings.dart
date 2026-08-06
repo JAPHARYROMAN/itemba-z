@@ -102,6 +102,10 @@ class AppStrings {
       'receiptNumber': 'Internal receipt reference',
       'done': 'Done',
       'reprint': 'View confirmation',
+      'printerStatus': 'Receipt output',
+      'printerUnavailable': 'Printer not configured',
+      'printerUnavailableHelp':
+          'The internal confirmation remains available on this device. Physical printing is unavailable until an approved printer adapter is configured. Fiscal status is shown separately and this reference must not be represented as a TRA receipt.',
       'requestCorrection': 'Request correction',
       'ownSalesOnly': 'Only sales authorized for {name}',
       'all': 'All',
@@ -163,6 +167,9 @@ class AppStrings {
       'correctionTitle': 'Correction request',
       'correctionHelp':
           'Completed sales cannot be edited. A manager must approve any return or cancellation.',
+      'correctionControlCenter':
+          'Correction submission is not available in this POS release. Give the sale and client transaction references below to a manager, who must create the governed reversal in Control Center.',
+      'close': 'Close',
       'submitRequest': 'Submit request',
       'reason': 'Reason and notes',
       'requestSent': 'Request sent for manager approval.',
@@ -278,6 +285,10 @@ class AppStrings {
       'receiptNumber': 'Rejea ya risiti ya ndani',
       'done': 'Imekamilika',
       'reprint': 'Angalia uthibitisho',
+      'printerStatus': 'Utoaji wa risiti',
+      'printerUnavailable': 'Printa haijasanidiwa',
+      'printerUnavailableHelp':
+          'Uthibitisho wa ndani unabaki kwenye kifaa hiki. Uchapishaji haupatikani hadi kiunganishi cha printa kilichoidhinishwa kisanidiwe. Hali ya fiskali inaonyeshwa kando na rejea hii haipaswi kuwakilishwa kama risiti ya TRA.',
       'requestCorrection': 'Omba marekebisho',
       'ownSalesOnly': 'Mauzo yaliyoidhinishwa kwa {name} pekee',
       'all': 'Yote',
@@ -340,6 +351,9 @@ class AppStrings {
       'correctionTitle': 'Ombi la marekebisho',
       'correctionHelp':
           'Mauzo yaliyokamilika hayawezi kuhaririwa. Meneja lazima aidhinishe marejesho au kufuta.',
+      'correctionControlCenter':
+          'Kutuma ombi la marekebisho hakupatikani katika toleo hili la POS. Mpe meneja rejea ya mauzo na ya muamala hapa chini; lazima atengeneze ubatilisho unaodhibitiwa katika Control Center.',
+      'close': 'Funga',
       'submitRequest': 'Tuma ombi',
       'reason': 'Sababu na maelezo',
       'requestSent': 'Ombi limetumwa kwa idhini ya meneja.',

@@ -523,6 +523,34 @@ func (s *Store) ListSales(ctx context.Context, scope tenancy.Scope, actorID stri
 	return result, err
 }
 
+func (s *Store) ListAuditEvents(ctx context.Context, scope tenancy.Scope, actorID, entityType, entityID string) ([]readmodel.AuditRecord, error) {
+	result := []readmodel.AuditRecord{}
+	err := s.WithTransaction(ctx, func(contract sales.Transaction) error {
+		tx := contract.(*transaction)
+		allowed, err := tx.Authorize(ctx, scope, actorID, "audit.read")
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return sales.ErrForbidden
+		}
+		rows, err := tx.tx.Query(ctx, `SELECT id::text,actor_id::text,action,entity_type,entity_id::text,correlation_id::text,causation_id,data,occurred_at FROM audit_events WHERE tenant_id=$1 AND company_id=$2 AND entity_type=$3 AND entity_id=$4 ORDER BY occurred_at DESC,id DESC LIMIT 200`, scope.TenantID, scope.CompanyID, entityType, entityID)
+		if err != nil {
+			return normalizeError(err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var item readmodel.AuditRecord
+			if err = rows.Scan(&item.ID, &item.ActorID, &item.Action, &item.EntityType, &item.EntityID, &item.CorrelationID, &item.CausationID, &item.Data, &item.OccurredAt); err != nil {
+				return normalizeError(err)
+			}
+			result = append(result, item)
+		}
+		return normalizeError(rows.Err())
+	})
+	return result, err
+}
+
 func (t *transaction) MobileDevice(ctx context.Context, scope tenancy.Scope, actorID, deviceID string) (devices.Device, error) {
 	if err := t.ensureScope(ctx, scope); err != nil {
 		return devices.Device{}, err

@@ -19,6 +19,7 @@ import { usePendingCommand } from "@/live-api/use-pending-command";
 import { LiveBadge } from "@/components/live-sales/live-state";
 import { useLanguage } from "@/components/language-provider";
 import { text } from "@/lib/i18n";
+import { AuditDrawer } from "@/components/audit-drawer";
 
 function isProblem(value: unknown): value is PublicProblem {
   return Boolean(value && typeof value === "object" && typeof (value as Record<string, unknown>).code === "string");
@@ -132,7 +133,7 @@ function ScopedLiveSaleDetail({ workspace }: { workspace: SaleDetailWorkspace })
       <Link className="back-link" href="/sales"><ArrowLeft size={16} />{l(text("Back to live sales", "Rudi kwenye mauzo hai"))}</Link>
       <section className="detail-hero live-detail-hero">
         <div><div className="heading-badges"><LiveBadge context={workspace.context} /><span className={`live-sale-status status-${sale.status.toLowerCase()}`}>{sale.status}</span><span className="scope-chip">{sale.record_type}</span></div><p className="eyebrow" title={sale.id}>{compactId(sale.id)}</p><h1>{sale.record_type === "REVERSAL" ? l(text("Linked sale reversal", "Ubatilisho wa mauzo uliounganishwa")) : l(text("Immutable posted sale", "Mauzo yaliyochapishwa yasiyobadilika"))}</h1><p>{customer?.name ?? compactId(sale.customer_id)} · {formatTimestamp(sale.created_at, locale, workspace.context.timezone)}</p></div>
-        <div className="detail-actions"><button type="button" className="secondary-button" onClick={() => window.print()}><Printer size={17} />{l(text("Print", "Chapisha"))}</button><button type="button" className="secondary-button" onClick={copyLink}><Copy size={17} />{l(text("Copy link", "Nakili kiungo"))}</button>{reversible ? <button type="button" className="danger-button" onClick={() => setReversalOpen(true)}><RotateCcw size={17} />{l(text("Reverse sale", "Batilisha mauzo"))}</button> : null}</div>
+        <div className="detail-actions"><AuditDrawer entityType="sale" entityId={sale.id} context={workspace.context} /><button type="button" className="secondary-button" onClick={() => window.print()}><Printer size={17} />{l(text("Print", "Chapisha"))}</button><button type="button" className="secondary-button" onClick={copyLink}><Copy size={17} />{l(text("Copy link", "Nakili kiungo"))}</button>{reversible ? <button type="button" className="danger-button" onClick={() => setReversalOpen(true)}><RotateCcw size={17} />{l(text("Reverse sale", "Batilisha mauzo"))}</button> : null}</div>
       </section>
 
       <aside className="immutable-banner"><FileLock2 size={19} /><div><strong>{l(text("Posted record — editing is disabled", "Rekodi imechapishwa — kuhariri kumezuiwa"))}</strong><p>{l(text("Corrections use a reasoned, linked reversal. The original sale, correlation and posting values remain intact.", "Marekebisho hutumia ubatilisho wenye sababu na kiungo. Mauzo asili, uhusiano na thamani zake hubaki salama."))}</p></div></aside>

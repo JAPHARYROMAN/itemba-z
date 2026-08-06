@@ -426,33 +426,35 @@ void main() {
     );
   });
 
-  test('catalog download fails closed when a page returns another token', () async {
-    final transport = InMemoryApiTransport(
-      (_) => _json(200, {
-        'items': <Object?>[],
-        'next_cursor': null,
-        'catalog_snapshot_token':
-            '00000000-0000-4000-8000-000000000011',
-        'master_data_version': 4,
-        'price_version': 8,
-      }),
-    );
-    final api = await _bearerApi(transport);
+  test(
+    'catalog download fails closed when a page returns another token',
+    () async {
+      final transport = InMemoryApiTransport(
+        (_) => _json(200, {
+          'items': <Object?>[],
+          'next_cursor': null,
+          'catalog_snapshot_token': '00000000-0000-4000-8000-000000000011',
+          'master_data_version': 4,
+          'price_version': 8,
+        }),
+      );
+      final api = await _bearerApi(transport);
 
-    await expectLater(
-      api.refreshMasterData(
-        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
-      ),
-      throwsA(
-        isA<ApiException>().having(
-          (error) => error.kind,
-          'kind',
-          ApiFailureKind.invalidResponse,
+      await expectLater(
+        api.refreshMasterData(
+          catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
         ),
-      ),
-    );
-    expect(transport.requests, hasLength(1));
-  });
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.kind,
+            'kind',
+            ApiFailureKind.invalidResponse,
+          ),
+        ),
+      );
+      expect(transport.requests, hasLength(1));
+    },
+  );
 
   test(
     'server integers outside the JavaScript-safe range fail closed',

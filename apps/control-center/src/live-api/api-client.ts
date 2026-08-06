@@ -1,7 +1,7 @@
 import type { BackendIdentity } from "@/live-api/auth";
 import { buildIdentityHeaders } from "@/live-api/auth";
 import type {
-	Dashboard,
+	Dashboard, AuditTrail,
   ChangeMobileDeviceAllocationCommand, ChangeMobileDeviceStatusCommand, CompleteSaleCommand, CustomerAccountDetail, CustomerPage,
   MobileDevice, MobileDevicePage, MobileReconciliationCase, MobileReconciliationPage,
   MobileReconciliationStatus, ProductPage, PublicProblem, ResolveMobileReconciliationCommand,
@@ -231,6 +231,10 @@ export class ItembaApiClient {
 
   getSale(saleId: string): Promise<Sale> {
     return this.request(`/v1/sales/${encodeURIComponent(saleId)}`);
+  }
+
+  getAuditTrail(entityType: string, entityId: string): Promise<AuditTrail> {
+    return this.request(`/v1/audit/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`);
   }
 
   completeSale(command: CompleteSaleCommand, idempotencyKey: string): Promise<Sale> {

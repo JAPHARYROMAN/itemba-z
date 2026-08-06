@@ -3,9 +3,11 @@ package readmodel
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
@@ -84,6 +86,22 @@ type ListOptions struct {
 	CatalogSnapshotToken string
 }
 
+type AuditRecord struct {
+	ID            string          `json:"id"`
+	ActorID       string          `json:"actor_id"`
+	Action        string          `json:"action"`
+	EntityType    string          `json:"entity_type"`
+	EntityID      string          `json:"entity_id"`
+	CorrelationID string          `json:"correlation_id"`
+	CausationID   string          `json:"causation_id"`
+	Data          json.RawMessage `json:"data"`
+	OccurredAt    time.Time       `json:"occurred_at"`
+}
+
+type AuditTrail struct {
+	Items []AuditRecord `json:"items"`
+}
+
 type CatalogSnapshot struct {
 	Token             string
 	MasterDataVersion int64
@@ -95,6 +113,7 @@ type Repository interface {
 	ListCustomers(ctx context.Context, scope tenancy.Scope, actorID string, options ListOptions) (CatalogSnapshot, []CustomerSummary, error)
 	ListProducts(ctx context.Context, scope tenancy.Scope, actorID string, options ListOptions) (CatalogSnapshot, []ProductSummary, error)
 	ListSales(ctx context.Context, scope tenancy.Scope, actorID string, options ListOptions) ([]sales.Sale, error)
+	ListAuditEvents(ctx context.Context, scope tenancy.Scope, actorID, entityType, entityID string) ([]AuditRecord, error)
 }
 
 type Service struct{ repository Repository }
@@ -202,6 +221,21 @@ func (s *Service) Sales(ctx context.Context, scope tenancy.Scope, actorID, curso
 	}
 	value := encodeCursor(items[options.Limit-1].ID)
 	return SalePage{Items: items[:options.Limit], NextCursor: &value}, nil
+}
+
+func (s *Service) Audit(ctx context.Context, scope tenancy.Scope, actorID, entityType, entityID string) (AuditTrail, error) {
+	scope = scope.Normalize()
+	actorID = identity.NormalizeClaim(actorID)
+	entityType = strings.ToLower(strings.TrimSpace(entityType))
+	entityID = strings.ToLower(strings.TrimSpace(entityID))
+	if scope.Validate() != nil || actorID == "" || entityType == "" || len(entityType) > 80 || !identity.IsUUID(entityID) {
+		return AuditTrail{}, sales.ErrInvalidCommand
+	}
+	items, err := s.repository.ListAuditEvents(ctx, scope, actorID, entityType, entityID)
+	if err != nil {
+		return AuditTrail{}, err
+	}
+	return AuditTrail{Items: items}, nil
 }
 
 func listOptions(query, cursor, snapshotToken string, eligible *bool, pageSize int) (ListOptions, error) {

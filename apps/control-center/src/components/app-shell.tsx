@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bell, ChartNoAxesCombined, ClipboardList,
   Landmark, LayoutDashboard, Menu, PackageOpen, Search, Settings2,
@@ -15,6 +15,7 @@ import { useLanguage } from "@/components/language-provider";
 import { navigationGroups, type NavigationIcon } from "@/lib/navigation";
 import { text } from "@/lib/i18n";
 import { SessionControl } from "@/components/session-control";
+import type { Dashboard, PublicProblem } from "@/live-api/types";
 
 const iconMap: Record<NavigationIcon, LucideIcon> = {
   dashboard: LayoutDashboard, customers: UsersRound, suppliers: Truck, sales: ShoppingCart,
@@ -28,6 +29,34 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const pathname = usePathname();
   const { locale, setLocale, t, l } = useLanguage();
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [notificationProblem, setNotificationProblem] = useState<PublicProblem | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (pathname === "/login") return;
+    const controller = new AbortController();
+    fetch("/api/live/dashboard", { signal: controller.signal, headers: { Accept: "application/json" } })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw payload;
+        setDashboard(payload as Dashboard);
+      })
+      .catch((error: PublicProblem | DOMException) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setNotificationProblem(error as PublicProblem);
+      });
+    return () => controller.abort();
+  }, [pathname]);
+
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "k") {
+        event.preventDefault(); searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, []);
 
   if (pathname === "/login") return <>{children}</>;
 
@@ -74,8 +103,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             <button className="icon-button mobile-menu" type="button" onClick={() => setNavigationOpen(true)} aria-label={t("openNavigation")}><Menu size={21} /></button>
             <form className="global-search" action="/search" role="search">
               <Search size={18} aria-hidden="true" />
-              <input type="search" name="q" placeholder={t("searchPlaceholder")} aria-label={t("searchPlaceholder")} />
-              <kbd>⌘ K</kbd>
+              <input ref={searchRef} type="search" name="q" minLength={2} maxLength={120} placeholder={t("searchPlaceholder")} aria-label={t("searchPlaceholder")} />
+              <kbd>⌘/Ctrl K</kbd>
             </form>
             <div className="topbar-actions">
               <div className="language-toggle" role="group" aria-label={t("language")}>
@@ -83,12 +112,10 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                 <button type="button" className={locale === "sw" ? "active" : ""} aria-pressed={locale === "sw"} onClick={() => setLocale("sw")}>SW</button>
               </div>
               <details className="header-popover">
-                <summary className="icon-button" aria-label={t("notifications")}><Bell size={19} /><span className="notification-dot" /></summary>
+                <summary className="icon-button" aria-label={t("notifications")}><Bell size={19} />{dashboard && dashboard.pending_approvals > 0 ? <span className="notification-dot" /> : null}</summary>
                 <div className="popover-panel notification-panel">
-                  <div className="popover-heading"><strong>{t("notifications")}</strong><span>3</span></div>
-                  <Link href="/purchases/PO-2026-00412"><span className="notice-dot warning" /><span><strong>{t("purchaseApproval")}</strong><small>PO-2026-00412 · TZS 14.8m</small></span></Link>
-                  <Link href="/inventory/SKU-HOM-0091"><span className="notice-dot danger" /><span><strong>{t("criticalStock")}</strong><small>{t("unitsAvailable")}</small></span></Link>
-                  <Link href="/finance"><span className="notice-dot info" /><span><strong>{t("bankReconciliation")}</strong><small>{t("unmatchedItems")}</small></span></Link>
+                  <div className="popover-heading"><strong>{t("notifications")}</strong><span>{dashboard?.pending_approvals ?? "—"}</span></div>
+                  {notificationProblem ? <div className="notification-state" role="status"><strong>{l(text("Live notifications unavailable", "Arifa hai hazipatikani"))}</strong><small>{notificationProblem.correlation_id ?? notificationProblem.code}</small></div> : dashboard ? <Link href="/#approvals"><span className={`notice-dot ${dashboard.pending_approvals > 0 ? "warning" : "info"}`} /><span><strong>{dashboard.pending_approvals > 0 ? l(text("Transactional decisions required", "Maamuzi ya miamala yanahitajika")) : l(text("No pending transactional approvals", "Hakuna idhini za miamala zinazosubiri"))}</strong><small>{l(text(`${dashboard.pending_approvals} submitted records in your exact scope`, `Rekodi ${dashboard.pending_approvals} zilizowasilishwa katika upeo wako`))}</small></span></Link> : <div className="notification-state" role="status"><strong>{l(text("Loading live notifications…", "Inapakia arifa hai…"))}</strong></div>}
                 </div>
               </details>
               <SessionControl />

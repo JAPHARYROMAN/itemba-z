@@ -38,7 +38,12 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/treasury"
 )
 
-func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
+// TestRelease1CrossModuleAcceptanceAndReversal is the repository acceptance
+// pack for order-to-cash, procure-to-pay, inventory, record-to-report, and
+// hire-to-retire. The intentionally shared database scenario proves that each
+// lifecycle reconciles through the same tenant/company books rather than only
+// passing as an isolated unit workflow.
+func TestRelease1CrossModuleAcceptanceAndReversal(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
@@ -51,7 +56,7 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql", "000024_governed_settings.up.sql", "000025_commercial_sourcing.up.sql", "000026_inventory_planning_lots_costing.up.sql", "000027_workforce_documents_payroll_exports.up.sql", "000028_financial_report_packs.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql", "000024_governed_settings.up.sql", "000025_commercial_sourcing.up.sql", "000026_inventory_planning_lots_costing.up.sql", "000027_workforce_documents_payroll_exports.up.sql", "000028_financial_report_packs.up.sql", "000029_governed_dashboard.up.sql", "000030_audit_read_model.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -509,6 +514,10 @@ func TestPostgresGoldenSaleIdempotencyAndReversal(t *testing.T) {
 	readService, err := readmodel.NewService(store)
 	if err != nil {
 		t.Fatal(err)
+	}
+	auditTrail, err := readService.Audit(ctx, scope, userID, "sale", created.ID)
+	if err != nil || len(auditTrail.Items) == 0 || auditTrail.Items[0].EntityID != created.ID || auditTrail.Items[0].CorrelationID != created.CorrelationID {
+		t.Fatalf("sale audit trail: %+v %v", auditTrail, err)
 	}
 	workingContext, err := readService.Context(ctx, scope, userID)
 	if err != nil || workingContext.ActorID != userID || workingContext.TimeZone != "Africa/Dar_es_Salaam" || workingContext.WarehouseID != warehouseID {

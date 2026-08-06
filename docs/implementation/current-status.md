@@ -6,7 +6,7 @@ This repository is the first executable ITEMBA-Z foundation. It proves the archi
 
 ## Wave 0 production-readiness baseline
 
-Wave 0 repository inventory, full-stack verification, Release 1 classification, readiness scoring, owner/sign-off roles, provider dependencies, source-data categories, organization facts and decision controls are recorded in [`evidence/wave-0`](evidence/wave-0/README.md). The first evidence-based production-readiness baseline is **46.5/100**, distinct from the **94.1%** core ERP functional-coverage score. Repository Wave 0 work is complete, but the exit gate remains blocked pending authorized named owners, production organization facts, provider selections/access, actual controlled source-data inventory and business/professional approval.
+Wave 0 repository inventory, full-stack verification, Release 1 classification, readiness scoring, owner/sign-off roles, provider dependencies, source-data categories, organization facts and decision controls are recorded in [`evidence/wave-0`](evidence/wave-0/README.md). The first evidence-based production-readiness baseline is **46.5/100**, distinct from the Wave 1 **100% approved repository core ERP functional-coverage** score. Repository Wave 0 work is complete, but the exit gate remains blocked pending authorized named owners, production organization facts, provider selections/access, actual controlled source-data inventory and business/professional approval.
 
 ## Implemented in this milestone
 

@@ -30,10 +30,30 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        val keystorePath = System.getenv("ITEMBA_ANDROID_KEYSTORE_PATH")
+        val keystorePassword = System.getenv("ITEMBA_ANDROID_KEYSTORE_PASSWORD")
+        val keyAliasValue = System.getenv("ITEMBA_ANDROID_KEY_ALIAS")
+        val keyPasswordValue = System.getenv("ITEMBA_ANDROID_KEY_PASSWORD")
+        if (!keystorePath.isNullOrBlank() && !keystorePassword.isNullOrBlank() && !keyAliasValue.isNullOrBlank() && !keyPasswordValue.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = keystorePassword
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Release signing is injected by the protected delivery pipeline.
-            // Local release artifacts intentionally remain unsigned.
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

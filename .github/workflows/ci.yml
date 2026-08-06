@@ -1,9 +1,11 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main, master]
+    tags: ["mobile-v*"]
 
 permissions:
   contents: read
@@ -223,3 +225,60 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       - run: flutter build apk --debug
+
+  sales-mobile-release:
+    if: startsWith(github.ref, 'refs/tags/mobile-v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        working-directory: apps/sales-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.8"
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Require protected signing material
+        env:
+          ITEMBA_ANDROID_KEYSTORE_BASE64: ${{ secrets.ITEMBA_ANDROID_KEYSTORE_BASE64 }}
+          ITEMBA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ITEMBA_ANDROID_KEYSTORE_PASSWORD }}
+          ITEMBA_ANDROID_KEY_ALIAS: ${{ secrets.ITEMBA_ANDROID_KEY_ALIAS }}
+          ITEMBA_ANDROID_KEY_PASSWORD: ${{ secrets.ITEMBA_ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ITEMBA_ANDROID_KEYSTORE_BASE64"
+          test -n "$ITEMBA_ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ITEMBA_ANDROID_KEY_ALIAS"
+          test -n "$ITEMBA_ANDROID_KEY_PASSWORD"
+          printf '%s' "$ITEMBA_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/itemba-z-release.jks"
+      - name: Build signed release APK and AAB
+        env:
+          ITEMBA_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/itemba-z-release.jks
+          ITEMBA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ITEMBA_ANDROID_KEYSTORE_PASSWORD }}
+          ITEMBA_ANDROID_KEY_ALIAS: ${{ secrets.ITEMBA_ANDROID_KEY_ALIAS }}
+          ITEMBA_ANDROID_KEY_PASSWORD: ${{ secrets.ITEMBA_ANDROID_KEY_PASSWORD }}
+        run: |
+          flutter build apk --release --build-number "$GITHUB_RUN_NUMBER"
+          flutter build appbundle --release --build-number "$GITHUB_RUN_NUMBER"
+          sha256sum build/app/outputs/flutter-apk/app-release.apk build/app/outputs/bundle/release/app-release.aab > build/release-sha256.txt
+      - name: Upload controlled distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: itemba-z-sales-${{ github.run_number }}
+          path: |
+            apps/sales-mobile/build/app/outputs/flutter-apk/app-release.apk
+            apps/sales-mobile/build/app/outputs/bundle/release/app-release.aab
+            apps/sales-mobile/build/release-sha256.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            apps/sales-mobile/build/app/outputs/flutter-apk/app-release.apk
+            apps/sales-mobile/build/app/outputs/bundle/release/app-release.aab

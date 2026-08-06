@@ -1,6 +1,9 @@
 import type { components } from "@/generated/itemba-z.v1";
+import type { LocalizedText, Status } from "@/domain/erp";
 
 export type WorkingContext = components["schemas"]["WorkingContext"];
+export type AuditRecord = components["schemas"]["AuditRecord"];
+export type AuditTrail = components["schemas"]["AuditTrail"];
 export type Dashboard = components["schemas"]["Dashboard"];
 export type CustomerSummary = components["schemas"]["CustomerSummary"];
 export type CustomerPage = components["schemas"]["CustomerPage"];
@@ -71,6 +74,9 @@ export interface SupplierQuote { id: string; rfq_id: string; supplier_id: string
 export interface SourcingAward { id: string; rfq_id: string; quote_id: string; supplier_id: string; purchase_order_id: string; reason: string; selected_by: string; selected_at: string }
 export interface CommercialSnapshot { revisions: MasterRevision[]; rfqs: RFQ[]; quotes: SupplierQuote[]; awards: SourcingAward[] }
 export interface CommercialWorkspace { context: WorkingContext; commercial: CommercialSnapshot; products: ProductSummary[]; suppliers: SupplierSummary[] }
+export interface SupplierWorkspace { context: WorkingContext; suppliers: SupplierSummary[]; commercial: CommercialSnapshot }
+export interface GlobalSearchResult { id: string; module: string; moduleLabel: LocalizedText; title: LocalizedText; subtitle: string; href: string; status: Status }
+export interface GlobalSearchWorkspace { context: WorkingContext; query: string; results: GlobalSearchResult[]; searchedSources: LocalizedText[] }
 export interface CreateMasterRevisionCommand { entity_type: MasterEntityType; entity_id?: string; supplier?: SupplierMasterData; product?: ProductMasterData; reason: string }
 export interface CreateRFQCommand { currency: string; response_due_at: string; reason: string; lines: Array<{ product_id: string; quantity: number }> }
 export interface CreateSupplierQuoteCommand { rfq_id: string; supplier_id: string; reference: string; currency: string; delivery_days: number; payment_terms_days: number; valid_until: string; reason: string; lines: Array<{ product_id: string; quantity: number; unit_price_minor: number }> }
