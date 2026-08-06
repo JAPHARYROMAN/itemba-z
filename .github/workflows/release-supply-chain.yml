@@ -35,6 +35,7 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-migrate ./cmd/migrate
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-accessctl ./cmd/accessctl
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-recoverymanifest ./cmd/recoverymanifest
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-migrationctl ./cmd/migrationctl
       - name: Build Control Center
         working-directory: apps/control-center
         run: |
@@ -65,6 +66,7 @@ jobs:
             artifacts/release/itemba-migrate
             artifacts/release/itemba-accessctl
             artifacts/release/itemba-recoverymanifest
+            artifacts/release/itemba-migrationctl
             artifacts/release/itemba-control-center.tar.gz
           sbom-path: artifacts/release/itemba-z.spdx.json
       - name: Upload controlled release bundle

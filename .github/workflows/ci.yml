@@ -35,6 +35,8 @@ jobs:
         run: node scripts/validate-wave3-controls.mjs
       - name: Validate Wave 4 platform control evidence
         run: node scripts/validate-wave4-controls.mjs
+      - name: Validate Wave 5 qualification control evidence
+        run: node scripts/validate-wave5-controls.mjs
       - name: Validate platform exercise tools
         run: node scripts/platform-load-probe.mjs --self-test
       - name: Validate observability configurations

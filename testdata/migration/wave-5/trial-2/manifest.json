@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "batch_id": "52000000-0000-4000-8000-000000000002",
+  "mode": "SYNTHETIC_REHEARSAL",
+  "trial_number": 2,
+  "mapping_version": "wave5-synthetic-v1",
+  "cutoff_at": "2026-08-06T13:00:00Z",
+  "actor_reference": "wave5-qualification-workflow",
+  "sources": [
+    {
+      "id": "52200000-0000-4000-8000-000000000002",
+      "category": "CUSTOMERS",
+      "file": "customers.ndjson",
+      "sha256": "1c782f4c906cf465eb93885d64f54a87b9407c676496961cbe0832413845ba92",
+      "byte_count": 184,
+      "expected_rows": 1,
+      "classification": "INTERNAL",
+      "owner_reference": "synthetic-qualification-fixture"
+    }
+  ],
+  "control_totals": [
+    {
+      "domain": "CUSTOMERS",
+      "metric": "row_count",
+      "unit": "COUNT",
+      "expected_value": "1"
+    }
+  ]
+}

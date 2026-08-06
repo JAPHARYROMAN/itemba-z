@@ -36,6 +36,15 @@ Wave 0 repository inventory, full-stack verification, Release 1 classification, 
   Cloud/provider binding, managed backups and PITR, live telemetry/paging,
   production-like load/failover/restore evidence and Operations acceptance
   remain external production gates.
+- Wave 5 repository-controlled work is complete with a strict checksum-bound
+  migration manifest, privileged serializable staging, append-only batch facts,
+  exact-decimal ten-domain reconciliation, two synthetic CI rehearsals, an
+  executable qualification matrix and accountable acceptance records. Synthetic
+  batches cannot cross production lifecycle gates, and final cutover cannot
+  validate without distinct reconciled production trials 1 and 2 on the same
+  mapping version. Real source mappings, trial signatures, payroll parallels,
+  human UAT, penetration/production-like exercises, defect closure and named
+  pilot approvals remain external production gates.
 - Versioned OpenAPI read and command boundaries for working context, customers, products, sales, linked reversals, device enrollment, and idempotent mobile synchronization, with checked TypeScript and Dart bindings.
 - Next.js bilingual Control Center workspaces backed only by live APIs for sales, customer accounts, commercial operations, inventory operations, POS governance, offline reconciliation, and cash/bank reconciliation. Remaining generic module screens are demonstrations until their APIs are built.
 - Flutter Android Sales POS live transport with encrypted SQLCipher state, Android-Keystore-backed credentials, immutable catalog-snapshot download and acknowledgement, bounded server-issued cache leases, authoritative offline limits and stock allocations, durable queued sales, idempotent synchronization, and truthful internal-versus-fiscal receipt state. Offline posting is currently fail-closed except for physical CASH and zero-rated lines.
@@ -73,7 +82,7 @@ Wave 0 repository inventory, full-stack verification, Release 1 classification, 
 - Select and register the production identity provider, approve and test MFA/claims/revocation policies against the implemented browser-session lifecycle; deploy the API and clients behind managed TLS, provision production devices, and add governed queue-support workflows.
 - Select providers and implement and professionally validate the contract-specific TRA EFD/VFD, payment, banking-import, email, WhatsApp, payroll/statutory, privacy, hosting, and cross-border-transfer adapters on the repository-complete Wave 3 delivery spine.
 - Add effective-dated Tanzanian configuration only after accountant, tax, payroll, and legal approval; no statutory values may be hardcoded.
-- Execute source-data assessment, cleansing, two trial migrations, stock verification, opening-balance reconciliation, parallel payroll runs, training, pilot rollout, hypercare, penetration/load/recovery tests, and every gate in `release-gates.md`.
+- Use the implemented Wave 5 migration assurance pipeline to execute real source-data assessment, mapping adapters, cleansing, two signed production trial migrations, stock verification, opening-balance reconciliation, parallel payroll runs, training, UAT, penetration/load/recovery qualification and every gate in `release-gates.md`.
 - Bind the implemented Wave 4 platform contracts to the selected hosting
   provider: production secret management, reviewed provider Terraform,
   registry/deployment adapter, protected reviewers, live dashboards and paging,

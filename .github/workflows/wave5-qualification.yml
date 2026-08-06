@@ -1,0 +1,103 @@
+name: Wave 5 migration qualification
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "27 2 * * 2"
+  pull_request:
+    paths:
+      - ".github/workflows/wave5-qualification.yml"
+      - "services/core-api/cmd/migrationctl/**"
+      - "services/core-api/internal/platform/migrationassurance/**"
+      - "services/core-api/migrations/**"
+      - "testdata/migration/wave-5/**"
+      - "docs/implementation/evidence/wave-5/**"
+      - "scripts/validate-wave5-controls.mjs"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wave5-qualification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-migration-control-rehearsal:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: itemba_z_wave5
+          POSTGRES_USER: itemba_z_wave5
+          POSTGRES_PASSWORD: ci-only-wave5-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U itemba_z_wave5 -d itemba_z_wave5"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://itemba_z_wave5:ci-only-wave5-password@127.0.0.1:5432/itemba_z_wave5?sslmode=disable
+      PGPASSWORD: ci-only-wave5-password
+      ITEMBA_QUALIFICATION_DATA_CLASS: SYNTHETIC_REHEARSAL
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/core-api/go.mod
+          cache-dependency-path: services/core-api/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate repository qualification contract
+        run: node scripts/validate-wave5-controls.mjs
+      - name: Test and build privileged migration tool
+        working-directory: services/core-api
+        run: |
+          go test -race ./internal/platform/migrationassurance ./cmd/migrationctl
+          go build -trimpath -o "$RUNNER_TEMP/itemba-migrationctl" ./cmd/migrationctl
+          go run ./cmd/migrate
+      - name: Validate and stage synthetic rehearsal one
+        run: |
+          "$RUNNER_TEMP/itemba-migrationctl" validate --manifest testdata/migration/wave-5/trial-1/manifest.json --source-root testdata/migration/wave-5/trial-1 > "$RUNNER_TEMP/synthetic-trial-1-validation.json"
+          "$RUNNER_TEMP/itemba-migrationctl" stage --manifest testdata/migration/wave-5/trial-1/manifest.json --source-root testdata/migration/wave-5/trial-1 > "$RUNNER_TEMP/synthetic-trial-1-stage.json"
+          "$RUNNER_TEMP/itemba-migrationctl" stage --manifest testdata/migration/wave-5/trial-1/manifest.json --source-root testdata/migration/wave-5/trial-1 > "$RUNNER_TEMP/synthetic-trial-1-idempotent-replay.json"
+          "$RUNNER_TEMP/itemba-migrationctl" evidence --batch-id 51000000-0000-4000-8000-000000000001 > "$RUNNER_TEMP/synthetic-trial-1-evidence.json"
+          grep -q '"staged_rows": 1' "$RUNNER_TEMP/synthetic-trial-1-idempotent-replay.json"
+      - name: Validate and stage synthetic rehearsal two
+        run: |
+          "$RUNNER_TEMP/itemba-migrationctl" validate --manifest testdata/migration/wave-5/trial-2/manifest.json --source-root testdata/migration/wave-5/trial-2 > "$RUNNER_TEMP/synthetic-trial-2-validation.json"
+          "$RUNNER_TEMP/itemba-migrationctl" stage --manifest testdata/migration/wave-5/trial-2/manifest.json --source-root testdata/migration/wave-5/trial-2 > "$RUNNER_TEMP/synthetic-trial-2-stage.json"
+          "$RUNNER_TEMP/itemba-migrationctl" evidence --batch-id 52000000-0000-4000-8000-000000000002 > "$RUNNER_TEMP/synthetic-trial-2-evidence.json"
+      - name: Prove synthetic evidence cannot cross the production gate
+        run: |
+          if "$RUNNER_TEMP/itemba-migrationctl" transition --batch-id 51000000-0000-4000-8000-000000000001 --expected-status STAGED --next-status VALIDATED --actor qualification-workflow --evidence-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; then
+            echo "Synthetic rehearsal crossed a production migration gate"
+            exit 1
+          fi
+      - name: Prove runtime roles cannot read restricted staging data
+        working-directory: services/core-api
+        env:
+          ITEMBA_RUNTIME_USER: itemba_z_wave5_api
+          ITEMBA_RUNTIME_PASSWORD: ci-only-runtime-password
+          ITEMBA_RUNTIME_CAPABILITY: api
+        run: |
+          go run ./cmd/devdbrole
+          result="$(docker run --rm --network host -e PGPASSWORD postgres:16-alpine psql --host 127.0.0.1 --username itemba_z_wave5 --dbname itemba_z_wave5 --tuples-only --no-align --command "SELECT has_table_privilege('itemba_z_wave5_api','itembaz.migration_stage_rows','SELECT')")"
+          test "$result" = "f"
+      - name: Retain synthetic control evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave5-synthetic-migration-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/synthetic-trial-1-validation.json
+            ${{ runner.temp }}/synthetic-trial-1-stage.json
+            ${{ runner.temp }}/synthetic-trial-1-idempotent-replay.json
+            ${{ runner.temp }}/synthetic-trial-1-evidence.json
+            ${{ runner.temp }}/synthetic-trial-2-validation.json
+            ${{ runner.temp }}/synthetic-trial-2-stage.json
+            ${{ runner.temp }}/synthetic-trial-2-evidence.json
+          if-no-files-found: error
+          retention-days: 90

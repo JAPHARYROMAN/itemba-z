@@ -238,6 +238,15 @@ production exit gate is not closed.
 
 Planning range: 6–8 weeks; Trial 1 can begin once Wave 0 mappings are stable
 
+Repository control status: **COMPLETE**. The checksum-bound privileged staging
+tool, append-only lifecycle, exact reconciliation contract, synthetic control
+rehearsals, machine-readable qualification matrix, CI gate, runbook and
+acceptance checklist are implemented. Release exit status remains
+**BLOCKED_EXTERNAL**: real sources and mapping adapters, two signed production
+trials, payroll parallel runs, independent UAT/security/production-like
+exercises, defect closure and named approvals cannot be produced from this
+repository. See the [Wave 5 evidence index](evidence/wave-5/README.md).
+
 ### Migration rehearsals
 
 - Build a repeatable, checksum-bound, batch-audited staging and import pipeline.
