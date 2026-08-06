@@ -13,7 +13,17 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-Copy `.env.example` to `.env.local` and replace the UUIDs with identities seeded by the local core API. Development identity headers are enabled only when both `ITEMBA_ENV=development` and `ITEMBA_DEV_IDENTITY_ENABLED=true`; they are never accepted in staging or production. Production uses a server-side OIDC bearer session from the `itemba_oidc_access_token` HTTP-only cookie (the cookie name is configurable) or a trusted proxy-injected `Authorization: Bearer` header. Tokens are forwarded only by the server BFF and never enter browser JavaScript.
+Copy `.env.example` to `.env.local` and replace the UUIDs with identities seeded by the local core API. Development identity headers are enabled only when both `ITEMBA_ENV=development` and `ITEMBA_DEV_IDENTITY_ENABLED=true`; they are never accepted in staging or production.
+
+Production browser authentication uses provider-neutral OpenID Connect authorization code flow with PKCE, state and nonce validation. The callback validates the ID token and issues a short-lived HttpOnly access-token cookie plus an authenticated-encryption session cookie. The access token is forwarded only by the server BFF and never enters browser JavaScript. Active sessions renew through rotating refresh tokens; inactivity and absolute lifetime are enforced independently. Logout clears local credentials, requests access/refresh revocation when the provider exposes RFC 7009, and invokes provider logout when available.
+
+Production requires the OIDC, origin and session variables documented in `.env.example`. Generate a 32-byte base64url encryption key with Node.js, then place it in the deployment secret manager rather than an environment file committed to source:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+`ITEMBA_SESSION_ENCRYPTION_KEYS` uses `key-id:base64url-key` entries. Add a new key first, retain the old key after it during the maximum session lifetime, and then remove the old key. In production, use `__Host-` cookie names where the hosting platform supports them. OIDC discovery, client authentication and refresh/revocation calls fail closed; a refresh token too large for a safely bounded encrypted cookie is also rejected rather than truncated.
 
 Live sales fail closed when authentication, configuration, or the core API is unavailable. The interface explicitly reports that state and never substitutes demonstration sales.
 

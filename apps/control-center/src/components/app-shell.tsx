@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
-  Bell, ChartNoAxesCombined, ChevronDown, CircleHelp, ClipboardList,
-  Landmark, LayoutDashboard, LogOut, Menu, PackageOpen, Search, Settings2, ShieldCheck,
+  Bell, ChartNoAxesCombined, ClipboardList,
+  Landmark, LayoutDashboard, Menu, PackageOpen, Search, Settings2,
   ShoppingCart, Smartphone, Truck, UserRoundCog, UsersRound, Wifi, X, ListChecks,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -14,6 +14,7 @@ import { LiveContextStrip } from "@/components/live-sales/live-context-strip";
 import { useLanguage } from "@/components/language-provider";
 import { navigationGroups, type NavigationIcon } from "@/lib/navigation";
 import { text } from "@/lib/i18n";
+import { SessionControl } from "@/components/session-control";
 
 const iconMap: Record<NavigationIcon, LucideIcon> = {
   dashboard: LayoutDashboard, customers: UsersRound, suppliers: Truck, sales: ShoppingCart,
@@ -27,6 +28,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const pathname = usePathname();
   const { locale, setLocale, t, l } = useLanguage();
   const [navigationOpen, setNavigationOpen] = useState(false);
+
+  if (pathname === "/login") return <>{children}</>;
 
   return (
     <div className="app-shell">
@@ -88,15 +91,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                   <Link href="/finance"><span className="notice-dot info" /><span><strong>{t("bankReconciliation")}</strong><small>{t("unmatchedItems")}</small></span></Link>
                 </div>
               </details>
-              <details className="header-popover profile-popover">
-                <summary className="profile-summary"><span className="avatar">OP</span><span className="profile-copy"><strong>{l(text("Signed-in operator", "Mtumiaji aliyeingia"))}</strong><small>{l(text("Live ERP identity", "Utambulisho wa ERP hai"))}</small></span><ChevronDown size={15} /></summary>
-                <div className="popover-panel profile-panel">
-                  <p><span>{t("signedInAs")}</span><strong>{l(text("OIDC session", "Kikao cha OIDC"))}</strong></p>
-                  <button type="button"><CircleHelp size={17} />{t("help")}</button>
-                  <button type="button"><ShieldCheck size={17} />{t("securityAccess")}</button>
-                  <button type="button"><LogOut size={17} />{t("signOut")}</button>
-                </div>
-              </details>
+              <SessionControl />
             </div>
           </div>
           <LiveContextStrip />

@@ -10,6 +10,10 @@ Restricted assets include payroll and identity data, supplier bank details, cust
 | --- | --- |
 | Cross-tenant or cross-company access | Tenant and company keys in owned tables and constraints; backend policy checks; PostgreSQL RLS as defense in depth; synthetic two-tenant tests |
 | Privilege escalation | OIDC, short-lived tokens, MFA for sensitive roles, contextual RBAC, separation of duties, reauthentication, immutable permission-change audit |
+| Login interception or callback replay | Authorization code flow with per-attempt PKCE verifier, cryptographically random state and nonce, one-time encrypted transaction cookie, exact callback URL, short transaction expiry |
+| Browser session theft or fixation | HttpOnly/Secure/SameSite cookies, authenticated encryption with purpose-bound key rotation, new session ID after callback, no refresh token in browser JavaScript, bounded cookie size |
+| Stale or abandoned browser session | Short-lived access tokens, active-use renewal, independent inactivity and absolute timeouts, forced reauthentication, local deletion and provider revocation/logout when supported |
+| Cross-site session mutation | Exact Origin or same-origin Fetch Metadata validation on heartbeat/renewal and logout; unsafe post-login redirects collapse to `/` |
 | Duplicate or replayed transactions | Idempotency keys, mobile device/transaction uniqueness, request hashing, original-response replay, database uniqueness constraints |
 | Silent financial or stock tampering | Append-only ledgers, immutable posted documents, linked reversals, balanced-journal constraints, actor/reason/approval audit |
 | Lost or stolen mobile device | Device approval and suspension, encrypted local data, scoped cache, token rotation, remote invalidation, offline value and stock limits |
@@ -19,4 +23,4 @@ Restricted assets include payroll and identity data, supplier bank details, cust
 
 ## Security gates
 
-Threat-model review, dependency and secret scanning, static analysis, permission tests, API abuse tests, penetration testing, backup restoration, incident simulation, and privacy impact assessment are release requirements. Unresolved critical or high findings block production.
+Threat-model review, dependency and secret scanning, static analysis, permission tests, API abuse tests, penetration testing, backup restoration, incident simulation, and privacy impact assessment are release requirements. Unresolved critical or high findings block production. The production IdP, MFA rules, revocation/end-session support, client registration, claims mapping and emergency-access procedure remain release gates until owner-approved evidence exists.

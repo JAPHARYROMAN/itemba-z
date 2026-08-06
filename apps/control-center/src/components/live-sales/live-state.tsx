@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, RefreshCw, Radio, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 import type { PublicProblem, WorkingContext } from "@/live-api/types";
 import { useLanguage } from "@/components/language-provider";
 import { text } from "@/lib/i18n";
@@ -29,7 +30,11 @@ export function LiveUnavailable({ problem }: { problem: PublicProblem }) {
           "Control Center haikuweza kuunganisha ERP hai kwa uthibitisho. Hakuna data ya maonyesho iliyotumika badala yake.",
         ))}</p>
         <div className="problem-detail"><ShieldCheck size={16} /><span><strong>{problem.code}</strong>{problem.detail}{problem.correlation_id ? <small>Correlation · {problem.correlation_id}</small> : null}</span></div>
-        <button type="button" className="primary-button" onClick={() => window.location.reload()}><RefreshCw size={16} />{l(text("Try live connection again", "Jaribu muunganisho tena"))}</button>
+        {problem.code === "oidc_session_required" ? (
+          <Link className="primary-button" href="/api/auth/login"><ShieldCheck size={16} />{l(text("Sign in to live ERP", "Ingia kwenye ERP hai"))}</Link>
+        ) : (
+          <button type="button" className="primary-button" onClick={() => window.location.reload()}><RefreshCw size={16} />{l(text("Try live connection again", "Jaribu muunganisho tena"))}</button>
+        )}
       </div>
     </section>
   );
