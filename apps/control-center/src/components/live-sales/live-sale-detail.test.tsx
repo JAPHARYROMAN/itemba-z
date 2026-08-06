@@ -32,6 +32,7 @@ const workspace: SaleDetailWorkspace = {
   products: [
     { id: "00000000-0000-4000-8000-000000000020", code: "SKU-20", name: "Itemba Water 1.5L", unit: "CASE", currency: "TZS", unit_price_minor: 12_000, available_quantity: 10, price_version: 1, master_data_version: 1, tax_basis_points: 0 },
   ],
+  documents: [],
   sale: {
     id: "00000000-0000-4000-8000-000000000030",
     scope: {
@@ -99,7 +100,7 @@ describe("LiveSaleDetail", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Reason for reversal" }), { target: { value: "Verified customer return" } });
     fireEvent.click(screen.getByRole("checkbox", { name: /I confirm that this sale must be reversed/ }));
     fireEvent.click(screen.getByRole("button", { name: "Post linked reversal" }));
-    await screen.findByText(/same reversal reason retains its idempotency key/i);
+    await screen.findByText(/safely preserved this correction attempt/i);
     const firstKey = new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("Idempotency-Key");
     firstView.unmount();
 

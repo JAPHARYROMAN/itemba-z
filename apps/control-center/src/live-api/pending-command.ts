@@ -82,6 +82,14 @@ export function customerCreditPolicyPendingScope(context: PendingCommandOwnerCon
   return `customers:credit-policy:${commandOwnerScope(context)}:customer=${encodeURIComponent(customerId)}`;
 }
 
+export function operationCreatePendingScope(context: PendingCommandOwnerContext, workflow: string): string {
+  return `operations:create:${commandOwnerScope(context)}:workflow=${encodeURIComponent(workflow)}`;
+}
+
+export function operationTransitionPendingScope(context: PendingCommandOwnerContext, documentId: string): string {
+  return `operations:transition:${commandOwnerScope(context)}:document=${encodeURIComponent(documentId)}`;
+}
+
 export function pendingCommandStorageKey(scope: string): string {
   return `${STORAGE_PREFIX}${scope}`;
 }

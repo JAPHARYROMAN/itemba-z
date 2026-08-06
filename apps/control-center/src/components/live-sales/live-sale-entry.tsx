@@ -56,20 +56,21 @@ function isCompleteSaleCommand(value: unknown): value is CompleteSaleCommand {
   });
 }
 
-export function LiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
-  return <ScopedLiveSaleEntry key={saleCompletionPendingScope(bootstrap.context)} bootstrap={bootstrap} />;
+export function LiveSaleEntry({ bootstrap, initialSourceDocumentId = "" }: { bootstrap: SalesBootstrap; initialSourceDocumentId?: string }) {
+  return <ScopedLiveSaleEntry key={`${saleCompletionPendingScope(bootstrap.context)}:${initialSourceDocumentId}`} bootstrap={bootstrap} initialSourceDocumentId={initialSourceDocumentId} />;
 }
 
-function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
+function ScopedLiveSaleEntry({ bootstrap, initialSourceDocumentId }: { bootstrap: SalesBootstrap; initialSourceDocumentId: string }) {
   const { locale, l } = useLanguage();
   const router = useRouter();
+  const initialOrder = bootstrap.documents.find((document) => document.id === initialSourceDocumentId && document.type === "SALES_ORDER" && document.status === "APPROVED");
   const [kind, setKind] = useState<SaleKind>("CASH");
-  const [customerId, setCustomerId] = useState("");
-  const [sourceDocumentId, setSourceDocumentId] = useState("");
+  const [customerId, setCustomerId] = useState(initialOrder?.party_id ?? "");
+  const [sourceDocumentId, setSourceDocumentId] = useState(initialOrder?.id ?? "");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
-  const [cart, setCart] = useState<CartLine[]>([]);
+  const [cart, setCart] = useState<CartLine[]>(() => initialOrder?.lines.map((line) => ({ productId: line.product_id, quantity: line.quantity })) ?? []);
   const [reviewing, setReviewing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
@@ -78,6 +79,12 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
   const pendingStore = usePendingCommand<unknown>(pendingScope);
 
   const productsById = useMemo(() => new Map(bootstrap.products.map((product) => [product.id, product])), [bootstrap.products]);
+  const customersById = useMemo(() => new Map(bootstrap.customers.map((customer) => [customer.id, customer])), [bootstrap.customers]);
+  const approvedOrders = useMemo(
+    () => bootstrap.documents.filter((document) => document.type === "SALES_ORDER" && document.status === "APPROVED"),
+    [bootstrap.documents],
+  );
+  const selectedOrder = approvedOrders.find((document) => document.id === sourceDocumentId);
   const selectedCustomer = bootstrap.customers.find((customer) => customer.id === customerId);
   const visibleProducts = useMemo(() => {
     const normalized = deferredQuery.trim().toLocaleLowerCase();
@@ -124,6 +131,20 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
     if (nextKind === "CREDIT" && selectedCustomer && (selectedCustomer.is_general_customer || !selectedCustomer.credit_enabled)) setCustomerId("");
   }
 
+  function selectSourceDocument(documentId: string) {
+    setSourceDocumentId(documentId);
+    setReviewing(false);
+    setProblem(null);
+    const document = approvedOrders.find((candidate) => candidate.id === documentId);
+    if (!document) {
+      setCustomerId("");
+      setCart([]);
+      return;
+    }
+    setCustomerId(document.party_id ?? "");
+    setCart(document.lines.map((line) => ({ productId: line.product_id, quantity: line.quantity })));
+  }
+
   function changeQuantity(productId: string, change: number) {
     setReviewing(false);
     setProblem(null);
@@ -163,7 +184,7 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
         ? "A different sale is still awaiting an authoritative result. Restore that exact sale or reconcile it in the live sales register before posting another."
         : error instanceof PendingCommandStorageError
           ? error.message
-          : "The idempotency key could not be preserved, so the sale was not sent.";
+          : "Safe retry information could not be preserved, so the sale was not sent. Start the sale again.";
       setProblem({ type: "about:blank", title: "Sale not sent", status: 409, code: "pending_sale_conflict", detail });
       return;
     }
@@ -198,7 +219,7 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
       router.push(`/sales/${sale.id}`);
       router.refresh();
     } catch {
-      setProblem({ type: "about:blank", title: "Connection interrupted", status: 503, code: "bff_unavailable", detail: "The same idempotency key is preserved. Retry to safely check or complete this exact sale." });
+      setProblem({ type: "about:blank", title: "Connection interrupted", status: 503, code: "bff_unavailable", detail: "We safely preserved this sale attempt. Retry to confirm or complete the same sale without posting it twice." });
     } finally {
       setSubmitting(false);
     }
@@ -211,7 +232,7 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
         <div><div className="heading-badges"><LiveBadge context={bootstrap.context} /><span className="scope-chip">{bootstrap.context.branch_name}</span></div><h1>{l(text("Complete controlled sale", "Kamilisha mauzo yaliyodhibitiwa"))}</h1><p>{l(text("Choose the customer and quantities. The live ERP owns price, tax, stock, credit and every posting effect.", "Chagua mteja na idadi. ERP hai inadhibiti bei, kodi, bidhaa, mkopo na athari zote za uchapishaji."))}</p></div>
       </section>
 
-      {pendingRecovery ? <aside className={`pending-command-banner ${pendingRecovery.expired ? "pending-command-stale" : ""}`} role="status"><History size={19} /><div><strong>{l(text("Unconfirmed sale recovered", "Mauzo yasiyothibitishwa yamerejeshwa"))}</strong><p>{pendingRecovery.record.outcome === "rejected" ? l(text("The ERP rejected the previous attempt without posting. Restore it before making any correction; the protected command identity will be retained.", "ERP ilikataa jaribio la awali bila kuchapisha. Irejeshe kabla ya marekebisho; utambulisho salama wa amri utahifadhiwa.")) : l(text("The exact customer, quantities and idempotency key are preserved in this browser tab. Restore and retry to retrieve or complete the one authoritative result.", "Mteja, idadi na ufunguo wa kutorudia vimehifadhiwa kwenye kichupo hiki. Rejesha na ujaribu kupata au kukamilisha matokeo moja rasmi."))}</p><small>{l(text("Preserved", "Imehifadhiwa"))} · {formatTimestamp(new Date(pendingRecovery.record.createdAt).toISOString(), locale, bootstrap.context.timezone)} · {compactId(pendingRecovery.record.key)}{pendingRecovery.expired ? ` · ${l(text("reconciliation recommended", "upatanisho unapendekezwa"))}` : ""}</small></div><div className="pending-command-actions"><button type="button" className="secondary-button" onClick={() => restorePendingSale(pendingRecovery.record.payload)}>{l(text("Restore exact sale", "Rejesha mauzo halisi"))}</button><Link className="secondary-button" href="/sales">{l(text("Check live sales", "Kagua mauzo hai"))}</Link></div></aside> : null}
+      {pendingRecovery ? <aside className={`pending-command-banner ${pendingRecovery.expired ? "pending-command-stale" : ""}`} role="status"><History size={19} /><div><strong>{l(text("Unconfirmed sale recovered", "Mauzo yasiyothibitishwa yamerejeshwa"))}</strong><p>{pendingRecovery.record.outcome === "rejected" ? l(text("The ERP rejected the previous attempt without posting. Restore it before making any correction; its safe retry details will be retained.", "ERP ilikataa jaribio la awali bila kuchapisha. Irejeshe kabla ya marekebisho; maelezo salama ya kujaribu tena yatahifadhiwa.")) : l(text("The customer and quantities from this sale attempt are safely preserved in this browser tab. Restore and retry to confirm or complete the same sale without posting it twice.", "Mteja na idadi za jaribio hili la mauzo zimehifadhiwa salama kwenye kichupo hiki. Rejesha na ujaribu tena kuthibitisha au kukamilisha mauzo yale yale bila kuyachapisha mara mbili."))}</p><small>{l(text("Preserved", "Imehifadhiwa"))} · {formatTimestamp(new Date(pendingRecovery.record.createdAt).toISOString(), locale, bootstrap.context.timezone)}{pendingRecovery.expired ? ` · ${l(text("reconciliation recommended", "upatanisho unapendekezwa"))}` : ""}</small></div><div className="pending-command-actions"><button type="button" className="secondary-button" onClick={() => restorePendingSale(pendingRecovery.record.payload)}>{l(text("Restore exact sale", "Rejesha mauzo halisi"))}</button><Link className="secondary-button" href="/sales">{l(text("Check live sales", "Kagua mauzo hai"))}</Link></div></aside> : null}
 
       <div className="sale-entry-layout">
         <div className="sale-entry-main">
@@ -220,9 +241,9 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
             <fieldset className="sale-kind-picker"><legend className="sr-only">{l(text("Sale kind", "Aina ya mauzo"))}</legend><button type="button" className={kind === "CASH" ? "active" : ""} aria-pressed={kind === "CASH"} onClick={() => selectKind("CASH")}><ReceiptText size={18} /><span><strong>{l(text("Cash sale", "Mauzo ya fedha"))}</strong><small>{l(text("Payment posts now", "Malipo yanachapishwa sasa"))}</small></span></button><button type="button" className={kind === "CREDIT" ? "active" : ""} aria-pressed={kind === "CREDIT"} onClick={() => selectKind("CREDIT")}><ShieldCheck size={18} /><span><strong>{l(text("Credit sale", "Mauzo ya mkopo"))}</strong><small>{l(text("Eligible accounts only", "Akaunti zinazostahili tu"))}</small></span></button></fieldset>
 
             <div className="sale-field-grid">
-              <label><span>{l(text("Customer", "Mteja"))}</span><select value={customerId} onChange={(event) => { setCustomerId(event.target.value); setReviewing(false); setProblem(null); }}><option value="">{l(text("Select an active customer", "Chagua mteja hai"))}</option>{bootstrap.customers.filter((customer) => customer.status === "active").map((customer) => <option key={customer.id} value={customer.id} disabled={kind === "CREDIT" && (customer.is_general_customer || !customer.credit_enabled)}>{customer.code} · {customer.name}{customer.is_general_customer ? ` · ${l(text("Cash only", "Fedha tu"))}` : ""}</option>)}</select></label>
+              <label><span>{l(text("Customer", "Mteja"))}</span><select disabled={Boolean(selectedOrder)} value={customerId} onChange={(event) => { setCustomerId(event.target.value); setReviewing(false); setProblem(null); }}><option value="">{l(text("Select an active customer", "Chagua mteja hai"))}</option>{bootstrap.customers.filter((customer) => customer.status === "active").map((customer) => <option key={customer.id} value={customer.id} disabled={kind === "CREDIT" && (customer.is_general_customer || !customer.credit_enabled)}>{customer.code} · {customer.name}{customer.is_general_customer ? ` · ${l(text("Cash only", "Fedha tu"))}` : ""}</option>)}</select></label>
               {kind === "CASH" ? <label><span>{l(text("Payment method", "Njia ya malipo"))}</span><select value={paymentMethod} onChange={(event) => { if (isPaymentMethod(event.target.value)) setPaymentMethod(event.target.value); setReviewing(false); }}>{PAYMENT_METHODS.map((method) => <option key={method} value={method}>{l(PAYMENT_METHOD_LABELS[method])}</option>)}</select></label> : <div className={`credit-policy ${selectedCustomer && !creditAllowed ? "credit-policy-blocked" : ""}`}><span>{l(text("Available credit", "Mkopo unaopatikana"))}</span><strong>{selectedCustomer ? formatMinorUnits(selectedCustomer.available_credit_minor, bootstrap.context.currency, locale) : "—"}</strong><small>{selectedCustomer ? (creditAllowed ? l(text("Account eligible", "Akaunti inastahili")) : l(text("Credit is not allowed", "Mkopo hauruhusiwi"))) : l(text("Select an eligible customer", "Chagua mteja anayestahili"))}</small></div>}
-			  <label><span>{l(text("Approved sales order (optional)", "Oda ya mauzo iliyoidhinishwa (hiari)"))}</span><input value={sourceDocumentId} onChange={(event) => { setSourceDocumentId(event.target.value); setReviewing(false); }} placeholder={l(text("Order UUID for atomic fulfilment", "UUID ya oda kwa utimizaji wa pamoja"))} /></label>
+			  <label><span>{l(text("Approved sales order (optional)", "Oda ya mauzo iliyoidhinishwa (hiari)"))}</span><select value={sourceDocumentId} onChange={(event) => selectSourceDocument(event.target.value)}><option value="">{approvedOrders.length ? l(text("Choose an approved order", "Chagua oda iliyoidhinishwa")) : l(text("No approved orders available", "Hakuna oda zilizoidhinishwa"))}</option>{approvedOrders.map((document) => <option key={document.id} value={document.id}>{document.number} · {customersById.get(document.party_id ?? "")?.name ?? l(text("Customer", "Mteja"))}</option>)}</select>{selectedOrder ? <small>{l(text("Customer and quantities are locked to the approved order.", "Mteja na idadi zimefungwa kulingana na oda iliyoidhinishwa."))}</small> : null}</label>
             </div>
           </section>
 
@@ -231,7 +252,7 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
             <label className="product-search"><Search size={17} /><span className="sr-only">{l(text("Search products", "Tafuta bidhaa"))}</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={l(text("Search code or product…", "Tafuta namba au bidhaa…"))} /></label>
             <div className="product-picker">{visibleProducts.length ? visibleProducts.map((product) => {
               const line = cart.find((item) => item.productId === product.id);
-              return <article key={product.id}><div><span>{product.code} · {product.unit}</span><strong>{product.name}</strong><small>{formatMinorUnits(product.unit_price_minor, product.currency, locale)} · {product.available_quantity} {l(text("available", "zinapatikana"))}</small></div><div className="quantity-control"><button type="button" onClick={() => changeQuantity(product.id, -1)} disabled={!line} aria-label={`${l(text("Remove one", "Ondoa moja"))} ${product.name}`}><Minus size={15} /></button><output aria-live="polite">{line?.quantity ?? 0}</output><button type="button" onClick={() => changeQuantity(product.id, 1)} disabled={(line?.quantity ?? 0) >= product.available_quantity || product.available_quantity < 1} aria-label={`${l(text("Add one", "Ongeza moja"))} ${product.name}`}><Plus size={15} /></button></div></article>;
+              return <article key={product.id}><div><span>{product.code} · {product.unit}</span><strong>{product.name}</strong><small>{formatMinorUnits(product.unit_price_minor, product.currency, locale)} · {product.available_quantity} {l(text("available", "zinapatikana"))}</small></div><div className="quantity-control"><button type="button" onClick={() => changeQuantity(product.id, -1)} disabled={Boolean(selectedOrder) || !line} aria-label={`${l(text("Remove one", "Ondoa moja"))} ${product.name}`}><Minus size={15} /></button><output aria-live="polite">{line?.quantity ?? 0}</output><button type="button" onClick={() => changeQuantity(product.id, 1)} disabled={Boolean(selectedOrder) || (line?.quantity ?? 0) >= product.available_quantity || product.available_quantity < 1} aria-label={`${l(text("Add one", "Ongeza moja"))} ${product.name}`}><Plus size={15} /></button></div></article>;
             }) : <div className="live-empty compact"><PackageSearch size={25} /><strong>{l(text("No live products match", "Hakuna bidhaa hai zinazolingana"))}</strong></div>}</div>
           </section>
         </div>
@@ -243,7 +264,7 @@ function ScopedLiveSaleEntry({ bootstrap }: { bootstrap: SalesBootstrap }) {
           <div className="server-control-copy"><ShieldCheck size={16} /><p>{l(text("No price or tax values are sent by this browser.", "Hakuna bei au kodi inayotumwa na kivinjari hiki."))}</p></div>
           {estimatedTotal === null && cart.length ? <div className="sale-problem" role="alert"><TriangleAlert size={17} /><span><strong>unsafe_cart_total</strong>{l(text("The estimated total exceeds the browser's safe integer range. Reduce quantities before posting.", "Makadirio ya jumla yamezidi kiwango salama cha kivinjari. Punguza idadi kabla ya kuchapisha."))}</span></div> : null}
           {displayedProblem ? <div className="sale-problem" role="alert"><TriangleAlert size={17} /><span><strong>{displayedProblem.code}</strong>{displayedProblem.detail}{displayedProblem.correlation_id ? <small>Correlation · {compactId(displayedProblem.correlation_id)}</small> : null}</span></div> : null}
-          {!reviewing ? <button type="button" className="primary-button sale-submit" disabled={!canReview} onClick={() => setReviewing(true)}><Check size={17} />{l(text("Review controlled posting", "Kagua uchapishaji"))}</button> : <div className="posting-confirmation"><p><strong>{pendingRecovery ? l(text("Retry the preserved command?", "Jaribu tena amri iliyohifadhiwa?")) : l(text("Ready to post exactly once?", "Tayari kuchapisha mara moja?"))}</strong>{l(text("Stock, payment or receivable, tax, ledger, audit and outbox effects commit atomically.", "Bidhaa, malipo au deni, kodi, daftari, ukaguzi na matukio vinahifadhiwa kwa pamoja."))}</p><div><button type="button" className="secondary-button" disabled={submitting || completed} onClick={() => setReviewing(false)}><ChevronLeft size={15} />{l(text("Edit", "Hariri"))}</button><button type="button" className="primary-button" disabled={submitting || completed || !canReview} onClick={postSale}>{submitting ? l(text("Posting…", "Inachapisha…")) : pendingRecovery ? l(text("Retry with same key", "Jaribu tena kwa ufunguo uleule")) : l(text("Confirm & post", "Thibitisha na chapisha"))}</button></div></div>}
+          {!reviewing ? <button type="button" className="primary-button sale-submit" disabled={!canReview} onClick={() => setReviewing(true)}><Check size={17} />{l(text("Review controlled posting", "Kagua uchapishaji"))}</button> : <div className="posting-confirmation"><p><strong>{pendingRecovery ? l(text("Retry the preserved sale?", "Jaribu tena mauzo yaliyohifadhiwa?")) : l(text("Ready to post exactly once?", "Tayari kuchapisha mara moja?"))}</strong>{l(text("Stock, payment or receivable, tax, ledger, audit and outbox effects commit atomically.", "Bidhaa, malipo au deni, kodi, daftari, ukaguzi na matukio vinahifadhiwa kwa pamoja."))}</p><div><button type="button" className="secondary-button" disabled={submitting || completed} onClick={() => setReviewing(false)}><ChevronLeft size={15} />{l(text("Edit", "Hariri"))}</button><button type="button" className="primary-button" disabled={submitting || completed || !canReview} onClick={postSale}>{submitting ? l(text("Posting…", "Inachapisha…")) : pendingRecovery ? l(text("Retry same sale", "Jaribu tena mauzo yale yale")) : l(text("Confirm & post", "Thibitisha na chapisha"))}</button></div></div>}
         </aside>
       </div>
     </div>

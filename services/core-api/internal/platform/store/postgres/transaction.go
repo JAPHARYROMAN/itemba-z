@@ -236,12 +236,12 @@ func (t *transaction) FulfillSalesOrder(ctx context.Context, scope tenancy.Scope
 	if err := t.ensureScope(ctx, scope); err != nil {
 		return err
 	}
-	var status, partyType, partyID string
-	if err := t.tx.QueryRow(ctx, `SELECT status,party_type,COALESCE(party_id::text,'') FROM operation_documents
-		WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND id=$5 FOR UPDATE`, scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, orderID).Scan(&status, &partyType, &partyID); err != nil {
+	var documentType, status, partyType, partyID string
+	if err := t.tx.QueryRow(ctx, `SELECT document_type,status,party_type,COALESCE(party_id::text,'') FROM operation_documents
+		WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND id=$5 FOR UPDATE`, scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, orderID).Scan(&documentType, &status, &partyType, &partyID); err != nil {
 		return normalizeError(err)
 	}
-	if status != "APPROVED" || partyType != "CUSTOMER" || partyID != customerID || len(lines) != len(releaseIDs) {
+	if documentType != string(operations.SalesOrder) || status != "APPROVED" || partyType != "CUSTOMER" || partyID != customerID || len(lines) != len(releaseIDs) {
 		return operations.ErrSourceMismatch
 	}
 	rows, err := t.tx.Query(ctx, `SELECT l.product_id::text,l.quantity,l.unit_price_minor,p.list_price_minor FROM operation_document_lines l JOIN products p ON p.tenant_id=l.tenant_id AND p.company_id=l.company_id AND p.id=l.product_id WHERE l.tenant_id=$1 AND l.company_id=$2 AND l.document_id=$3`, scope.TenantID, scope.CompanyID, orderID)

@@ -586,6 +586,59 @@ func TestRelease1CrossModuleAcceptanceAndReversal(t *testing.T) {
 		}
 		return changed
 	}
+	t.Run("approved quotation cannot be fulfilled as a sales order", func(t *testing.T) {
+		const (
+			quotationID          = "00000000-0000-4000-8000-00000000f101"
+			quotationLineID      = "00000000-0000-4000-8000-00000000f102"
+			quotationCorrelation = "00000000-0000-4000-8000-00000000f103"
+		)
+		table := pgx.Identifier{schema}.Sanitize()
+		if _, insertErr := pool.Exec(ctx, `INSERT INTO `+table+`.operation_documents
+			(id,tenant_id,company_id,branch_id,warehouse_id,number,document_type,status,party_type,party_id,currency,subtotal_minor,total_minor,reason,created_by,created_at,submitted_at,approved_at,correlation_id,idempotency_key,request_hash)
+			VALUES($1,$2,$3,$4,$5,'QUOTATION-P0-REJECT','QUOTATION','APPROVED','CUSTOMER',$6,'TZS',10000,10000,'Approved quotation is not a fulfilment order',$7,$8,$8,$8,$9,'integration-quotation-seed',$10)`,
+			quotationID, tenantID, companyID, branchID, warehouseID, customerID, userID, testTime, quotationCorrelation, strings.Repeat("0", 64)); insertErr != nil {
+			t.Fatalf("insert approved quotation: %v", insertErr)
+		}
+		if _, insertErr := pool.Exec(ctx, `INSERT INTO `+table+`.operation_document_lines
+			(id,tenant_id,company_id,document_id,product_id,quantity,unit_price_minor,amount_minor)
+			VALUES($1,$2,$3,$4,$5,1,10000,10000)`, quotationLineID, tenantID, companyID, quotationID, productID); insertErr != nil {
+			t.Fatalf("insert quotation line: %v", insertErr)
+		}
+
+		readEffects := func() (salesCount, stock, reservations int64) {
+			t.Helper()
+			if queryErr := pool.QueryRow(ctx, `SELECT count(*) FROM `+table+`.sales WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4`, tenantID, companyID, branchID, warehouseID).Scan(&salesCount); queryErr != nil {
+				t.Fatalf("count sales: %v", queryErr)
+			}
+			if queryErr := pool.QueryRow(ctx, `SELECT COALESCE(sum(quantity),0)::bigint FROM `+table+`.inventory_stock_ledger WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND product_id=$5`, tenantID, companyID, branchID, warehouseID, productID).Scan(&stock); queryErr != nil {
+				t.Fatalf("sum stock: %v", queryErr)
+			}
+			if queryErr := pool.QueryRow(ctx, `SELECT COALESCE(sum(quantity),0)::bigint FROM `+table+`.inventory_reservation_ledger WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND product_id=$5`, tenantID, companyID, branchID, warehouseID, productID).Scan(&reservations); queryErr != nil {
+				t.Fatalf("sum reservations: %v", queryErr)
+			}
+			return salesCount, stock, reservations
+		}
+
+		beforeSales, beforeStock, beforeReservations := readEffects()
+		_, completeErr := service.Complete(ctx, sales.CompleteCommand{
+			Scope: scope, CustomerID: customerID, SourceDocumentID: quotationID, Kind: sales.KindCash, PaymentMethod: sales.PaymentCash,
+			Lines: []sales.CommandLine{{ProductID: productID, Quantity: 1}}, ActorID: userID, IdempotencyKey: "reject-quotation-fulfilment-01",
+		})
+		if !errors.Is(completeErr, operations.ErrSourceMismatch) {
+			t.Fatalf("complete from quotation error=%v, want %v", completeErr, operations.ErrSourceMismatch)
+		}
+		afterSales, afterStock, afterReservations := readEffects()
+		if afterSales != beforeSales || afterStock != beforeStock || afterReservations != beforeReservations {
+			t.Fatalf("rejected fulfilment changed effects: sales %d->%d stock %d->%d reservations %d->%d", beforeSales, afterSales, beforeStock, afterStock, beforeReservations, afterReservations)
+		}
+		var documentType, status string
+		if queryErr := pool.QueryRow(ctx, `SELECT document_type,status FROM `+table+`.operation_documents WHERE tenant_id=$1 AND company_id=$2 AND id=$3`, tenantID, companyID, quotationID).Scan(&documentType, &status); queryErr != nil {
+			t.Fatalf("read quotation after rejected fulfilment: %v", queryErr)
+		}
+		if documentType != string(operations.Quotation) || status != string(operations.Approved) {
+			t.Fatalf("quotation changed after rejected fulfilment: type=%s status=%s", documentType, status)
+		}
+	})
 	request := createDocument(operations.PurchaseRequest, operations.NoParty, "", "", "", 2, 0, "integration-pr-create")
 	request = advance(request, operations.Submitted, userID, "integration-pr-submit", scope)
 	request = advance(request, operations.Approved, approverID, "integration-pr-approve", scope)

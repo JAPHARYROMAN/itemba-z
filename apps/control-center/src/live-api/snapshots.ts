@@ -2,9 +2,10 @@ import "server-only";
 
 import { createServerRepository } from "@/live-api/server-repository";
 import { publicProblem } from "@/live-api/errors";
+import { listAllOperationDocuments } from "@/live-api/operation-pagination";
 import type {
   CustomerAccountWorkspace, CustomerAccountsWorkspace, DashboardWorkspace, DeviceManagementWorkspace, LiveSnapshot, MobileReconciliationStatus, ReconciliationDetailWorkspace,
-  ReconciliationWorkspace, SaleDetailWorkspace, SalesBootstrap, SalesWorkspace,
+  ReconciliationWorkspace, SaleDetailWorkspace, SalesBootstrap, SalesRegisterWorkspace, SalesWorkspace,
 	OperationsWorkspace,
 	BankingWorkspace,
 	FinanceControlWorkspace,
@@ -19,8 +20,25 @@ import type {
 	GlobalSearchWorkspace,
 	InventoryControlWorkspace,
 	IntegrationOperationsWorkspace,
+	PublicProblem,
 } from "@/live-api/types";
 import { text } from "@/lib/i18n";
+import { canAccessSalesRoute, type SalesRoute } from "@/lib/sales-permissions";
+
+function salesAccessDenied<T>(route: SalesRoute): LiveSnapshot<T> {
+  const problem: PublicProblem = {
+    type: "urn:itemba-z:control-center:permissions",
+    title: "Sales task unavailable",
+    status: 403,
+    code: "sales_task_not_permitted",
+    detail: `The current role does not have every permission required for the ${route} Sales task.`,
+  };
+  return { state: "unavailable", problem };
+}
+
+function newestDocumentsFirst(left: OperationsWorkspace["documents"][number], right: OperationsWorkspace["documents"][number]): number {
+  return Date.parse(right.created_at) - Date.parse(left.created_at) || right.id.localeCompare(left.id);
+}
 
 export async function loadDashboardWorkspace(): Promise<LiveSnapshot<DashboardWorkspace>> {
   try {
@@ -234,8 +252,15 @@ export async function loadSalesBootstrap(): Promise<LiveSnapshot<SalesBootstrap>
   try {
     const repository = await createServerRepository();
     const context = await repository.getWorkingContext();
-    const [customers, products] = await Promise.all([repository.listCustomers(), repository.listProducts()]);
-    return { state: "ready", data: { context, customers: customers.items, products: products.items } };
+    if (!canAccessSalesRoute(context.permissions, "new")) return salesAccessDenied("new");
+    const [customers, products, documents] = await Promise.all([
+      repository.listCustomers(),
+      repository.listProducts(),
+      context.permissions.includes("operations.read")
+        ? listAllOperationDocuments(repository, "SALES_ORDER")
+        : Promise.resolve([] as OperationsWorkspace["documents"]),
+    ]);
+    return { state: "ready", data: { context, customers: customers.items, products: products.items, documents: documents.filter((document) => document.status === "APPROVED").sort(newestDocumentsFirst) } };
   } catch (error) {
     return { state: "unavailable", problem: publicProblem(error) };
   }
@@ -283,10 +308,14 @@ export async function loadSalesWorkspace(cursor?: string): Promise<LiveSnapshot<
   try {
     const repository = await createServerRepository();
     const context = await repository.getWorkingContext();
-    const [customers, products, sales] = await Promise.all([
+    if (!canAccessSalesRoute(context.permissions, "overview")) return salesAccessDenied("overview");
+    const [customers, products, sales, documentPages] = await Promise.all([
       repository.listCustomers(),
       repository.listProducts(),
       repository.listSales(cursor),
+      canAccessSalesRoute(context.permissions, "documents")
+        ? Promise.all([listAllOperationDocuments(repository, "SALES_ORDER"), listAllOperationDocuments(repository, "QUOTATION")])
+        : Promise.resolve([[] as OperationsWorkspace["documents"], [] as OperationsWorkspace["documents"]]),
     ]);
     return {
       state: "ready",
@@ -295,7 +324,70 @@ export async function loadSalesWorkspace(cursor?: string): Promise<LiveSnapshot<
         customers: customers.items,
         products: products.items,
         sales: sales.items,
+        documents: documentPages.flat().sort(newestDocumentsFirst),
         nextCursor: sales.next_cursor ?? null,
+      },
+    };
+  } catch (error) {
+    return { state: "unavailable", problem: publicProblem(error) };
+  }
+}
+
+export async function loadSalesRegisterWorkspace(route: "transactions" | "returns", cursor?: string): Promise<LiveSnapshot<SalesRegisterWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const context = await repository.getWorkingContext();
+    if (!canAccessSalesRoute(context.permissions, route)) return salesAccessDenied(route);
+    const [customers, sales] = await Promise.all([
+      repository.listCustomers(),
+      repository.listSales(cursor),
+    ]);
+    return {
+      state: "ready",
+      data: {
+        context,
+        customers: customers.items,
+        sales: sales.items,
+        nextCursor: sales.next_cursor ?? null,
+      },
+    };
+  } catch (error) {
+    return { state: "unavailable", problem: publicProblem(error) };
+  }
+}
+
+export async function loadSalesPaymentWorkspace(): Promise<LiveSnapshot<SalesRegisterWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const context = await repository.getWorkingContext();
+    if (!canAccessSalesRoute(context.permissions, "payments")) return salesAccessDenied("payments");
+    const customers = await repository.listCustomers();
+    return { state: "ready", data: { context, customers: customers.items, sales: [], nextCursor: null } };
+  } catch (error) {
+    return { state: "unavailable", problem: publicProblem(error) };
+  }
+}
+
+export async function loadSalesDocumentsWorkspace(): Promise<LiveSnapshot<OperationsWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const context = await repository.getWorkingContext();
+    if (!canAccessSalesRoute(context.permissions, "documents")) return salesAccessDenied("documents");
+    const [customers, products, quotations, orders] = await Promise.all([
+      repository.listCustomers(),
+      repository.listProducts(),
+      listAllOperationDocuments(repository, "QUOTATION"),
+      listAllOperationDocuments(repository, "SALES_ORDER"),
+    ]);
+    return {
+      state: "ready",
+      data: {
+        context,
+        customers: customers.items,
+        products: products.items,
+        suppliers: [],
+        documents: [...quotations, ...orders].sort(newestDocumentsFirst),
+        nextCursor: null,
       },
     };
   } catch (error) {
@@ -312,7 +404,7 @@ export async function loadSaleDetail(saleId: string): Promise<LiveSnapshot<SaleD
       repository.listProducts(),
       repository.getSale(saleId),
     ]);
-    return { state: "ready", data: { context, customers: customers.items, products: products.items, sale } };
+    return { state: "ready", data: { context, customers: customers.items, products: products.items, documents: [], sale } };
   } catch (error) {
     return { state: "unavailable", problem: publicProblem(error) };
   }

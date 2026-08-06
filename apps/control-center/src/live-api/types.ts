@@ -118,9 +118,17 @@ export interface SalesBootstrap {
   context: WorkingContext;
   customers: CustomerSummary[];
   products: ProductSummary[];
+  documents: OperationDocument[];
 }
 
 export interface SalesWorkspace extends SalesBootstrap {
+  sales: Sale[];
+  nextCursor: string | null;
+}
+
+export interface SalesRegisterWorkspace {
+  context: WorkingContext;
+  customers: CustomerSummary[];
   sales: Sale[];
   nextCursor: string | null;
 }

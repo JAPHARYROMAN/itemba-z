@@ -1,56 +1,119 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Banknote, CircleDollarSign, Plus, ReceiptText, RotateCcw, Search, ShieldCheck } from "lucide-react";
+import { ArrowRight, ReceiptText, RotateCcw, Search, X } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
-import type { SalesWorkspace } from "@/live-api/types";
-import { compactId, formatMinorUnits, formatTimestamp } from "@/live-api/format";
-import { grossOriginalSaleMinor } from "@/live-api/sales-metrics";
-import { LiveBadge } from "@/components/live-sales/live-state";
 import { useLanguage } from "@/components/language-provider";
-import { text } from "@/lib/i18n";
+import { SalesModuleNav } from "@/components/sales/sales-module-nav";
+import { formatMinorUnits, formatTimestamp } from "@/live-api/format";
+import type { Sale, SalesRegisterWorkspace } from "@/live-api/types";
+import { salesCopy, type SalesCopyKey } from "@/lib/sales-copy";
+import { saleBusinessReference, saleNeedsAttention, saleStatusPresentation } from "@/lib/sales-presentation";
+import styles from "@/components/sales/sales-home.module.css";
 
-export function LiveSalesList({ workspace }: { workspace: SalesWorkspace }) {
-  const { locale, l } = useLanguage();
+type StatusFilter = "ALL" | "POSTED" | "REVERSED" | "EXCEPTION";
+
+function matchesStatus(sale: Sale, filter: StatusFilter): boolean {
+  if (filter === "ALL") return true;
+  if (filter === "POSTED") return sale.record_type === "SALE" && sale.status === "POSTED";
+  if (filter === "REVERSED") return sale.record_type === "REVERSAL" || sale.status === "REVERSED";
+  return saleNeedsAttention(sale);
+}
+
+export function LiveSalesList({ workspace, intent, initialStatus }: { workspace: SalesRegisterWorkspace; intent?: string; initialStatus?: string }) {
+  const { locale } = useLanguage();
+  const copy = (key: SalesCopyKey) => salesCopy(locale, key);
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
+  const validInitialStatus = ["POSTED", "REVERSED", "EXCEPTION"].includes(initialStatus ?? "") ? initialStatus as StatusFilter : "ALL";
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(intent === "return" ? "POSTED" : validInitialStatus);
+  const registerTitle = copy(intent === "return" ? "returnsRegister" : "transactionRegister");
+  const registerIntro = copy(intent === "return" ? "returnsRegisterIntro" : "transactionRegisterIntro");
+  const listTitle = copy(intent === "return" ? "eligibleSales" : "transactions");
   const customers = useMemo(() => new Map(workspace.customers.map((customer) => [customer.id, customer])), [workspace.customers]);
+
   const filteredSales = useMemo(() => {
-    const normalized = deferredQuery.trim().toLocaleLowerCase();
-    if (!normalized) return workspace.sales;
-    return workspace.sales.filter((sale) => {
-      const customer = customers.get(sale.customer_id);
-      return [sale.id, customer?.name, customer?.code, sale.kind, sale.status, sale.record_type]
-        .filter(Boolean).join(" ").toLocaleLowerCase().includes(normalized);
-    });
-  }, [customers, deferredQuery, workspace.sales]);
-  const originalSaleTotalMinor = grossOriginalSaleMinor(workspace.sales);
-  const cashCount = workspace.sales.filter((sale) => sale.kind === "CASH" && sale.record_type === "SALE").length;
-  const reversedCount = workspace.sales.filter((sale) => sale.status === "REVERSED" || sale.record_type === "REVERSAL").length;
+    const normalized = deferredQuery.trim().toLocaleLowerCase(locale);
+    return [...workspace.sales]
+      .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at) || right.receipt_reference.localeCompare(left.receipt_reference))
+      .filter((sale) => {
+        if (!matchesStatus(sale, statusFilter)) return false;
+        if (!normalized) return true;
+        const customer = customers.get(sale.customer_id);
+        return [sale.receipt_reference, customer?.name, customer?.code, sale.kind, sale.status]
+          .filter(Boolean)
+          .join(" ")
+          .toLocaleLowerCase(locale)
+          .includes(normalized);
+      });
+  }, [customers, deferredQuery, locale, statusFilter, workspace.sales]);
+
+  const nextHref = workspace.nextCursor
+    ? `/sales/transactions?${new URLSearchParams({ cursor: workspace.nextCursor, ...(intent ? { intent } : {}), ...(statusFilter !== "ALL" ? { status: statusFilter } : {}) }).toString()}`
+    : null;
 
   return (
-    <div className="page-stack live-sales-page">
-      <section className="page-heading module-heading">
-        <div><div className="heading-badges"><LiveBadge context={workspace.context} /><span className="scope-chip">{workspace.context.company_name} · {workspace.context.branch_name}</span></div><h1>{l(text("Live sales", "Mauzo hai"))}</h1><p>{l(text("Immutable posted sales from the authenticated ERP scope. Prices, tax, stock and ledgers are controlled by the server.", "Mauzo yaliyothibitishwa kutoka upeo wa ERP. Bei, kodi, bidhaa na madaftari yanadhibitiwa na seva."))}</p></div>
-        <div className="page-actions"><Link className="secondary-button" href="/sales/lifecycle">{l(text("Orders & collections", "Oda na makusanyo"))}</Link><Link className="primary-button" href="/sales/new"><Plus size={17} />{l(text("Complete sale", "Kamilisha mauzo"))}</Link></div>
-      </section>
+    <div className={styles.page}>
+      <SalesModuleNav permissions={workspace.context.permissions} />
 
-      <section className="metric-grid compact-metrics" aria-label={l(text("Live sales metrics", "Vipimo vya mauzo hai"))}>
-        <article className="metric-card"><div className="metric-card-top"><span className="metric-icon"><ReceiptText size={18} /></span><span className="live-mini">LIVE</span></div><p>{l(text("Loaded transactions", "Miamala iliyopakiwa"))}</p><strong>{workspace.sales.length}</strong><small>{l(text("Current authenticated page", "Ukurasa wa sasa uliothibitishwa"))}</small></article>
-        <article className="metric-card"><div className="metric-card-top"><span className="metric-icon"><CircleDollarSign size={18} /></span></div><p>{l(text("Gross original-sale value", "Thamani jumla ya mauzo asili"))}</p><strong>{originalSaleTotalMinor === null ? l(text("Unavailable", "Haipatikani")) : formatMinorUnits(originalSaleTotalMinor, workspace.context.currency, locale)}</strong><small>{originalSaleTotalMinor === null ? l(text("Safe total limit exceeded", "Kiwango salama cha jumla kimezidi")) : l(text("Reversal documents excluded", "Nyaraka za ubatilisho hazijajumuishwa"))}</small></article>
-        <article className="metric-card"><div className="metric-card-top"><span className="metric-icon"><Banknote size={18} /></span></div><p>{l(text("Cash sales", "Mauzo ya fedha"))}</p><strong>{cashCount}</strong><small>{l(text("Payment recorded atomically", "Malipo yamerekodiwa kwa pamoja"))}</small></article>
-        <article className="metric-card"><div className="metric-card-top"><span className="metric-icon"><RotateCcw size={18} /></span></div><p>{l(text("Reversed / reversal", "Yaliyobatilishwa / ubatilisho"))}</p><strong>{reversedCount}</strong><small>{l(text("Original records remain immutable", "Rekodi asili hazibadilishwi"))}</small></article>
-      </section>
+      <header className={styles.registerHeader}>
+        <div><p className={styles.scope}>{workspace.context.company_name} · {workspace.context.branch_name}</p><h1>{registerTitle}</h1><p>{registerIntro}</p></div>
+        {workspace.context.permissions.includes("sales.complete") ? <Link className={styles.primaryAction} href="/sales/new">{copy("newSale")}</Link> : null}
+      </header>
 
-      <aside className="live-control-note"><ShieldCheck size={18} /><div><strong>{l(text("Authoritative live data", "Data hai rasmi"))}</strong><p>{l(text("This workspace never falls back to demonstration sales. If authentication or the API fails, transaction controls close safely.", "Eneo hili halitumii mauzo ya maonyesho. Uthibitisho au API ikishindwa, udhibiti wa miamala hufungwa kwa usalama."))}</p></div></aside>
+      {intent === "return" ? <aside className={styles.returnHint}><RotateCcw size={20} aria-hidden="true" /><p>{copy("returnHint")}</p></aside> : null}
 
-      <section className="card records-card">
-        <div className="records-toolbar"><div><h2>{l(text("Posted sales", "Mauzo yaliyochapishwa"))}</h2><span>{filteredSales.length} {l(text("records", "rekodi"))}</span></div><label className="module-search"><Search size={17} /><span className="sr-only">{l(text("Search live sales", "Tafuta mauzo hai"))}</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={l(text("Search customer, ID or status…", "Tafuta mteja, ID au hali…"))} /></label></div>
-        {filteredSales.length ? <div className="table-scroll"><table className="data-table live-sales-table"><caption className="sr-only">{l(text("Live posted sales", "Mauzo hai yaliyochapishwa"))}</caption><thead><tr><th>{l(text("Sale", "Mauzo"))}</th><th>{l(text("Customer", "Mteja"))}</th><th>{l(text("Kind", "Aina"))}</th><th className="align-right">{l(text("Total", "Jumla"))}</th><th>{l(text("Posted", "Imechapishwa"))}</th><th>{l(text("Status", "Hali"))}</th><th><span className="sr-only">{l(text("Open", "Fungua"))}</span></th></tr></thead><tbody>{filteredSales.map((sale) => {
-          const customer = customers.get(sale.customer_id);
-          return <tr key={sale.id}><td><Link className="record-primary" href={`/sales/${sale.id}`}><span>{sale.record_type}</span><strong title={sale.id}>{compactId(sale.id)}</strong><small>{compactId(sale.correlation_id)}</small></Link></td><td><strong>{customer?.name ?? l(text("Customer unavailable", "Mteja hapatikani"))}</strong><small className="table-subline">{customer?.code ?? compactId(sale.customer_id)}</small></td><td><span className={`sale-kind kind-${sale.kind.toLowerCase()}`}>{sale.kind === "CASH" ? l(text("Cash", "Fedha")) : l(text("Credit", "Mkopo"))}</span></td><td className="align-right numeric">{formatMinorUnits(sale.total_minor, sale.currency, locale)}</td><td>{formatTimestamp(sale.created_at, locale, workspace.context.timezone)}</td><td><span className={`live-sale-status status-${sale.status.toLowerCase()}`}>{sale.status === "POSTED" ? l(text("Posted", "Imechapishwa")) : l(text("Reversed", "Imebatilishwa"))}</span></td><td><Link className="row-link" href={`/sales/${sale.id}`} aria-label={`${l(text("Open sale", "Fungua mauzo"))} ${sale.id}`}><ArrowRight size={17} /></Link></td></tr>;
-        })}</tbody></table></div> : <div className="live-empty"><ReceiptText size={30} /><strong>{l(text("No live sales match this view", "Hakuna mauzo hai yanayolingana"))}</strong><p>{query ? l(text("Clear the search to see all loaded transactions.", "Futa utafutaji kuona miamala yote.")) : l(text("Complete the first controlled sale for this scope.", "Kamilisha mauzo ya kwanza yaliyodhibitiwa katika upeo huu."))}</p>{!query ? <Link className="primary-button" href="/sales/new"><Plus size={16} />{l(text("Complete first sale", "Kamilisha mauzo ya kwanza"))}</Link> : null}</div>}
-        <div className="table-footer"><span>{l(text("Authenticated scope", "Upeo uliothibitishwa"))} · {workspace.context.branch_name}</span>{workspace.nextCursor ? <Link href={`/sales?cursor=${encodeURIComponent(workspace.nextCursor)}`}>{l(text("Next page", "Ukurasa unaofuata"))}<ArrowRight size={14} /></Link> : <span>{l(text("End of live page", "Mwisho wa ukurasa hai"))}</span>}</div>
+      <section className={styles.transactionsCard} aria-labelledby="sales-register-heading">
+        <div className={styles.registerTools}>
+          <div><h2 id="sales-register-heading">{listTitle}</h2><p className={styles.resultsCount} role="status" aria-live="polite">{filteredSales.length} {copy("results")}</p></div>
+          <div className={styles.filterGroup}>
+            <label className={styles.searchField}>
+              <span className="sr-only">{copy("searchTransactions")}</span>
+              <Search size={18} aria-hidden="true" />
+              <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy("searchPlaceholder")} />
+              {query ? <button type="button" onClick={() => setQuery("")} aria-label={copy("clearSearch")}><X size={16} aria-hidden="true" /></button> : null}
+            </label>
+            <label className={styles.filterSelect}>
+              <span className="sr-only">{copy("status")}</span>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
+                <option value="ALL">{copy("allStatuses")}</option>
+                <option value="POSTED">{copy("postedOnly")}</option>
+                <option value="REVERSED">{copy("reversedOnly")}</option>
+                <option value="EXCEPTION">{copy("exceptionsOnly")}</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        {filteredSales.length ? (
+          <div className={styles.tableRegion} role="region" aria-labelledby="sales-register-heading" tabIndex={0}>
+            <table className={styles.table}>
+              <caption className="sr-only">{registerTitle}</caption>
+              <thead><tr><th>{copy("type")}</th><th>{copy("number")}</th><th>{copy("customer")}</th><th className={styles.alignRight}>{copy("amount")}</th><th>{copy("status")}</th><th>{copy("date")}</th><th><span className="sr-only">{copy("openTransaction")}</span></th></tr></thead>
+              <tbody>{filteredSales.map((sale) => {
+                const customer = customers.get(sale.customer_id);
+                const status = saleStatusPresentation(sale);
+                const reference = saleBusinessReference(sale);
+                const formattedAmount = formatMinorUnits(sale.total_minor, sale.currency, locale);
+                return (
+                  <tr key={sale.id}>
+                    <td data-label={copy("type")}><span className={styles.typeCell}>{sale.record_type === "REVERSAL" ? <RotateCcw size={16} aria-hidden="true" /> : <ReceiptText size={16} aria-hidden="true" />}<strong>{copy(sale.record_type === "REVERSAL" ? "reversal" : "sale")}</strong></span></td>
+                    <td data-label={copy("number")}><Link className={styles.receiptLink} href={`/sales/${sale.id}`}>{reference}</Link><small>{copy(sale.kind === "CASH" ? "cash" : "credit")}</small></td>
+                    <td data-label={copy("customer")}><strong>{customer?.name ?? customer?.code ?? "—"}</strong></td>
+                    <td data-label={copy("amount")} className={styles.alignRight}><strong>{sale.record_type === "REVERSAL" ? `−${formattedAmount}` : formattedAmount}</strong></td>
+                    <td data-label={copy("status")}><span className={`${styles.status} ${styles[`status${status.tone}`]}`}>{copy(status.label)}</span></td>
+                    <td data-label={copy("date")}><time dateTime={sale.created_at}>{formatTimestamp(sale.created_at, locale, workspace.context.timezone)}</time></td>
+                    <td><Link className={styles.rowAction} href={`/sales/${sale.id}`} aria-label={`${copy("openTransaction")} ${reference}`}><ArrowRight size={17} aria-hidden="true" /></Link></td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+        ) : (
+          <div className={styles.emptyState}><ReceiptText size={28} aria-hidden="true" /><p>{query || statusFilter !== "ALL" ? copy("noMatches") : copy("noTransactions")}</p></div>
+        )}
+
+        {nextHref ? <nav className={styles.pagination} aria-label={copy("transactions")}><Link href={nextHref}>{copy("nextPage")}<ArrowRight size={16} aria-hidden="true" /></Link></nav> : null}
       </section>
     </div>
   );

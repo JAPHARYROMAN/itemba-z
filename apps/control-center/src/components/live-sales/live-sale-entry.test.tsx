@@ -33,6 +33,7 @@ const bootstrap: SalesBootstrap = {
   products: [
     { id: "00000000-0000-4000-8000-000000000020", code: "SKU-20", name: "Itemba Water 1.5L", unit: "CASE", currency: "TZS", unit_price_minor: 12_000, available_quantity: 10, price_version: 1, master_data_version: 1, tax_basis_points: 0 },
   ],
+  documents: [],
 };
 
 describe("LiveSaleEntry", () => {
@@ -92,14 +93,14 @@ describe("LiveSaleEntry", () => {
     fireEvent.click(screen.getByRole("button", { name: /Add one Itemba Water/ }));
     fireEvent.click(screen.getByRole("button", { name: "Review controlled posting" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm & post" }));
-    await screen.findByText(/same idempotency key is preserved/i);
+    await screen.findByText(/safely preserved this sale attempt/i);
     const firstKey = new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("Idempotency-Key");
     firstView.unmount();
 
     const recoveredView = render(<LanguageProvider><LiveSaleEntry bootstrap={bootstrap} /></LanguageProvider>);
     await screen.findByText("Unconfirmed sale recovered");
     fireEvent.click(screen.getByRole("button", { name: "Restore exact sale" }));
-    fireEvent.click(screen.getByRole("button", { name: "Retry with same key" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry same sale" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const recoveredKey = new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("Idempotency-Key");
     expect(recoveredKey).toBe(firstKey);
@@ -114,6 +115,33 @@ describe("LiveSaleEntry", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     const nextKey = new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get("Idempotency-Key");
     expect(nextKey).not.toBe(firstKey);
+  });
+
+  it("uses an approved-order picker and locks its customer and quantities without exposing a UUID", () => {
+    const orderId = "00000000-0000-4000-8000-000000000042";
+    const orderBootstrap: SalesBootstrap = {
+      ...bootstrap,
+      documents: [{
+        id: orderId,
+        number: "SALESORDER-000042",
+        type: "SALES_ORDER",
+        status: "APPROVED",
+        party_type: "CUSTOMER",
+        party_id: bootstrap.customers[1]!.id,
+        currency: "TZS",
+        total_minor: 12_000,
+        reason: "Approved customer order",
+        created_at: "2026-08-06T08:00:00Z",
+        lines: [{ id: "00000000-0000-4000-8000-000000000043", product_id: bootstrap.products[0]!.id, quantity: 2, unit_price_minor: 6_000, amount_minor: 12_000 }],
+      }],
+    };
+    render(<LanguageProvider><LiveSaleEntry bootstrap={orderBootstrap} /></LanguageProvider>);
+    fireEvent.change(screen.getByRole("combobox", { name: "Approved sales order (optional)" }), { target: { value: orderId } });
+    expect(screen.getByRole("combobox", { name: "Customer" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Customer" })).toHaveValue(bootstrap.customers[1]!.id);
+    expect(screen.getByText("Customer and quantities are locked to the approved order.")).toBeInTheDocument();
+    expect(screen.queryByText(orderId)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add one Itemba Water/ })).toBeDisabled();
   });
 
   it.each([

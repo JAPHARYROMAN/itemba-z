@@ -1,52 +1,50 @@
 "use client";
 
 import { Building2, CircleAlert, Coins, MapPin, Warehouse } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { PublicProblem, WorkingContext } from "@/live-api/types";
 import { useLanguage } from "@/components/language-provider";
-import { text } from "@/lib/i18n";
-
-type ContextState =
-  | { state: "loading" }
-  | { state: "ready"; context: WorkingContext }
-  | { state: "unavailable"; problem: PublicProblem };
-
-const initialState: ContextState = { state: "loading" };
+import { useShellContext } from "@/components/shell/shell-context";
 
 export function LiveContextStrip() {
-  const { t, l } = useLanguage();
-  const [result, setResult] = useState<ContextState>(initialState);
+  const { t } = useLanguage();
+  const { context } = useShellContext();
 
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/live/context", { cache: "no-store", signal: controller.signal, headers: { Accept: "application/json" } })
-      .then(async (response) => {
-        const payload = await response.json() as WorkingContext | PublicProblem;
-        if (!response.ok) return { state: "unavailable", problem: payload as PublicProblem } satisfies ContextState;
-        return { state: "ready", context: payload as WorkingContext } satisfies ContextState;
-      })
-      .then(setResult)
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setResult({ state: "unavailable", problem: { type: "about:blank", title: "Live context unavailable", status: 503, code: "context_unavailable", detail: "The live context could not be loaded." } });
-      });
-    return () => controller.abort();
-  }, []);
-
-  if (result.state === "loading") {
-    return <div className="context-bar context-loading" aria-live="polite"><div><span className="context-skeleton" /><span><small>{l(text("Live context", "Muktadha hai"))}</small><strong>{l(text("Authorizing…", "Inathibitisha…"))}</strong></span></div></div>;
-  }
-  if (result.state === "unavailable") {
-    return <div className="context-bar context-unavailable" aria-live="polite"><div><CircleAlert size={15} /><span><small>{l(text("Live context", "Muktadha hai"))}</small><strong>{l(text("Unavailable — no mock data", "Haipatikani — hakuna data mbadala"))}</strong></span></div><div><span><small>{l(text("Reason", "Sababu"))}</small><strong>{result.problem.code}</strong></span></div></div>;
+  if (context.state === "loading") {
+    return (
+      <div className="calm-context-state" role="status" aria-live="polite">
+        <span className="calm-context-spinner" aria-hidden="true" />
+        <span>{t("contextLoading")}</span>
+      </div>
+    );
   }
 
-  const { context } = result;
+  if (context.state === "unavailable" || context.state === "not-permitted") {
+    return (
+      <div className="calm-context-state calm-context-state-error" role="status" aria-live="polite">
+        <CircleAlert size={18} aria-hidden="true" />
+        <span><strong>{t("contextUnavailable")}</strong><small>{t("contextUnavailableHint")}</small></span>
+      </div>
+    );
+  }
+
+  const workingContext = context.data;
   return (
-    <div className="context-bar" aria-label={t("activeContext")}>
-      <div><Building2 size={15} /><span><small>{t("company")}</small><strong>{context.company_name}</strong></span></div>
-      <div><MapPin size={15} /><span><small>{t("branch")}</small><strong>{context.branch_name}</strong></span></div>
-      <div><Warehouse size={15} /><span><small>{l(text("Warehouse", "Ghala"))}</small><strong>{context.warehouse_name}</strong></span></div>
-      <div><Coins size={15} /><span><small>{l(text("Operating currency", "Sarafu ya shughuli"))}</small><strong>{context.currency} <em>{l(text("Live", "Hai"))}</em></strong></span></div>
-    </div>
+    <dl className="calm-context-strip" aria-label={t("activeContext")}>
+      <div className="calm-context-item">
+        <dt><Building2 size={18} aria-hidden="true" /><span>{t("company")}</span></dt>
+        <dd>{workingContext.company_name}</dd>
+      </div>
+      <div className="calm-context-item">
+        <dt><MapPin size={18} aria-hidden="true" /><span>{t("branch")}</span></dt>
+        <dd>{workingContext.branch_name}</dd>
+      </div>
+      <div className="calm-context-item">
+        <dt><Warehouse size={18} aria-hidden="true" /><span>{t("warehouse")}</span></dt>
+        <dd>{workingContext.warehouse_name}</dd>
+      </div>
+      <div className="calm-context-item calm-context-currency">
+        <dt><Coins size={18} aria-hidden="true" /><span>{t("currency")}</span></dt>
+        <dd>{workingContext.currency}</dd>
+      </div>
+    </dl>
   );
 }

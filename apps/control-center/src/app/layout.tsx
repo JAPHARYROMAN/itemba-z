@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
+import "./styles/tokens.css";
 import "./globals.css";
+import "./styles/shell.css";
 import { AppShell } from "@/components/app-shell";
 import { LanguageProvider } from "@/components/language-provider";
 
