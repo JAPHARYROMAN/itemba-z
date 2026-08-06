@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-08-06",
-  "repository_status": "IN_PROGRESS",
+  "repository_status": "COMPLETE",
   "release_exit_status": "BLOCKED_EXTERNAL",
   "repository_controls": [
     {
@@ -33,6 +33,30 @@
       "status": "IMPLEMENTED",
       "name": "Executable evidence validation",
       "evidence": ["scripts/validate-wave4-controls.mjs", ".github/workflows/ci.yml"]
+    },
+    {
+      "id": "W4-06",
+      "status": "IMPLEMENTED",
+      "name": "Bounded runtime metrics and credential-redacting logs",
+      "evidence": ["services/core-api/internal/platform/telemetry/metrics.go", "services/core-api/internal/platform/telemetry/logger.go", "services/core-api/migrations/000036_platform_operational_metrics.up.sql"]
+    },
+    {
+      "id": "W4-07",
+      "status": "IMPLEMENTED",
+      "name": "Production telemetry, dashboard and alert contracts",
+      "evidence": ["infra/observability/otel-collector.production.example.yaml", "infra/observability/prometheus-rules.yaml", "infra/observability/grafana-platform-dashboard.json"]
+    },
+    {
+      "id": "W4-08",
+      "status": "IMPLEMENTED",
+      "name": "Isolated restore, reconciliation, rollback-compatibility and load exercises",
+      "evidence": [".github/workflows/recovery-assurance.yml", ".github/workflows/platform-exercises.yml", "services/core-api/cmd/recoverymanifest/main.go", "scripts/platform-load-probe.mjs"]
+    },
+    {
+      "id": "W4-09",
+      "status": "IMPLEMENTED",
+      "name": "Fail-closed provider adapter and operational acceptance contracts",
+      "evidence": ["infra/deployment/adapter-contract.json", "docs/operations/operational-acceptance-checklist.md"]
     }
   ],
   "external_gates": [

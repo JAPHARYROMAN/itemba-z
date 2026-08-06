@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,10 +11,11 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/integrations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/postgres"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/telemetry"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := telemetry.NewJSONLogger(os.Stdout)
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		logger.Error("DATABASE_URL is required")

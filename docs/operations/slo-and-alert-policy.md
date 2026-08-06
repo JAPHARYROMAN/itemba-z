@@ -19,6 +19,13 @@ selected telemetry platform must bind every catalog signal to a measured query,
 an owned route and the referenced runbook. Alerts are not accepted on presence
 alone: staging must prove firing, notification, acknowledgement and resolution.
 
+The core API now emits bounded HTTP histograms/counters, database-pool gauges
+and aggregate-only outbox, integration and reconciliation signals from its
+private metrics listener. `prometheus-rules.yaml` binds every catalog alert to
+a rule and `grafana-platform-dashboard.json` provides the portable operations
+view. Backup, migration and security-event signals still require the selected
+provider/operations platform to publish their authoritative values.
+
 Telemetry fields are allowlisted. Authorization/cookie headers, tokens,
 passwords, bank details, payroll values, document bodies and unrestricted SQL
 must never be exported. Correlation uses opaque request, actor, tenant/company,

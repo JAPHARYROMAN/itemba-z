@@ -48,3 +48,17 @@ Any unexplained mismatch, missing document, external side effect, objective
 breach or unaudited privilege makes the exercise fail. Quarterly restore and
 annual disaster-recovery exercises are proposed; accountable owners must set
 the final cadence.
+
+## Automated repository exercise
+
+`.github/workflows/recovery-assurance.yml` performs a scheduled and manual
+isolated PostgreSQL dump/restore drill. The deterministic `recoverymanifest`
+tool compares migration checksums, sequence state and authoritative table streams for journals,
+stock, customer/supplier subledgers, audit, outbox, integration delivery and
+document/export metadata. It reapplies migrations to the restored database and
+proves the prior API binary starts against the candidate schema on pull requests.
+Artifacts are retained for one year.
+
+This exercise proves the procedure and reconciliation tooling. It does not
+claim managed-provider encryption, PITR, object-blob recovery, regional failure
+or approved RTO/RPO; those remain required production-like evidence.

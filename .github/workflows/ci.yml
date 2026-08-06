@@ -35,6 +35,18 @@ jobs:
         run: node scripts/validate-wave3-controls.mjs
       - name: Validate Wave 4 platform control evidence
         run: node scripts/validate-wave4-controls.mjs
+      - name: Validate platform exercise tools
+        run: node scripts/platform-load-probe.mjs --self-test
+      - name: Validate observability configurations
+        env:
+          ITEMBA_CORE_API_METRICS_TARGET: core-api:9090
+          ITEMBA_OTLP_ENDPOINT: https://telemetry.invalid
+          ITEMBA_OTLP_AUTHORIZATION: Bearer validation-only
+          ITEMBA_ENV: staging
+        run: |
+          docker run --rm -v "$PWD/infra/observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro" otel/opentelemetry-collector-contrib:0.132.0 validate --config=/etc/otelcol/config.yaml
+          docker run --rm -e ITEMBA_CORE_API_METRICS_TARGET -e ITEMBA_OTLP_ENDPOINT -e ITEMBA_OTLP_AUTHORIZATION -e ITEMBA_ENV -v "$PWD/infra/observability/otel-collector.production.example.yaml:/etc/otelcol/config.yaml:ro" otel/opentelemetry-collector-contrib:0.132.0 validate --config=/etc/otelcol/config.yaml
+          docker run --rm -v "$PWD/infra/observability/prometheus-rules.yaml:/etc/prometheus/rules.yaml:ro" --entrypoint promtool prom/prometheus:v2.55.0 check rules /etc/prometheus/rules.yaml
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.5

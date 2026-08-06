@@ -197,11 +197,13 @@ Each connector must satisfy the integration register: owner, versioned contract,
 
 Planning range: 4–8 weeks, parallel with Waves 2 and 3
 
-Execution record: [`wave-4-execution.md`](wave-4-execution.md). The first
-repository control-plane slice is implemented. Provider/region selection,
-production infrastructure modules, protected environment configuration,
-telemetry and paging binding, automated backup/PITR, production-like exercises
-and Operations acceptance remain open, so the Wave 4 exit gate is not closed.
+Execution record: [`wave-4-execution.md`](wave-4-execution.md). The repository-
+controlled platform, telemetry, recovery-manifest, isolated restore/load,
+previous-binary compatibility, promotion and operations contracts are complete.
+Provider/region selection, production infrastructure modules, protected
+environment configuration, telemetry/paging binding, managed backup/PITR,
+production-like exercises and Operations acceptance remain open, so the Wave 4
+production exit gate is not closed.
 
 ### Environments and delivery
 

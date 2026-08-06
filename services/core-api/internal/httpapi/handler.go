@@ -59,7 +59,10 @@ type Handler struct {
 	workforce        *workforce.Service
 	integrations     *integrations.Service
 	logger           *slog.Logger
-	authenticator    Authenticator
+	httpObserver     interface {
+		ObserveHTTPRequest(string, string, int, time.Duration)
+	}
+	authenticator Authenticator
 }
 
 func New(salesService *sales.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
@@ -387,6 +390,14 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/sales/{saleID}", h.getSale)
 	mux.HandleFunc("POST /v1/sales/{saleID}/reversals", h.reverseSale)
 	return securityHeaders(correlationIDs(identity.UUIDGenerator{}, h.observe(mux)))
+}
+
+// SetHTTPObserver binds a bounded-cardinality runtime metrics sink without
+// coupling the HTTP application layer to a telemetry vendor.
+func (h *Handler) SetHTTPObserver(observer interface {
+	ObserveHTTPRequest(string, string, int, time.Duration)
+}) {
+	h.httpObserver = observer
 }
 
 type receiveCustomerCollectionRequest struct {
@@ -1377,7 +1388,7 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusConflict, "workforce_control_conflict"
 	}
 	if status == http.StatusInternalServerError {
-		h.logger.ErrorContext(request.Context(), "request failed", "method", request.Method, "path", request.URL.Path, "error", err)
+		h.logger.ErrorContext(request.Context(), "request failed", "method", request.Method, "route", request.Pattern, "correlation_id", correlationID(writer), "error", err)
 		writeProblem(writer, status, code, "the request could not be completed")
 		return
 	}
@@ -1463,10 +1474,12 @@ func (h *Handler) observe(next http.Handler) http.Handler {
 		logger.InfoContext(request.Context(), "http request completed",
 			"method", request.Method,
 			"route", request.Pattern,
-			"path", request.URL.Path,
 			"status", status,
 			"latency_ms", time.Since(startedAt).Milliseconds(),
 			"correlation_id", recorder.Header().Get("X-Correlation-ID"),
 		)
+		if h.httpObserver != nil {
+			h.httpObserver.ObserveHTTPRequest(request.Method, request.Pattern, status, time.Since(startedAt))
+		}
 	})
 }

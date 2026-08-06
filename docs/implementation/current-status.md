@@ -26,13 +26,16 @@ Wave 0 repository inventory, full-stack verification, Release 1 classification, 
   immutable route lifecycle, route health, reconciliation, attempt evidence,
   circuit reset and permission-separated dead-letter replay. No TRA/provider
   adapter or statutory approval is implied by this framework.
-- Wave 4 is now in progress with a repository-enforced five-environment
+- Wave 4 repository-controlled work is complete with a repository-enforced five-environment
   promotion order, fail-closed Terraform safety contract, protected-environment
   promotion preflight, proposed critical-journey SLO/error budgets, complete
   alert-to-runbook routing, and proposed RTO/RPO plus restore-reconciliation
-  procedures. Cloud/provider binding, managed backups and PITR, live telemetry,
-  load/failover/restore evidence and Operations acceptance remain external
-  production gates.
+  procedures; credential-redacting runtime telemetry; private bounded metrics;
+  production collector, alert and dashboard contracts; and scheduled isolated
+  restore, previous-binary rollback-compatibility and load exercises.
+  Cloud/provider binding, managed backups and PITR, live telemetry/paging,
+  production-like load/failover/restore evidence and Operations acceptance
+  remain external production gates.
 - Versioned OpenAPI read and command boundaries for working context, customers, products, sales, linked reversals, device enrollment, and idempotent mobile synchronization, with checked TypeScript and Dart bindings.
 - Next.js bilingual Control Center workspaces backed only by live APIs for sales, customer accounts, commercial operations, inventory operations, POS governance, offline reconciliation, and cash/bank reconciliation. Remaining generic module screens are demonstrations until their APIs are built.
 - Flutter Android Sales POS live transport with encrypted SQLCipher state, Android-Keystore-backed credentials, immutable catalog-snapshot download and acknowledgement, bounded server-issued cache leases, authoritative offline limits and stock allocations, durable queued sales, idempotent synchronization, and truthful internal-versus-fiscal receipt state. Offline posting is currently fail-closed except for physical CASH and zero-rated lines.

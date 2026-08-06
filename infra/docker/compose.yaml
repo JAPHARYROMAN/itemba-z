@@ -130,7 +130,10 @@ services:
     environment:
       ITEMBA_ENV: development
       ITEMBA_HTTP_ADDRESS: :8080
+      ITEMBA_METRICS_ADDRESS: :9090
       DATABASE_URL: postgres://${POSTGRES_API_RUNTIME_USER}:${POSTGRES_API_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    expose:
+      - "9090"
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:

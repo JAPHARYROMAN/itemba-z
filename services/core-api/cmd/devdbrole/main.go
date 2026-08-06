@@ -2,17 +2,17 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/dbrole"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/telemetry"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := telemetry.NewJSONLogger(os.Stdout)
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		logger.Error("DATABASE_URL is required")

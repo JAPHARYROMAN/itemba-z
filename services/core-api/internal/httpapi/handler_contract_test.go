@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +13,16 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
+
+type recordingHTTPObserver struct {
+	method string
+	route  string
+	status int
+}
+
+func (observer *recordingHTTPObserver) ObserveHTTPRequest(method, route string, status int, _ time.Duration) {
+	observer.method, observer.route, observer.status = method, route, status
+}
 
 func TestV1FoundationWireShape(t *testing.T) {
 	var command completeSaleRequest
@@ -63,6 +75,22 @@ func TestCorrelationIDIsPropagatedAndIncludedInProblems(t *testing.T) {
 	}
 	if !strings.Contains(recorder.Body.String(), `"correlation_id":"`+correlationID+`"`) {
 		t.Fatalf("problem lacks correlation: %s", recorder.Body.String())
+	}
+}
+
+func TestObservationUsesRoutePatternAndNeverRawBusinessPath(t *testing.T) {
+	var logs bytes.Buffer
+	observer := &recordingHTTPObserver{}
+	handler := &Handler{logger: slog.New(slog.NewJSONHandler(&logs, nil))}
+	handler.SetHTTPObserver(observer)
+	request := httptest.NewRequest(http.MethodGet, "/healthz?token=never-log", nil)
+	recorder := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(recorder, request)
+	if observer.method != http.MethodGet || observer.route != "GET /healthz" || observer.status != http.StatusOK {
+		t.Fatalf("observation=%+v", observer)
+	}
+	if strings.Contains(logs.String(), "never-log") || strings.Contains(logs.String(), `"path"`) {
+		t.Fatalf("raw request data entered logs: %s", logs.String())
 	}
 }
 

@@ -1,0 +1,122 @@
+groups:
+  - name: itemba-z-slo-recording
+    interval: 30s
+    rules:
+      - record: itemba:http_requests:rate5m
+        expr: sum(rate(itemba_http_requests_total[5m]))
+      - record: itemba:http_errors:ratio5m
+        expr: sum(rate(itemba_http_requests_total{status_class=~"5.."}[5m])) / clamp_min(sum(rate(itemba_http_requests_total[5m])), 0.001)
+      - record: itemba:http_latency:p95_5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(itemba_http_request_duration_seconds_bucket[5m])))
+
+  - name: itemba-z-platform-alerts
+    interval: 30s
+    rules:
+      - alert: ITEMBAAPIAvailabilityFastBurn
+        expr: itemba:http_errors:ratio5m > 0.01 and itemba:http_requests:rate5m > 0
+        for: 5m
+        labels:
+          severity: critical
+          catalog_id: ALERT-AVAILABILITY
+          runbook: RB-IDENTITY
+        annotations:
+          summary: Core API error budget is burning rapidly
+      - alert: ITEMBAAPILatency
+        expr: itemba:http_latency:p95_5m > 2
+        for: 10m
+        labels:
+          severity: warning
+          catalog_id: ALERT-LATENCY
+          runbook: RB-DATABASE
+        annotations:
+          summary: Core API p95 latency exceeds the proposed target
+      - alert: ITEMBAAPIErrorRate
+        expr: itemba:http_errors:ratio5m > 0.005 and itemba:http_requests:rate5m > 0
+        for: 10m
+        labels:
+          severity: critical
+          catalog_id: ALERT-ERROR-RATE
+          runbook: RB-DATABASE
+        annotations:
+          summary: Core API error rate exceeds the proposed operating threshold
+      - alert: ITEMBADatabaseSaturation
+        expr: itemba_database_pool_connections{state="acquired"} / clamp_min(itemba_database_pool_max_connections, 1) > 0.85
+        for: 10m
+        labels:
+          severity: critical
+          catalog_id: ALERT-DB-SATURATION
+          runbook: RB-DATABASE
+        annotations:
+          summary: Database connection pool is saturated
+      - alert: ITEMBAOutboxLag
+        expr: itemba_outbox_oldest_unpublished_seconds > 300
+        for: 5m
+        labels:
+          severity: critical
+          catalog_id: ALERT-OUTBOX-LAG
+          runbook: RB-OUTBOX
+        annotations:
+          summary: Transactional outbox publication is delayed
+      - alert: ITEMBAFiscalBacklog
+        expr: itemba_integration_backlog{capability="TRA_FISCALIZATION"} > 0
+        for: 15m
+        labels:
+          severity: critical
+          catalog_id: ALERT-FISCAL-BACKLOG
+          runbook: RB-FISCAL
+        annotations:
+          summary: Fiscal delivery backlog requires operator action
+      - alert: ITEMBAPaymentCallbackFailures
+        expr: rate(itemba_integration_failures_total{capability="PAYMENT_CALLBACK"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          catalog_id: ALERT-PAYMENT-FAILURE
+          runbook: RB-CALLBACK
+        annotations:
+          summary: Payment callbacks are failing
+      - alert: ITEMBAMobileSyncFailures
+        expr: rate(itemba_http_requests_total{route="POST /v1/mobile/sync/sales",status_class=~"5.."}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          catalog_id: ALERT-SYNC-FAILURE
+          runbook: RB-DEVICE
+        annotations:
+          summary: Mobile sale synchronization is failing
+      - alert: ITEMBAReconciliationExceptions
+        expr: itemba_reconciliation_open_critical > 0
+        for: 15m
+        labels:
+          severity: critical
+          catalog_id: ALERT-RECONCILIATION
+          runbook: RB-RECOVERY
+        annotations:
+          summary: Critical reconciliation exceptions remain open
+      - alert: ITEMBABackupVerificationFailure
+        expr: time() - itemba_backup_last_verified_timestamp_seconds > 90000
+        for: 15m
+        labels:
+          severity: critical
+          catalog_id: ALERT-BACKUP
+          runbook: RB-RECOVERY
+        annotations:
+          summary: Backup verification is missing or stale
+      - alert: ITEMBAMigrationStalled
+        expr: itemba_migration_in_progress > 0 and time() - itemba_migration_started_timestamp_seconds > 900
+        for: 5m
+        labels:
+          severity: critical
+          catalog_id: ALERT-MIGRATION
+          runbook: RB-MIGRATION
+        annotations:
+          summary: A database migration is still in progress beyond its reviewed window
+      - alert: ITEMBASuspectedDataBreach
+        expr: itemba_security_suspected_breach > 0
+        for: 0m
+        labels:
+          severity: critical
+          catalog_id: ALERT-SECURITY
+          runbook: RB-BREACH
+        annotations:
+          summary: Security telemetry has raised a suspected data breach signal

@@ -47,6 +47,14 @@ ITEMBA_ENV=development DATABASE_URL=<api-runtime-url> go run ./cmd/api
 ITEMBA_ENV=development DATABASE_URL=<worker-runtime-url> go run ./cmd/worker
 ```
 
+The API exposes Prometheus metrics only on the separate
+`ITEMBA_METRICS_ADDRESS` listener. This address is mandatory outside explicit
+development and must remain on the private workload network. HTTP labels use
+route templates rather than raw URLs and never include tenant, actor, document
+or payload data. Production runtimes use the redacting structured logger; the
+managed telemetry destination is configured through the production collector
+contract in `infra/observability`.
+
 `devseed` accepts only `development`, `dev`, `local`, or `test` and refuses all
 other environments. It uses the fictional zero-rated `DEV_ZERO` tax rule; it
 is not statutory configuration. Stable fixture IDs are:

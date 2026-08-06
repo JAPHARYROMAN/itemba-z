@@ -1,6 +1,6 @@
 # Wave 4 execution — production platform and operational resilience
 
-Status: **IN PROGRESS**
+Repository status: **COMPLETE**
 Production exit: **BLOCKED — external platform and operating evidence required**
 
 ## Implemented repository slice
@@ -16,18 +16,40 @@ Production exit: **BLOCKED — external platform and operating evidence required
   fiscal, callback, device, breach and recovery scenarios.
 - Proposed RTO/RPO values and a fail-closed production-like restore and
   reconciliation procedure are documented.
+- The Go runtimes now use credential-redacting structured logs. HTTP telemetry
+  excludes raw URLs and exposes bounded route/status/latency metrics through a
+  mandatory private listener outside local development.
+- Aggregate database saturation, outbox, integration and reconciliation
+  signals are exposed through an audited, aggregate-only database function.
+- Production-shaped OpenTelemetry, Prometheus alert and Grafana dashboard
+  contracts are versioned and configuration-validated.
+- Scheduled/manual GitHub exercises now prove deterministic PostgreSQL
+  dump/restore reconciliation across migrations, journals, stock, subledgers,
+  audit, outbox, integrations and document metadata. Pull requests also prove
+  the previous API binary starts after candidate migrations.
+- A bounded concurrent load probe retains latency/error evidence and proves
+  metrics do not contain tenant identifiers. It is deliberately classified as
+  isolated CI evidence rather than production capacity proof.
+- The release bundle includes the recovery-manifest tool; provider deployment
+  and operational acceptance interfaces are explicit and fail closed.
 
 ## Deliberately open platform work
 
 The repository does not select or provision a production cloud. Provider and
-region approval, managed service modules, registry/deployment adapter, protected
-GitHub environment reviewers, telemetry backend and paging routes, backup/PITR
-jobs, object-version retention, production-like load/restore/failover/DR
-evidence, accountable owner approval and operational acceptance remain open.
+region approval, managed service modules, registry/deployment adapter binding,
+protected GitHub environment reviewers, telemetry backend and paging routes,
+managed backup/PITR jobs, object-version retention, production-like
+load/restore/failover/DR evidence, accountable owner approval and operational
+acceptance remain open.
 
 The promotion workflow is therefore a preflight and authorization handoff, not
 a pretend deployment. It fails closed at the provider boundary until an
 approved adapter is implemented and separately reviewed.
+
+Repository completion is not production Wave 4 acceptance. The latter cannot
+truthfully reach 100% until every item in
+`docs/operations/operational-acceptance-checklist.md` has real retained evidence
+and named owner approval.
 
 ## Exit criteria
 

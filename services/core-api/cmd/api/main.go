@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,6 +28,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/memory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/postgres"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/telemetry"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/readmodel"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/receivables"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
@@ -37,7 +38,7 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := telemetry.NewJSONLogger(os.Stdout)
 	environment := os.Getenv("ITEMBA_ENV")
 	development := allowsUnsafeFallback(environment)
 
@@ -258,6 +259,33 @@ func main() {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)
 	}
+	shutdownSignal, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	metricsRegistry := telemetry.NewRegistry()
+	handler.SetHTTPObserver(metricsRegistry)
+	metricsAddress := strings.TrimSpace(os.Getenv("ITEMBA_METRICS_ADDRESS"))
+	if metricsAddress == "" && !development {
+		logger.Error("ITEMBA_METRICS_ADDRESS is required outside explicit development")
+		os.Exit(1)
+	}
+	var metricsServer *http.Server
+	metricsFailure := make(chan error, 1)
+	if metricsAddress != "" {
+		listener, listenErr := net.Listen("tcp", metricsAddress)
+		if listenErr != nil {
+			logger.Error("bind internal metrics listener", "error", listenErr)
+			os.Exit(1)
+		}
+		metricsServer = &http.Server{Addr: metricsAddress, Handler: metricsRegistry.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second}
+		go func() {
+			if serveErr := metricsServer.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+				logger.Error("internal metrics server stopped", "error", serveErr)
+				metricsFailure <- serveErr
+				stop()
+			}
+		}()
+		logger.Info("ITEMBA-Z internal metrics listening", "address", metricsAddress)
+	}
 	address := os.Getenv("ITEMBA_HTTP_ADDRESS")
 	if address == "" {
 		address = ":8080"
@@ -266,8 +294,33 @@ func main() {
 		Addr: address, Handler: handler.Routes(), ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}
-	shutdownSignal, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	if store, ok := repository.(*postgres.Store); ok {
+		updatePoolMetrics := func() {
+			statistics := store.Pool().Stat()
+			metricsRegistry.UpdateDatabasePool(statistics.AcquiredConns(), statistics.IdleConns(), statistics.TotalConns(), statistics.MaxConns())
+			queryContext, cancel := context.WithTimeout(shutdownSignal, 5*time.Second)
+			defer cancel()
+			operationalMetrics, queryErr := store.PlatformOperationalMetrics(queryContext)
+			if queryErr != nil {
+				logger.Warn("refresh platform operational metrics", "error", queryErr)
+				return
+			}
+			metricsRegistry.ReplaceOperationalMetrics(operationalMetrics)
+		}
+		updatePoolMetrics()
+		go func() {
+			ticker := time.NewTicker(15 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-shutdownSignal.Done():
+					return
+				case <-ticker.C:
+					updatePoolMetrics()
+				}
+			}
+		}()
+	}
 	go func() {
 		<-shutdownSignal.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -275,11 +328,22 @@ func main() {
 		if err := server.Shutdown(ctx); err != nil {
 			logger.Error("graceful shutdown", "error", err)
 		}
+		if metricsServer != nil {
+			if err := metricsServer.Shutdown(ctx); err != nil {
+				logger.Error("metrics graceful shutdown", "error", err)
+			}
+		}
 	}()
 	logger.Info("ITEMBA-Z core API listening", "address", address, "environment", environment)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("HTTP server stopped", "error", err)
 		os.Exit(1)
+	}
+	select {
+	case err := <-metricsFailure:
+		logger.Error("core API stopped because required metrics failed", "error", err)
+		os.Exit(1)
+	default:
 	}
 }
 

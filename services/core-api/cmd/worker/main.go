@@ -14,6 +14,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/postgres"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/telemetry"
 )
 
 type loggingPublisher struct{ logger *slog.Logger }
@@ -38,7 +39,7 @@ func (p projectingPublisher) Publish(ctx context.Context, event outbox.Event) er
 }
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := telemetry.NewJSONLogger(os.Stdout)
 	if os.Getenv("DATABASE_URL") == "" {
 		logger.Error("DATABASE_URL is required")
 		os.Exit(1)

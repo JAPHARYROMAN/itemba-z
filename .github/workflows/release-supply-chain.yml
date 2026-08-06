@@ -25,7 +25,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/control-center/package-lock.json
-      - name: Build API, worker, migrations and controlled access tool
+      - name: Build API, workers, migrations and controlled operations tools
         working-directory: services/core-api
         run: |
           mkdir -p ../../artifacts/release
@@ -34,6 +34,7 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-integration-worker ./cmd/integration-worker
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-migrate ./cmd/migrate
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-accessctl ./cmd/accessctl
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-recoverymanifest ./cmd/recoverymanifest
       - name: Build Control Center
         working-directory: apps/control-center
         run: |
@@ -63,6 +64,7 @@ jobs:
             artifacts/release/itemba-integration-worker
             artifacts/release/itemba-migrate
             artifacts/release/itemba-accessctl
+            artifacts/release/itemba-recoverymanifest
             artifacts/release/itemba-control-center.tar.gz
           sbom-path: artifacts/release/itemba-z.spdx.json
       - name: Upload controlled release bundle
