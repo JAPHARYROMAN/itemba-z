@@ -81,7 +81,7 @@ export interface SupplierQuote { id: string; rfq_id: string; supplier_id: string
 export interface SourcingAward { id: string; rfq_id: string; quote_id: string; supplier_id: string; purchase_order_id: string; reason: string; selected_by: string; selected_at: string }
 export interface CommercialSnapshot { revisions: MasterRevision[]; rfqs: RFQ[]; quotes: SupplierQuote[]; awards: SourcingAward[] }
 export interface CommercialWorkspace { context: WorkingContext; commercial: CommercialSnapshot; products: ProductSummary[]; suppliers: SupplierSummary[] }
-export interface SupplierWorkspace { context: WorkingContext; suppliers: SupplierSummary[]; commercial: CommercialSnapshot }
+export interface SupplierWorkspace { context: WorkingContext; suppliers: SupplierSummary[]; commercial: CommercialSnapshot | null }
 export interface GlobalSearchResult { id: string; module: string; moduleLabel: LocalizedText; title: LocalizedText; subtitle: string; href: string; status: Status }
 export interface GlobalSearchWorkspace { context: WorkingContext; query: string; results: GlobalSearchResult[]; searchedSources: LocalizedText[] }
 export interface CreateMasterRevisionCommand { entity_type: MasterEntityType; entity_id?: string; supplier?: SupplierMasterData; product?: ProductMasterData; reason: string }

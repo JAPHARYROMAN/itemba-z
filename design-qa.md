@@ -76,4 +76,15 @@
 - Core API: complete `go test ./...` suite passed, including the PostgreSQL source-document regression.
 - Docker Core API and Control Center images: rebuilt, healthy, and running.
 
+## Commercial workspace extension
+
+- Verified live routes: `/customers`, `/customers/[customerId]`, `/suppliers`, and `/suppliers/[supplierId]`.
+- Customer directory presents readable buying terms, authoritative TZS exposure, collection access, search, filters, and mobile record cards without exposing internal identifiers.
+- Supplier directory presents approved partners, payment terms, sourcing activity, and a permission-shaped approval queue; supplier profiles progressively disclose the technical record identifier under System details.
+- Supplier approval projections are fetched only when both `masterdata.read` and `purchases.sourcing.read` are granted; normal supplier reads do not fail because approval access is absent.
+- English and Swahili directory and supplier-profile states were inspected in the live browser.
+- Desktop at 1440 × 1000 and mobile at 390 × 844 have no page-level horizontal overflow; mobile directory links now retain a 44 px target.
+- Customer credit-limit entry now uses exact string-to-minor-unit conversion, and risk states are rendered as business language rather than raw enums.
+- Automated gates after the extension: ESLint passed, TypeScript passed, 36 Vitest files / 111 tests passed, production build passed, and npm audit reported zero vulnerabilities.
+
 final result: passed

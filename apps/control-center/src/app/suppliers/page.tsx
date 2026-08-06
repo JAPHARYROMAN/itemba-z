@@ -2,6 +2,8 @@ import { LiveUnavailable } from "@/components/live-sales/live-state";
 import { SupplierDirectory } from "@/components/suppliers/supplier-directory";
 import { loadSupplierWorkspace } from "@/live-api/snapshots";
 
+export const metadata = { title: "Suppliers", description: "Approved supplier directory and governed supplier changes." };
+
 export const dynamic = "force-dynamic";
 
 export default async function SuppliersPage() {

@@ -22,7 +22,7 @@ const workspace: CustomerAccountsWorkspace = {
 describe("CustomerAccounts", () => {
   it("renders live exposure and links to authoritative account detail", () => {
     render(<LanguageProvider><CustomerAccounts workspace={workspace} /></LanguageProvider>);
-    expect(screen.getByRole("heading", { name: "Customer accounts" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Customers" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Amani Stores/ })).toHaveAttribute("href", "/customers/00000000-0000-4000-8000-000000000010");
     expect(screen.getAllByText("TZS 12,500.00").length).toBeGreaterThan(0);
   });

@@ -87,8 +87,12 @@ export async function loadCommercialWorkspace(): Promise<LiveSnapshot<Commercial
 export async function loadSupplierWorkspace(): Promise<LiveSnapshot<SupplierWorkspace>> {
   try {
     const repository = await createServerRepository();
-    const [context, suppliers, commercial] = await Promise.all([
-      repository.getWorkingContext(), repository.listSuppliers(), repository.getCommercialSnapshot(),
+    const context = await repository.getWorkingContext();
+    const [suppliers, commercial] = await Promise.all([
+      repository.listSuppliers(),
+      context.permissions.includes("masterdata.read") && context.permissions.includes("purchases.sourcing.read")
+        ? repository.getCommercialSnapshot()
+        : Promise.resolve(null),
     ]);
     return { state: "ready", data: { context, suppliers: suppliers.items, commercial } };
   } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }

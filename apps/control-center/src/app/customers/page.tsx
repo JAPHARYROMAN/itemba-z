@@ -3,7 +3,7 @@ import { CustomerAccounts } from "@/components/customers/customer-accounts";
 import { LiveUnavailable } from "@/components/live-sales/live-state";
 import { loadCustomerAccounts } from "@/live-api/snapshots";
 
-export const metadata: Metadata = { title: "Customer Accounts", description: "Live receivables and credit-control workspace." };
+export const metadata: Metadata = { title: "Customers", description: "Customer directory, receivables exposure, and collection access." };
 export const dynamic = "force-dynamic";
 
 export default async function CustomersPage() {
