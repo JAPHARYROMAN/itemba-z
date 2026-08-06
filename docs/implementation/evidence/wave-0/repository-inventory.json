@@ -1,0 +1,875 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-08-06",
+  "git_commit": "a42e1fb5937454a1a0b7d12764d9319028747aad",
+  "summary": {
+    "openapi_paths": 93,
+    "openapi_operations": 105,
+    "implemented_openapi_operations": 104,
+    "planned_openapi_operations": 1,
+    "control_center_pages": 20,
+    "live_control_center_pages": 15,
+    "demonstration_control_center_pages": 5,
+    "bff_routes": 36,
+    "mobile_presentation_files": 2,
+    "core_modules": 26,
+    "database_migrations": 28
+  },
+  "openapi_operations": [
+    {
+      "method": "GET",
+      "path": "/v1/inventory/control",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/inventory/policies",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/inventory/policies/{policyID}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/inventory/goods-receipts/{receiptID}/lots",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/commercial",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/master-data/revisions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/master-data/revisions/{revisionID}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/purchases/rfqs",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/purchases/rfqs/{rfqID}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/purchases/supplier-quotes",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/purchases/supplier-quotes/{quoteID}/submission",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/purchases/rfqs/{rfqID}/comparison",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/purchases/rfqs/{rfqID}/award",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/purchases/rfqs/{rfqID}/award",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/purchases/rfqs/{rfqID}/award",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/context",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/dashboard",
+      "status": "planned"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/customers",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/customers/{customer_id}/account",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/customers/{customer_id}/credit-policies",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/products",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/customers/{customer_id}/collections",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/suppliers",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operations/documents",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/operations/documents",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/operations/documents/{document_id}",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/operations/documents/{document_id}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/banking/accounts",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/banking/statements",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/banking/statements",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/banking/statements/{statement_id}",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/banking/statements/{statement_id}/lines/{line_id}/matches",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/banking/statements/{statement_id}/reconciliation",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/finance/documents",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/documents",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/finance/documents/{document_id}",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/documents/{document_id}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/finance/fiscal-periods",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/fiscal-periods/{period_id}/actions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/fiscal-period-actions/{action_id}/approval",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/finance/fiscal-period-actions",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/finance/accounts",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/accounts",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/accounts/{account_id}/decisions",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/finance/posting-mappings",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/posting-mappings",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/posting-mappings/{mapping_id}/decisions",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/reports/financial/trial-balance",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/reports/financial/general-ledger",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/reports/financial/profit-and-loss",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/reports/financial/balance-sheet",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/reports/financial/cash-flow",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/reports/financial/exports",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/finance/budgets",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/budgets",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/budgets/{budget_id}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/finance/budgets/{budget_id}/actual",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/finance/assets",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/assets",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/assets/{asset_id}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/assets/from-purchase",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/assets/{asset_id}/depreciation",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/assets/{asset_id}/disposal",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/finance/facilities",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/facilities",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/facilities/{facility_id}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/facilities/{facility_id}/transactions",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/finance/intercompany",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/intercompany",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/finance/intercompany/{transaction_id}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/reports/financial/consolidation",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/hr/workforce",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/shift-templates",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/shift-templates/{templateID}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/shift-assignments",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/shift-assignments/{assignmentID}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/employee-documents",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/payroll-runs/{payrollID}/exports",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/hr",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/employees",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/attendance",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/leave-types",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/leave-requests",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/leave-requests/{leave_id}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/loans",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/loans/{loan_id}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/payroll-runs",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/hr/payroll-runs/{payroll_id}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/settings",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/settings/configurations",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/settings/configurations/{configuration_id}/transitions",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/settings/number-sequences",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/settings/number-sequences/{sequence_id}/allocations",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/sales",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sales",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sales/{sale_id}",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/sales/{sale_id}/reversals",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/mobile/sync/sales",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/mobile/devices/enroll",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/mobile/devices",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/mobile/devices/{device_id}/status-changes",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/mobile/devices/{device_id}/allocation-changes",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/mobile/reconciliation-cases",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/mobile/reconciliation-cases/{case_id}",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/mobile/reconciliation-cases/{case_id}/resolutions",
+      "status": "implemented"
+    }
+  ],
+  "control_center_pages": [
+    {
+      "route": "/",
+      "file": "apps/control-center/src/app/page.tsx",
+      "status": "demonstration",
+      "evidence": "Uses the in-repository mock ERP data source"
+    },
+    {
+      "route": "/[module]",
+      "file": "apps/control-center/src/app/[module]/page.tsx",
+      "status": "demonstration",
+      "evidence": "Uses the in-repository mock ERP data source"
+    },
+    {
+      "route": "/[module]/[recordId]",
+      "file": "apps/control-center/src/app/[module]/[recordId]/page.tsx",
+      "status": "demonstration",
+      "evidence": "Uses the in-repository mock ERP data source"
+    },
+    {
+      "route": "/[module]/new",
+      "file": "apps/control-center/src/app/[module]/new/page.tsx",
+      "status": "demonstration",
+      "evidence": "Uses the in-repository mock ERP data source"
+    },
+    {
+      "route": "/customers",
+      "file": "apps/control-center/src/app/customers/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/customers/[customerId]",
+      "file": "apps/control-center/src/app/customers/[customerId]/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/devices",
+      "file": "apps/control-center/src/app/devices/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/finance",
+      "file": "apps/control-center/src/app/finance/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/human-resources",
+      "file": "apps/control-center/src/app/human-resources/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/inventory",
+      "file": "apps/control-center/src/app/inventory/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/purchases",
+      "file": "apps/control-center/src/app/purchases/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/reconciliation",
+      "file": "apps/control-center/src/app/reconciliation/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/reconciliation/[caseId]",
+      "file": "apps/control-center/src/app/reconciliation/[caseId]/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/reports",
+      "file": "apps/control-center/src/app/reports/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/sales",
+      "file": "apps/control-center/src/app/sales/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/sales/[recordId]",
+      "file": "apps/control-center/src/app/sales/[recordId]/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/sales/lifecycle",
+      "file": "apps/control-center/src/app/sales/lifecycle/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/sales/new",
+      "file": "apps/control-center/src/app/sales/new/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    },
+    {
+      "route": "/search",
+      "file": "apps/control-center/src/app/search/page.tsx",
+      "status": "demonstration",
+      "evidence": "Uses the in-repository mock ERP data source"
+    },
+    {
+      "route": "/settings",
+      "file": "apps/control-center/src/app/settings/page.tsx",
+      "status": "live",
+      "evidence": "Uses the live API snapshot boundary and fail-closed unavailable state"
+    }
+  ],
+  "bff_routes": [
+    {
+      "route": "/api/health/route.ts",
+      "file": "apps/control-center/src/app/api/health/route.ts"
+    },
+    {
+      "route": "/api/live/banking/accounts/route.ts",
+      "file": "apps/control-center/src/app/api/live/banking/accounts/route.ts"
+    },
+    {
+      "route": "/api/live/banking/statements/[statementId]/lines/[lineId]/matches/route.ts",
+      "file": "apps/control-center/src/app/api/live/banking/statements/[statementId]/lines/[lineId]/matches/route.ts"
+    },
+    {
+      "route": "/api/live/banking/statements/[statementId]/reconciliation/route.ts",
+      "file": "apps/control-center/src/app/api/live/banking/statements/[statementId]/reconciliation/route.ts"
+    },
+    {
+      "route": "/api/live/banking/statements/[statementId]/route.ts",
+      "file": "apps/control-center/src/app/api/live/banking/statements/[statementId]/route.ts"
+    },
+    {
+      "route": "/api/live/banking/statements/route.ts",
+      "file": "apps/control-center/src/app/api/live/banking/statements/route.ts"
+    },
+    {
+      "route": "/api/live/commercial/route.ts",
+      "file": "apps/control-center/src/app/api/live/commercial/route.ts"
+    },
+    {
+      "route": "/api/live/context/route.ts",
+      "file": "apps/control-center/src/app/api/live/context/route.ts"
+    },
+    {
+      "route": "/api/live/customers/[customerId]/collections/route.ts",
+      "file": "apps/control-center/src/app/api/live/customers/[customerId]/collections/route.ts"
+    },
+    {
+      "route": "/api/live/customers/[customerId]/credit-policies/route.ts",
+      "file": "apps/control-center/src/app/api/live/customers/[customerId]/credit-policies/route.ts"
+    },
+    {
+      "route": "/api/live/finance/accounts/[accountId]/decisions/route.ts",
+      "file": "apps/control-center/src/app/api/live/finance/accounts/[accountId]/decisions/route.ts"
+    },
+    {
+      "route": "/api/live/finance/accounts/route.ts",
+      "file": "apps/control-center/src/app/api/live/finance/accounts/route.ts"
+    },
+    {
+      "route": "/api/live/finance/advanced/route.ts",
+      "file": "apps/control-center/src/app/api/live/finance/advanced/route.ts"
+    },
+    {
+      "route": "/api/live/finance/documents/[documentId]/transitions/route.ts",
+      "file": "apps/control-center/src/app/api/live/finance/documents/[documentId]/transitions/route.ts"
+    },
+    {
+      "route": "/api/live/finance/documents/route.ts",
+      "file": "apps/control-center/src/app/api/live/finance/documents/route.ts"
+    },
+    {
+      "route": "/api/live/finance/fiscal-period-actions/[actionId]/approval/route.ts",
+      "file": "apps/control-center/src/app/api/live/finance/fiscal-period-actions/[actionId]/approval/route.ts"
+    },
+    {
+      "route": "/api/live/finance/fiscal-periods/[periodId]/actions/route.ts",
+      "file": "apps/control-center/src/app/api/live/finance/fiscal-periods/[periodId]/actions/route.ts"
+    },
+    {
+      "route": "/api/live/finance/group/route.ts",
+      "file": "apps/control-center/src/app/api/live/finance/group/route.ts"
+    },
+    {
+      "route": "/api/live/finance/posting-mappings/[mappingId]/decisions/route.ts",
+      "file": "apps/control-center/src/app/api/live/finance/posting-mappings/[mappingId]/decisions/route.ts"
+    },
+    {
+      "route": "/api/live/finance/posting-mappings/route.ts",
+      "file": "apps/control-center/src/app/api/live/finance/posting-mappings/route.ts"
+    },
+    {
+      "route": "/api/live/finance/treasury/route.ts",
+      "file": "apps/control-center/src/app/api/live/finance/treasury/route.ts"
+    },
+    {
+      "route": "/api/live/hr/route.ts",
+      "file": "apps/control-center/src/app/api/live/hr/route.ts"
+    },
+    {
+      "route": "/api/live/inventory-control/route.ts",
+      "file": "apps/control-center/src/app/api/live/inventory-control/route.ts"
+    },
+    {
+      "route": "/api/live/mobile/devices/[deviceId]/allocation-changes/route.ts",
+      "file": "apps/control-center/src/app/api/live/mobile/devices/[deviceId]/allocation-changes/route.ts"
+    },
+    {
+      "route": "/api/live/mobile/devices/[deviceId]/status-changes/route.ts",
+      "file": "apps/control-center/src/app/api/live/mobile/devices/[deviceId]/status-changes/route.ts"
+    },
+    {
+      "route": "/api/live/mobile/devices/route.ts",
+      "file": "apps/control-center/src/app/api/live/mobile/devices/route.ts"
+    },
+    {
+      "route": "/api/live/mobile/reconciliation-cases/[caseId]/resolutions/route.ts",
+      "file": "apps/control-center/src/app/api/live/mobile/reconciliation-cases/[caseId]/resolutions/route.ts"
+    },
+    {
+      "route": "/api/live/mobile/reconciliation-cases/[caseId]/route.ts",
+      "file": "apps/control-center/src/app/api/live/mobile/reconciliation-cases/[caseId]/route.ts"
+    },
+    {
+      "route": "/api/live/mobile/reconciliation-cases/route.ts",
+      "file": "apps/control-center/src/app/api/live/mobile/reconciliation-cases/route.ts"
+    },
+    {
+      "route": "/api/live/operations/[documentId]/transitions/route.ts",
+      "file": "apps/control-center/src/app/api/live/operations/[documentId]/transitions/route.ts"
+    },
+    {
+      "route": "/api/live/operations/route.ts",
+      "file": "apps/control-center/src/app/api/live/operations/route.ts"
+    },
+    {
+      "route": "/api/live/reports/financial/[report]/route.ts",
+      "file": "apps/control-center/src/app/api/live/reports/financial/[report]/route.ts"
+    },
+    {
+      "route": "/api/live/sales/[saleId]/reversals/route.ts",
+      "file": "apps/control-center/src/app/api/live/sales/[saleId]/reversals/route.ts"
+    },
+    {
+      "route": "/api/live/sales/[saleId]/route.ts",
+      "file": "apps/control-center/src/app/api/live/sales/[saleId]/route.ts"
+    },
+    {
+      "route": "/api/live/sales/route.ts",
+      "file": "apps/control-center/src/app/api/live/sales/route.ts"
+    },
+    {
+      "route": "/api/live/settings/route.ts",
+      "file": "apps/control-center/src/app/api/live/settings/route.ts"
+    }
+  ],
+  "mobile_presentation_files": [
+    "apps/sales-mobile/lib/presentation/new_sale_page.dart",
+    "apps/sales-mobile/lib/presentation/sales_shell.dart"
+  ],
+  "core_modules": [
+    "advancedfinance",
+    "audit",
+    "banking",
+    "catalog",
+    "commercial",
+    "configuration",
+    "customers",
+    "devices",
+    "finance",
+    "financialops",
+    "groupfinance",
+    "httpapi",
+    "inventory",
+    "inventorycontrol",
+    "mobile",
+    "operations",
+    "outbox",
+    "people",
+    "platform",
+    "readmodel",
+    "receivables",
+    "reporting",
+    "sales",
+    "tenancy",
+    "treasury",
+    "workforce"
+  ],
+  "database_migrations": [
+    "000001_core.up.sql",
+    "000002_live_golden.up.sql",
+    "000003_runtime_security.up.sql",
+    "000004_runtime_capabilities.up.sql",
+    "000005_offline_and_version_ack.up.sql",
+    "000006_version_ack_serialization.up.sql",
+    "000007_offline_sales_leases.up.sql",
+    "000008_catalog_snapshot_tokens.up.sql",
+    "000009_catalog_publications.up.sql",
+    "000010_mobile_reconciliation.up.sql",
+    "000011_offline_posting_policy.up.sql",
+    "000012_mobile_device_governance.up.sql",
+    "000013_customer_receivables.up.sql",
+    "000014_commercial_operations.up.sql",
+    "000015_bank_reconciliation.up.sql",
+    "000016_financial_controls.up.sql",
+    "000017_chart_of_accounts.up.sql",
+    "000018_financial_reporting.up.sql",
+    "000019_advanced_finance.up.sql",
+    "000020_treasury.up.sql",
+    "000021_group_finance.up.sql",
+    "000022_purchase_asset_clearing.up.sql",
+    "000023_people_payroll.up.sql",
+    "000024_governed_settings.up.sql",
+    "000025_commercial_sourcing.up.sql",
+    "000026_inventory_planning_lots_costing.up.sql",
+    "000027_workforce_documents_payroll_exports.up.sql",
+    "000028_financial_report_packs.up.sql"
+  ]
+}
