@@ -1,0 +1,17 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Generated dependencies, build output, VCS metadata, and transient local reports"
+paths = [
+  '''(^|/)(\.git|node_modules|\.next|\.dart_tool|build|tmp|artifacts)(/|$)'''
+]
+
+[[allowlists]]
+description = "Non-credential protocol/test identifiers reviewed by security"
+regexTarget = "match"
+regexes = [
+  '''(?i)IdempotencyKey\s*[:=]''',
+  '''core-api:8080''',
+  '''secretKey\s*=\s*['"]sqlcipher_key_v1['"]'''
+]

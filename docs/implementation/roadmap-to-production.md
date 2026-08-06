@@ -120,6 +120,12 @@ payroll policy and certification remain Wave 3 gates; human UAT remains Wave 5.
 
 Planning range: 3–5 weeks, parallel with Waves 1 and 3
 
+Execution record: [`wave-2-execution.md`](wave-2-execution.md). The
+provider-neutral repository implementation is complete. The Wave 2 release
+exit remains blocked by IdP/secret-provider selection, named owner approvals,
+privacy/DPIA/transfer decisions, protected-run evidence and an independent
+penetration-test closure letter.
+
 ### Deliverables
 
 - Select and integrate the production OIDC provider, MFA policy, login, logout, token renewal, revocation, inactivity timeout and forced reauthentication.

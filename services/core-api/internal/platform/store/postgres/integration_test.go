@@ -56,7 +56,7 @@ func TestRelease1CrossModuleAcceptanceAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql", "000024_governed_settings.up.sql", "000025_commercial_sourcing.up.sql", "000026_inventory_planning_lots_costing.up.sql", "000027_workforce_documents_payroll_exports.up.sql", "000028_financial_report_packs.up.sql", "000029_governed_dashboard.up.sql", "000030_audit_read_model.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql", "000024_governed_settings.up.sql", "000025_commercial_sourcing.up.sql", "000026_inventory_planning_lots_costing.up.sql", "000027_workforce_documents_payroll_exports.up.sql", "000028_financial_report_packs.up.sql", "000029_governed_dashboard.up.sql", "000030_audit_read_model.up.sql", "000031_access_governance.up.sql", "000032_privacy_governance.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -966,6 +966,17 @@ func TestRelease1CrossModuleAcceptanceAndReversal(t *testing.T) {
 	}
 	if err := store.MarkFailed(ctx, tenantID, events[1].ID, "integration-worker", deliveryNow.Add(time.Minute), "test retry"); err != nil {
 		t.Fatalf("mark failed: %v", err)
+	}
+	governanceTable := pgx.Identifier{schema, "user_role_scopes"}.Sanitize()
+	governanceEvents := pgx.Identifier{schema, "access_assignment_events"}.Sanitize()
+	if _, err := pool.Exec(ctx, `UPDATE `+governanceTable+` SET revoked_at=$1,revoked_by=$2,revocation_reason='Verified leaver access revocation' WHERE id=$3`, deliveryNow, approverID, scopeID); err != nil {
+		t.Fatalf("revoke governed access: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO `+governanceEvents+`(id,tenant_id,assignment_id,target_user_id,event_type,actor_id,approver_id,reason,ticket_reference,correlation_id,occurred_at) VALUES($1,$2,$3,$4,'ASSIGNMENT_REVOKED',$5,$6,'Verified leaver access revocation','IAM-TEST-001',$7,$8)`, "00000000-0000-4000-8000-00000000fa01", tenantID, scopeID, userID, userID, approverID, "00000000-0000-4000-8000-00000000fa02", deliveryNow); err != nil {
+		t.Fatalf("record access revocation evidence: %v", err)
+	}
+	if _, err := readService.Context(ctx, scope, userID); !errors.Is(err, sales.ErrForbidden) {
+		t.Fatalf("revoked role assignment remained authorized: %v", err)
 	}
 	check, err := pool.Begin(ctx)
 	if err != nil {

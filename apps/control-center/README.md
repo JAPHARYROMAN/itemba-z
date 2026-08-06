@@ -25,6 +25,13 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 
 `ITEMBA_SESSION_ENCRYPTION_KEYS` uses `key-id:base64url-key` entries. Add a new key first, retain the old key after it during the maximum session lifetime, and then remove the old key. In production, use `__Host-` cookie names where the hosting platform supports them. OIDC discovery, client authentication and refresh/revocation calls fail closed; a refresh token too large for a safely bounded encrypted cookie is also rejected rather than truncated.
 
+`ITEMBA_OIDC_REQUIRED_ACR` and `ITEMBA_OIDC_REQUIRED_AMR` are mandatory for an
+OIDC deployment. Login requests the approved assurance class and callback
+validation rejects missing or stale `auth_time`, a different `acr`, or any
+missing authentication method. The Go API independently enforces the same
+claims on every bearer token; the browser session display is not the security
+decision point.
+
 Live sales fail closed when authentication, configuration, or the core API is unavailable. The interface explicitly reports that state and never substitutes demonstration sales.
 
 Before a sale or reversal command is sent, its payload fingerprint and idempotency key are preserved in tab-scoped session storage. Each marker is namespaced by authenticated actor, tenant, company, branch, and warehouse; reversal markers also include the source sale ID. A lost-response retry restores the exact command and key only in that same authorized scope, and the marker is cleared only after a confirmed successful response. Records older than the review threshold remain recoverable and are flagged for reconciliation rather than silently discarded.

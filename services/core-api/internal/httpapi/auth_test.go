@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
@@ -13,6 +14,27 @@ import (
 type fixedAuthenticator struct {
 	principal Principal
 	err       error
+}
+
+func TestOIDCAssurancePolicyRequiresMFAClassMethodsAndRecentAuthentication(t *testing.T) {
+	now := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
+	policy := OIDCAssurancePolicy{RequiredACR: "urn:itemba:loa:2", RequiredAMR: []string{"pwd", "otp"}, MaxAuthAge: 30 * time.Minute, now: func() time.Time { return now }}
+	claims := oidcClaims{AssuranceClass: "urn:itemba:loa:2", AuthenticationMethods: []string{"pwd", "otp"}, AuthenticationTime: now.Add(-10 * time.Minute).Unix()}
+	if err := policy.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.validateClaims(claims); err != nil {
+		t.Fatalf("valid MFA claims rejected: %v", err)
+	}
+	claims.AuthenticationMethods = []string{"pwd"}
+	if !errors.Is(policy.validateClaims(claims), ErrUnauthenticated) {
+		t.Fatal("missing second factor was accepted")
+	}
+	claims.AuthenticationMethods = []string{"pwd", "otp"}
+	claims.AuthenticationTime = now.Add(-31 * time.Minute).Unix()
+	if !errors.Is(policy.validateClaims(claims), ErrUnauthenticated) {
+		t.Fatal("stale authentication was accepted")
+	}
 }
 
 func (a fixedAuthenticator) Authenticate(context.Context, *http.Request) (Principal, error) {

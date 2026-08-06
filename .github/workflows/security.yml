@@ -1,0 +1,224 @@
+name: Security assurance
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: "17 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          deny-licenses: AGPL-1.0-only, AGPL-1.0-or-later, SSPL-1.0
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [go, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+      - uses: github/codeql-action/autobuild@v4
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
+
+  repository-and-iac:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/core-api/go.mod
+      - name: Validate security workflow policy
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
+      - name: Scan complete Git history for secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.28.0 git /repo --config /repo/.gitleaks.toml --redact=100 --report-format sarif --report-path /repo/gitleaks-history.sarif --exit-code 0
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.28.0 dir /repo --config /repo/.gitleaks.toml --redact=100 --report-format sarif --report-path /repo/gitleaks-tree.sarif --exit-code 0
+      - name: Upload redacted secret-scan evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: secret-scan-${{ github.run_id }}
+          path: |
+            gitleaks-history.sarif
+            gitleaks-tree.sarif
+          retention-days: 90
+          if-no-files-found: error
+      - name: Block detected historical secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.28.0 git /repo --config /repo/.gitleaks.toml --redact=100 --exit-code 1
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.28.0 dir /repo --config /repo/.gitleaks.toml --redact=100 --exit-code 1
+      - name: Generate retained repository security report
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          format: sarif
+          output: trivy-repository.sarif
+          exit-code: "0"
+      - name: Upload repository security report
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-security-${{ github.run_id }}
+          path: trivy-repository.sarif
+          retention-days: 90
+          if-no-files-found: error
+      - name: Publish repository findings
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-repository.sarif
+          category: trivy-repository
+      - name: Block high and critical repository findings
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          format: table
+          exit-code: "1"
+
+  container-and-sbom:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release-shaped containers
+        run: |
+          docker build --tag itemba-z-core-api:security services/core-api
+          docker build --tag itemba-z-control-center:security apps/control-center
+      - name: Generate API container SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: itemba-z-core-api:security
+          format: spdx-json
+          output-file: core-api.spdx.json
+          artifact-name: core-api-sbom-${{ github.run_id }}.spdx.json
+          upload-artifact-retention: 90
+      - name: Generate Control Center container SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: itemba-z-control-center:security
+          format: spdx-json
+          output-file: control-center.spdx.json
+          artifact-name: control-center-sbom-${{ github.run_id }}.spdx.json
+          upload-artifact-retention: 90
+      - name: Generate retained container findings
+        shell: bash
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/reports" aquasec/trivy:0.70.0 image --format sarif --output /reports/core-api.sarif --severity HIGH,CRITICAL --ignore-unfixed=false itemba-z-core-api:security
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/reports" aquasec/trivy:0.70.0 image --format sarif --output /reports/control-center.sarif --severity HIGH,CRITICAL --ignore-unfixed=false itemba-z-control-center:security
+      - name: Upload container reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-security-${{ github.run_id }}
+          path: |
+            core-api.sarif
+            control-center.sarif
+          retention-days: 90
+          if-no-files-found: error
+      - name: Publish API container findings
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: core-api.sarif
+          category: trivy-core-api
+      - name: Publish Control Center container findings
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: control-center.sarif
+          category: trivy-control-center
+      - name: Block high and critical container findings
+        shell: bash
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.70.0 image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed=false itemba-z-core-api:security
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.70.0 image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed=false itemba-z-control-center:security
+
+  dast-unauthenticated-boundary:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: itemba_z_dast
+          POSTGRES_USER: itemba_z_dast
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U itemba_z_dast -d itemba_z_dast"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://itemba_z_dast:ci-only-password@127.0.0.1:5432/itemba_z_dast?sslmode=disable
+      ITEMBA_ENV: development
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/core-api/go.mod
+      - name: Start isolated API target
+        working-directory: services/core-api
+        run: |
+          go run ./cmd/migrate
+          go run ./cmd/devseed
+          go build -o "$RUNNER_TEMP/itemba-api" ./cmd/api
+          "$RUNNER_TEMP/itemba-api" > "$RUNNER_TEMP/itemba-api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/itemba-api.pid"
+          for attempt in {1..30}; do curl --fail --silent http://127.0.0.1:8080/readyz >/dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/itemba-api.log"
+          exit 1
+      - name: Prepare DAST contract with isolated target
+        run: |
+          node -e "const fs=require('fs');let x=fs.readFileSync('contracts/openapi/itemba-z.v1.yaml','utf8');x=x.replace('  - url: /','  - url: http://127.0.0.1:8080');fs.writeFileSync('contracts/openapi/itemba-z.dast.yaml',x)"
+      - name: Scan unauthenticated and malformed-request boundary
+        uses: zaproxy/action-api-scan@v0.9.0
+        with:
+          target: contracts/openapi/itemba-z.dast.yaml
+          format: openapi
+          fail_action: true
+          allow_issue_writing: false
+          cmd_options: -I -l WARN
+          artifact_name: zap-api-${{ github.run_id }}
+      - name: Stop isolated API target
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/itemba-api.pid"; then kill "$(cat "$RUNNER_TEMP/itemba-api.pid")" || true; fi

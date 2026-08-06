@@ -1,0 +1,18 @@
+# Provider identifiers only. Do not place real credentials or private keys here.
+secret_custody = {
+  provider                 = "APPROVED_PROVIDER"
+  vault_id                 = "secret-manager-resource-id"
+  encryption_key_id        = "managed-kms-key-id"
+  certificate_manager_id   = "managed-certificate-resource-id"
+  audit_log_destination_id = "immutable-security-log-destination"
+  rotation_owner           = "APPROVED_SECURITY_OWNER"
+  emergency_access_group   = "APPROVED_BREAK_GLASS_GROUP"
+}
+
+runtime_secret_references = {
+  api_database_url        = "secretref://api/database-url"
+  worker_database_url     = "secretref://worker/database-url"
+  oidc_client_secret      = "secretref://control-center/oidc-client-secret"
+  session_encryption_keys = "secretref://control-center/session-encryption-key-ring"
+  object_storage_key      = "secretref://api/object-storage-key"
+}

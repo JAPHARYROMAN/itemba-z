@@ -62,6 +62,7 @@ export async function beginAuthorization(
     state,
     nonce,
     max_age: forceReauthentication ? "0" : String(config.authenticationMaxAgeSeconds),
+    acr_values: config.requiredAssuranceLevel,
   };
   if (forceReauthentication) parameters.prompt = "login";
   if (config.audience) parameters.audience = config.audience;
@@ -111,6 +112,15 @@ export async function completeAuthorization(
   if (!subject) throw new Error("OIDC ID token is missing a subject");
   const displayName = stringClaim(claims?.name) ?? stringClaim(claims?.preferred_username) ?? stringClaim(claims?.email) ?? subject;
   const authenticationMethods = Array.isArray(claims?.amr) ? claims.amr.filter((method): method is string => typeof method === "string") : [];
+  if (stringClaim(claims?.acr) !== config.requiredAssuranceLevel) {
+    throw new Error("OIDC authentication did not satisfy the required assurance level");
+  }
+  if (config.requiredAuthenticationMethods.some((method) => !authenticationMethods.includes(method))) {
+    throw new Error("OIDC authentication did not satisfy the required authentication methods");
+  }
+  if (typeof claims?.auth_time !== "number" || now - claims.auth_time * 1_000 > config.authenticationMaxAgeSeconds * 1_000) {
+    throw new Error("OIDC authentication time is missing or too old");
+  }
 
   return {
     accessToken,
@@ -126,7 +136,7 @@ export async function completeAuthorization(
       absoluteExpiresAt: now + config.absoluteTimeoutSeconds * 1_000,
       accessExpiresAt: now + expiresIn * 1_000,
       authenticationTime: typeof claims?.auth_time === "number" ? claims.auth_time * 1_000 : undefined,
-      assuranceLevel: stringClaim(claims?.acr),
+      assuranceLevel: config.requiredAssuranceLevel,
       authenticationMethods,
     },
   };

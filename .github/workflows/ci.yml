@@ -29,6 +29,8 @@ jobs:
         run: pnpm --package=@redocly/cli@2.9.0 dlx redocly lint contracts/openapi/itemba-z.v1.yaml
       - name: Validate event schema JSON
         run: node -e "JSON.parse(require('fs').readFileSync('contracts/events/event-envelope.v1.schema.json','utf8'))"
+      - name: Validate Wave 2 security and privacy control evidence
+        run: node scripts/validate-wave2-controls.mjs
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.5
@@ -276,9 +278,24 @@ jobs:
             apps/sales-mobile/build/release-sha256.txt
           if-no-files-found: error
           retention-days: 30
+      - name: Generate Android release SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: apps/sales-mobile/build/app/outputs
+          format: spdx-json
+          output-file: apps/sales-mobile/build/android-release.spdx.json
+          artifact-name: android-release-sbom-${{ github.run_id }}.spdx.json
+          upload-artifact-retention: 90
       - name: Attest release provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest@v4
         with:
           subject-path: |
             apps/sales-mobile/build/app/outputs/flutter-apk/app-release.apk
             apps/sales-mobile/build/app/outputs/bundle/release/app-release.aab
+      - name: Attest Android release SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            apps/sales-mobile/build/app/outputs/flutter-apk/app-release.apk
+            apps/sales-mobile/build/app/outputs/bundle/release/app-release.aab
+          sbom-path: apps/sales-mobile/build/android-release.spdx.json

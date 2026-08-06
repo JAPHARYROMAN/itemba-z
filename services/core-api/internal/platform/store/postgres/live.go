@@ -239,6 +239,8 @@ func (s *Store) WorkingContext(ctx context.Context, scope tenancy.Scope, actorID
 			LEFT JOIN role_permissions rp ON rp.tenant_id = urs.tenant_id AND rp.role_id = urs.role_id
 			WHERE u.tenant_id = $1 AND u.id = $2 AND u.active
 			  AND urs.company_id = $3 AND urs.branch_id = $4 AND urs.warehouse_id = $5
+			  AND urs.revoked_at IS NULL AND urs.valid_from <= now()
+			  AND (urs.valid_until IS NULL OR urs.valid_until > now())
 			GROUP BY c.name, c.base_currency, c.master_data_version, c.price_version, c.catalog_snapshot_token, c.business_timezone, b.name, w.name`,
 			scope.TenantID, actorID, scope.CompanyID, scope.BranchID, scope.WarehouseID).Scan(
 			&result.CompanyName, &result.Currency, &result.MasterDataVersion, &result.PriceVersion, &result.CatalogSnapshotToken, &result.TimeZone,

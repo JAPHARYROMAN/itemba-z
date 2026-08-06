@@ -25,6 +25,15 @@ from ordinary module-read permissions.
 
 The seed matrix is a starting policy. Named users, value thresholds, substitutes, delegations, and emergency access require signed business-owner approval before production.
 
+Security governance separates `security.access.read`,
+`security.access.manage`, `security.access.review`, and
+`security.emergency.activate`. An assignment authorizes only while its user is
+active, its exact organizational scope matches, its validity window is open,
+and it has not been revoked. Governed grants require different maker and
+approver identities, reason and ticket evidence. Delegation expires within 30
+days and break-glass access within two hours; neither can erase immutable
+evidence or bypass business maker-checker rules.
+
 Executive overview access uses `dashboard.read` in addition to
 `reports.financial.read`. The combination permits legal-company ledger metrics
 and an exact branch/warehouse count of submitted transactional operation and

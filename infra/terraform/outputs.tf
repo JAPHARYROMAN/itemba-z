@@ -6,3 +6,12 @@ output "deployment_contract" {
     tags           = local.required_tags
   }
 }
+
+output "security_custody_contract" {
+  description = "Non-secret custody identifiers consumed by the selected production provider module."
+  value = {
+    secret_custody           = var.secret_custody
+    runtime_secret_names     = sort(keys(var.runtime_secret_references))
+    runtime_secret_reference = "injected-by-managed-workload-identity"
+  }
+}

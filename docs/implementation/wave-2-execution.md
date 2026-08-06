@@ -6,6 +6,10 @@ Wave 2 establishes production identity, security and privacy controls. Repositor
 completion is not production authorization: provider selection, owner approvals,
 MFA enforcement and independent assurance require controlled external evidence.
 
+Repository status: **COMPLETE**
+
+Wave 2 exit gate: **BLOCKED BY EXTERNAL EVIDENCE**
+
 ## Slice 1 — Control Center OIDC and session lifecycle
 
 Status: repository implementation complete; provider integration gate open
@@ -56,16 +60,97 @@ External gate retained:
   cross-scope tests and sign the evidence. No provider has been inferred from
   repository code.
 
-## Remaining Wave 2 work
+## Slice 2 — Access lifecycle and segregation of duties
 
-- Joiner/mover/leaver, delegation, break-glass and periodic access-review control
-  implementation and owner evidence.
-- Business-approved role/scope/amount/maker-checker and segregation-of-duties
-  assignment review.
-- Production secret manager, certificate/key custody, rotation logging and
-  emergency access.
-- Blocking dependency/container/IaC/secret/SAST/DAST policies with retained
-  reports; SBOM and signed provenance for every release artifact.
-- Data inventory/classification, lawful basis, notices, retention, data-subject
-  rights, processor register, legal hold/deletion, incident response and DPIA.
-- Independent penetration test and closure of all critical/high findings.
+Status: repository implementation complete; owner assignment review open
+
+- Migration `000031_access_governance` adds validity, expiry, revocation,
+  delegation, emergency-access and review evidence to scoped role assignments.
+- API authorization rejects inactive users and assignments that are not yet
+  valid, expired or revoked. The PostgreSQL acceptance suite proves an
+  assignment loses access immediately after governed revocation.
+- Governed changes require different actor and approver identities, 8–500
+  character reason, ticket reference and immutable correlation evidence.
+- Delegation is capped at 30 days and break-glass access at two hours by both
+  command validation and database constraints.
+- `cmd/accessctl` provides protected joiner, mover/leaver, delegation,
+  break-glass, revocation and review operations through a separate
+  administrative database secret; it is not part of the API runtime.
+- The access-governance procedure defines JML, periodic review, emergency
+  response and business-process SoD expectations.
+
+External gate retained:
+
+- Named production users, roles, scopes, amount thresholds, exceptions,
+  reviewers and emergency members still require business/security owner
+  approval. Seed roles are not production evidence.
+
+## Slice 3 — Secret, certificate and key custody contract
+
+Status: provider-neutral repository contract complete; provider resources open
+
+- Terraform requires non-secret secret-manager, KMS, certificate-manager,
+  immutable audit destination, rotation owner and emergency-group identifiers.
+- Runtime inputs must be secret-reference URIs and cannot embed credential
+  values. Workload identity resolves references in the selected provider
+  module; Terraform variables/state are not secret stores.
+- The custody procedure covers creation, dual approval, access logging,
+  overlap rotation, revocation, session key rings, Android signing and
+  break-glass evidence.
+
+External gate retained:
+
+- Hosting and secret provider selection, real resource IDs, access/rotation
+  logs, certificate custody and owner sign-off remain unavailable.
+
+## Slice 4 — Secure software supply chain
+
+Status: repository workflows complete; protected-run evidence open
+
+- The security workflow blocks high/critical dependency, repository, IaC and
+  container findings; scans full Git history for secrets; runs extended CodeQL
+  and an isolated OpenAPI DAST boundary scan; and retains redacted SARIF.
+- Dependabot covers Go, npm, Dart and GitHub Actions dependencies.
+- API/worker/web release jobs generate hashes, SPDX JSON SBOM, controlled
+  bundles and GitHub/Sigstore-backed provenance and SBOM attestations.
+- Android release jobs use protected signing material and attest signed APK/AAB
+  artifacts plus their SBOM.
+- `actionlint`, Terraform validation and the machine-readable Wave 2 control
+  register are reproducible gates.
+
+External gate retained:
+
+- Protected-branch activation and the first retained scheduled/release run must
+  be reviewed. A workflow definition is not a completed production release.
+
+## Slice 5 — Privacy, incident and independent assurance controls
+
+Status: repository control set complete; legal/owner/assessor approvals open
+
+- The data inventory classifies identity, HR/payroll, customer/credit,
+  supplier, POS/device, finance/tax/audit, communications, telemetry,
+  documents and backups by subject, purpose, proposed lawful basis, transfer
+  and retention trigger.
+- Migration `000032_privacy_governance` provides dual-approved,
+  effective-dated retention rules, legal holds, rights cases/events, disposal
+  manifests and processor versions without enabling unapproved deletion.
+- Procedures cover bilingual notice content, data-subject rights, correction
+  without ledger rewriting, legal hold/release, verified disposal, processor
+  and transfer assessment, DPIA, personal-data incident response and evidence.
+- The independent penetration-test plan defines target scope, authorization,
+  findings, retest and zero-critical/high closure requirements.
+
+External gate retained:
+
+- DPO/privacy/legal owners are unassigned; lawful bases, exact retention,
+  notices, processor agreements, hosting/support transfers and DPIA are not
+  approved. No independent penetration test or closure letter exists.
+
+## Wave 2 repository exit
+
+- All provider-neutral controls that can be implemented safely before owner and
+  provider selection are executable and machine-validated.
+- The repository never labels external approvals, provider resources or an
+  independent assessment complete.
+- Production authentication/security/privacy exit remains blocked until the
+  external evidence in `evidence/wave-2/README.md` is supplied and approved.

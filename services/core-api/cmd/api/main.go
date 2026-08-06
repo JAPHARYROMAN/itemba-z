@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -64,7 +66,14 @@ func main() {
 	var authenticator httpapi.Authenticator
 	issuer, audience := os.Getenv("OIDC_ISSUER_URL"), os.Getenv("OIDC_AUDIENCE")
 	if issuer != "" || audience != "" {
-		oidcAuthenticator, err := httpapi.NewOIDCAuthenticator(startupContext, issuer, audience)
+		maxAuthAgeSeconds, parseErr := strconv.Atoi(os.Getenv("OIDC_MAX_AUTH_AGE_SECONDS"))
+		if parseErr != nil || maxAuthAgeSeconds < 60 || maxAuthAgeSeconds > 86400 {
+			logger.Error("OIDC_MAX_AUTH_AGE_SECONDS must be an integer between 60 and 86400")
+			os.Exit(1)
+		}
+		requiredAMR := strings.FieldsFunc(os.Getenv("OIDC_REQUIRED_AMR"), func(r rune) bool { return r == ',' || r == ' ' })
+		policy := httpapi.OIDCAssurancePolicy{RequiredACR: os.Getenv("OIDC_REQUIRED_ACR"), RequiredAMR: requiredAMR, MaxAuthAge: time.Duration(maxAuthAgeSeconds) * time.Second}
+		oidcAuthenticator, err := httpapi.NewOIDCAuthenticator(startupContext, issuer, audience, policy)
 		if err != nil {
 			logger.Error("initialize OIDC authentication", "error", err)
 			os.Exit(1)
@@ -72,7 +81,7 @@ func main() {
 		authenticator = oidcAuthenticator
 	} else {
 		if !development {
-			logger.Error("OIDC_ISSUER_URL and OIDC_AUDIENCE are required outside explicit development", "environment", environment)
+			logger.Error("OIDC issuer, audience, MFA assurance policy and authentication age are required outside explicit development", "environment", environment)
 			os.Exit(1)
 		}
 		authenticator = httpapi.DevelopmentHeaderAuthenticator{}

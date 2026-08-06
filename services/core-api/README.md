@@ -138,11 +138,21 @@ always rejected, and clients must never infer that a missing overdue amount is z
 
 Only the exact `ITEMBA_ENV=development` value permits the in-memory repository
 or development header authenticator. Unset, misspelled, staging, production,
-and every other environment require `DATABASE_URL`, `OIDC_ISSUER_URL`, and
-`OIDC_AUDIENCE` and fail closed when any are absent. Production ID tokens
-must include a UUID-valued `user_id` claim plus tenant, company, branch, and
-warehouse UUID claims; opaque OIDC `sub` values are retained as provenance and
-are never used as database user IDs.
+and every other environment require `DATABASE_URL`, `OIDC_ISSUER_URL`,
+`OIDC_AUDIENCE`, `OIDC_REQUIRED_ACR`, `OIDC_REQUIRED_AMR`, and
+`OIDC_MAX_AUTH_AGE_SECONDS` and fail closed when any are absent or invalid.
+Production access tokens must include the configured assurance class, every
+required authentication-method reference, a recent `auth_time`, a UUID-valued
+`user_id` claim plus tenant, company, branch, and warehouse UUID claims. Opaque
+OIDC `sub` values are retained as provenance and are never database user IDs.
+
+Approved identity lifecycle changes run through `go run ./cmd/accessctl` in a
+protected administrative job. It requires a managed
+`ITEMBA_ADMIN_DATABASE_URL`, separate actor and approver IDs, a reason, and a
+ticket reference. Standard grants, time-bounded delegation, two-hour maximum
+break-glass access, revocation, user disablement and access-review attestations
+write immutable evidence. The API runtime identity cannot execute this tool's
+administrative SQL.
 
 ## Outbox worker
 

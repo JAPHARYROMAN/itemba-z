@@ -11,3 +11,11 @@ This directory intentionally defines the provider-neutral deployment contract be
 - OpenTelemetry log, metric, and trace destinations.
 
 Provider selection is gated by the Tanzania data-protection assessment, cross-border transfer approval where applicable, service availability, recovery capability, support, and total operating cost. No production data may be placed in a region before that decision is recorded.
+
+The root contract requires `secret_custody` and
+`runtime_secret_references`. These inputs contain provider resource identifiers
+and reference URIs only—never passwords, client secrets, session keys,
+certificate private keys, or database credentials. The selected provider
+module must resolve them through workload identity, emit read/rotation audit
+events to the approved immutable destination, and deny routine operators direct
+secret-value access. `terraform.tfvars` is not a permitted secret store.

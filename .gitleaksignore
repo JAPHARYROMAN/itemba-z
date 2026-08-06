@@ -1,0 +1,26 @@
+# Reviewed 2026-08-06. Each fingerprint is a non-secret test idempotency
+# key or a runtime variable assignment. Never add path/rule-wide exclusions.
+02dd481d0674b28069d20760a4a11bb89aa6fcfe:services/core-api/internal/platform/store/postgres/integration_test.go:generic-api-key:298
+02dd481d0674b28069d20760a4a11bb89aa6fcfe:services/core-api/internal/treasury/service_test.go:generic-api-key:50
+02dd481d0674b28069d20760a4a11bb89aa6fcfe:services/core-api/internal/treasury/service_test.go:generic-api-key:66
+0f53e27f0400f8add868ca22d3c4026c79e9b37d:services/core-api/internal/workforce/service_test.go:generic-api-key:43
+2122a678751696e35b5a8c41a08b35c104895eb1:services/core-api/internal/banking/service_test.go:generic-api-key:63
+2122a678751696e35b5a8c41a08b35c104895eb1:services/core-api/internal/banking/service_test.go:generic-api-key:67
+2122a678751696e35b5a8c41a08b35c104895eb1:services/core-api/internal/platform/store/postgres/integration_test.go:generic-api-key:169
+2122a678751696e35b5a8c41a08b35c104895eb1:services/core-api/internal/platform/store/postgres/integration_test.go:generic-api-key:173
+28bc97177c8d48e04eb69d20009eab59f0f11fa4:services/core-api/internal/platform/store/postgres/integration_test.go:generic-api-key:359
+62ad0f1b5fcc15f336b41de8cc65f2e99f76d3f3:services/core-api/internal/mobile/service_test.go:generic-api-key:602
+62ad0f1b5fcc15f336b41de8cc65f2e99f76d3f3:services/core-api/internal/mobile/service_test.go:generic-api-key:610
+62ad0f1b5fcc15f336b41de8cc65f2e99f76d3f3:services/core-api/internal/mobile/service_test.go:generic-api-key:618
+63cf068f5dec434e08056b44a4c3f775b965428f:services/core-api/internal/operations/service_test.go:generic-api-key:83
+63cf068f5dec434e08056b44a4c3f775b965428f:services/core-api/internal/operations/service_test.go:generic-api-key:88
+63cf068f5dec434e08056b44a4c3f775b965428f:services/core-api/internal/operations/service_test.go:generic-api-key:123
+6d7b465a6390b464b245f0103ac0e15a56c8aa97:apps/sales-mobile/lib/data/database_key_provider.dart:generic-api-key:46
+8f21fc53a2033d382ccedfaa5a3c7414347751b0:services/core-api/internal/platform/store/postgres/integration_test.go:generic-api-key:201
+c495cf3c7e4ef950c6a621cc544c394e61c4086f:services/core-api/internal/platform/store/postgres/integration_test.go:generic-api-key:462
+c495cf3c7e4ef950c6a621cc544c394e61c4086f:services/core-api/internal/platform/store/postgres/integration_test.go:generic-api-key:466
+c495cf3c7e4ef950c6a621cc544c394e61c4086f:services/core-api/internal/platform/store/postgres/integration_test.go:generic-api-key:474
+c495cf3c7e4ef950c6a621cc544c394e61c4086f:services/core-api/internal/platform/store/postgres/integration_test.go:generic-api-key:478
+cd9d5de0da0ed08a17b2b46e5908618485ac9bdf:apps/control-center/src/live-api/api-client.test.ts:generic-api-key:162
+cd9d5de0da0ed08a17b2b46e5908618485ac9bdf:services/core-api/internal/inventorycontrol/service_test.go:generic-api-key:41
+cd9d5de0da0ed08a17b2b46e5908618485ac9bdf:services/core-api/internal/inventorycontrol/service_test.go:generic-api-key:44

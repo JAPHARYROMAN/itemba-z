@@ -8,6 +8,8 @@ function environment(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.Process
     ITEMBA_OIDC_ISSUER_URL: "https://identity.example.com/tenant",
     ITEMBA_OIDC_CLIENT_ID: "itemba-control-center",
     ITEMBA_OIDC_CLIENT_SECRET: "not-a-real-secret",
+    ITEMBA_OIDC_REQUIRED_ACR: "urn:itemba:loa:2",
+    ITEMBA_OIDC_REQUIRED_AMR: "pwd otp",
     ITEMBA_CONTROL_CENTER_ORIGIN: "https://erp.example.com",
     ITEMBA_SESSION_ENCRYPTION_KEYS: `current:${Buffer.alloc(32, 7).toString("base64url")}`,
     ...overrides,
@@ -21,6 +23,8 @@ describe("OIDC runtime configuration", () => {
     expect(config.callbackUrl.href).toBe("https://erp.example.com/api/auth/callback");
     expect(config.idleTimeoutSeconds).toBe(1_800);
     expect(config.absoluteTimeoutSeconds).toBe(28_800);
+    expect(config.requiredAssuranceLevel).toBe("urn:itemba:loa:2");
+    expect(config.requiredAuthenticationMethods).toEqual(["pwd", "otp"]);
     expect(config.secureCookies).toBe(true);
   });
 
@@ -50,6 +54,15 @@ describe("OIDC runtime configuration", () => {
       ITEMBA_OIDC_COOKIE_NAME: "same-cookie",
       ITEMBA_OIDC_SESSION_COOKIE_NAME: "same-cookie",
     }))).toThrowError(OidcConfigurationError);
+  });
+
+  it("requires an explicit production assurance class and authentication methods", () => {
+    expect(() => loadOidcRuntimeConfig(environment({ ITEMBA_OIDC_REQUIRED_ACR: "" })))
+      .toThrowError(OidcConfigurationError);
+    expect(() => loadOidcRuntimeConfig(environment({ ITEMBA_OIDC_REQUIRED_AMR: "" })))
+      .toThrowError(OidcConfigurationError);
+    expect(() => loadOidcRuntimeConfig(environment({ ITEMBA_OIDC_REQUIRED_AMR: "otp,<unsafe>" })))
+      .toThrowError(OidcConfigurationError);
   });
 });
 

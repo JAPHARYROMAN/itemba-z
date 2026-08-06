@@ -11,6 +11,8 @@ export interface OidcRuntimeConfig {
   postLogoutUrl: URL;
   scopes: string;
   audience?: string;
+  requiredAssuranceLevel: string;
+  requiredAuthenticationMethods: string[];
   idleTimeoutSeconds: number;
   absoluteTimeoutSeconds: number;
   authenticationMaxAgeSeconds: number;
@@ -109,6 +111,17 @@ function cookieName(environment: NodeJS.ProcessEnv, name: string, fallback: stri
   return value;
 }
 
+function requiredAuthenticationMethods(environment: NodeJS.ProcessEnv): string[] {
+  const methods = required(environment, "ITEMBA_OIDC_REQUIRED_AMR")
+    .split(/[\s,]+/)
+    .map((method) => method.trim())
+    .filter(Boolean);
+  if (methods.length === 0 || methods.some((method) => !/^[A-Za-z0-9._:-]{1,64}$/.test(method))) {
+    throw new OidcConfigurationError("oidc_configuration_invalid", "ITEMBA_OIDC_REQUIRED_AMR must list valid authentication method references.");
+  }
+  return [...new Set(methods)];
+}
+
 export function loadOidcRuntimeConfig(environment: NodeJS.ProcessEnv = process.env): OidcRuntimeConfig {
   const deploymentEnvironment = environment.ITEMBA_ENV?.trim() || "production";
   const issuer = parseIssuer(required(environment, "ITEMBA_OIDC_ISSUER_URL"), deploymentEnvironment);
@@ -144,6 +157,8 @@ export function loadOidcRuntimeConfig(environment: NodeJS.ProcessEnv = process.e
     postLogoutUrl: new URL("/login?signedOut=1", controlCenterOrigin),
     scopes,
     audience: environment.ITEMBA_OIDC_AUDIENCE?.trim() || undefined,
+    requiredAssuranceLevel: required(environment, "ITEMBA_OIDC_REQUIRED_ACR"),
+    requiredAuthenticationMethods: requiredAuthenticationMethods(environment),
     idleTimeoutSeconds,
     absoluteTimeoutSeconds,
     authenticationMaxAgeSeconds: positiveInteger(environment, "ITEMBA_OIDC_AUTH_MAX_AGE_SECONDS", 28_800),

@@ -35,6 +35,8 @@ func (t *transaction) Authorize(ctx context.Context, scope tenancy.Scope, actorI
 			JOIN role_permissions rp ON rp.tenant_id = urs.tenant_id AND rp.role_id = urs.role_id
 			WHERE u.tenant_id = $1 AND u.id = $2 AND u.active
 			  AND urs.company_id = $3 AND urs.branch_id = $4 AND urs.warehouse_id = $5
+			  AND urs.revoked_at IS NULL AND urs.valid_from <= now()
+			  AND (urs.valid_until IS NULL OR urs.valid_until > now())
 			  AND rp.permission_code = $6
 		)`, scope.TenantID, actorID, scope.CompanyID, scope.BranchID, scope.WarehouseID, permission).Scan(&authorized)
 	return authorized, normalizeError(err)
