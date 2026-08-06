@@ -169,7 +169,7 @@ jobs:
           go build -o "$RUNNER_TEMP/itemba-api" ./cmd/api
           DATABASE_URL="$API_RUNTIME_DATABASE_URL" "$RUNNER_TEMP/itemba-api" > "$RUNNER_TEMP/itemba-api.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/itemba-api.pid"
-          for attempt in {1..30}; do
+          for _ in {1..30}; do
             if curl --fail --silent http://127.0.0.1:8080/readyz > /dev/null; then
               exit 0
             fi

@@ -189,6 +189,7 @@ jobs:
           --health-retries 12
     env:
       DATABASE_URL: postgres://itemba_z_dast:ci-only-password@127.0.0.1:5432/itemba_z_dast?sslmode=disable
+      API_RUNTIME_DATABASE_URL: postgres://itemba_z_dast_api:ci-only-api-runtime-password@127.0.0.1:5432/itemba_z_dast?sslmode=disable
       ITEMBA_ENV: development
     steps:
       - uses: actions/checkout@v4
@@ -199,11 +200,12 @@ jobs:
         working-directory: services/core-api
         run: |
           go run ./cmd/migrate
+          ITEMBA_RUNTIME_USER=itemba_z_dast_api ITEMBA_RUNTIME_PASSWORD=ci-only-api-runtime-password ITEMBA_RUNTIME_CAPABILITY=api go run ./cmd/devdbrole
           go run ./cmd/devseed
           go build -o "$RUNNER_TEMP/itemba-api" ./cmd/api
-          "$RUNNER_TEMP/itemba-api" > "$RUNNER_TEMP/itemba-api.log" 2>&1 &
+          DATABASE_URL="$API_RUNTIME_DATABASE_URL" "$RUNNER_TEMP/itemba-api" > "$RUNNER_TEMP/itemba-api.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/itemba-api.pid"
-          for attempt in {1..30}; do curl --fail --silent http://127.0.0.1:8080/readyz >/dev/null && exit 0; sleep 1; done
+          for _ in {1..30}; do curl --fail --silent http://127.0.0.1:8080/readyz >/dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/itemba-api.log"
           exit 1
       - name: Prepare DAST contract with isolated target
