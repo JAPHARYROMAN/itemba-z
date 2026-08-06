@@ -3,7 +3,7 @@ import "server-only";
 import { createServerRepository } from "@/live-api/server-repository";
 import { publicProblem } from "@/live-api/errors";
 import type {
-  CustomerAccountWorkspace, CustomerAccountsWorkspace, DeviceManagementWorkspace, LiveSnapshot, MobileReconciliationStatus, ReconciliationDetailWorkspace,
+  CustomerAccountWorkspace, CustomerAccountsWorkspace, DashboardWorkspace, DeviceManagementWorkspace, LiveSnapshot, MobileReconciliationStatus, ReconciliationDetailWorkspace,
   ReconciliationWorkspace, SaleDetailWorkspace, SalesBootstrap, SalesWorkspace,
 	OperationsWorkspace,
 	BankingWorkspace,
@@ -17,6 +17,19 @@ import type {
 	CommercialWorkspace,
 	InventoryControlWorkspace,
 } from "@/live-api/types";
+
+export async function loadDashboardWorkspace(): Promise<LiveSnapshot<DashboardWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const [context, dashboard] = await Promise.all([
+      repository.getWorkingContext(),
+      repository.getDashboard(),
+    ]);
+    return { state: "ready", data: { context, dashboard } };
+  } catch (error) {
+    return { state: "unavailable", problem: publicProblem(error) };
+  }
+}
 
 export async function loadInventoryControlWorkspace(): Promise<LiveSnapshot<InventoryControlWorkspace>> {
 	try {

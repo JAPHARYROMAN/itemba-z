@@ -143,6 +143,26 @@ func (s *Store) CashActivity(_ context.Context, scope tenancy.Scope, actor strin
 	return opening, closing, result, "TZS", nil
 }
 
+func (s *Store) DashboardControls(_ context.Context, scope tenancy.Scope, actor string) (int64, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.state.permissions[permissionKey(scope, actor, "dashboard.read")] {
+		return 0, "", sales.ErrForbidden
+	}
+	var count int64
+	for _, document := range s.state.operationDocuments {
+		if document.Scope == scope && string(document.Status) == "SUBMITTED" {
+			count++
+		}
+	}
+	for _, document := range s.state.financialDocuments {
+		if document.Scope == scope && string(document.Status) == "SUBMITTED" {
+			count++
+		}
+	}
+	return count, "Africa/Dar_es_Salaam", nil
+}
+
 func memoryReportBounds(from, to time.Time) (time.Time, time.Time) {
 	zone, _ := time.LoadLocation("Africa/Dar_es_Salaam")
 	local := func(value time.Time) time.Time {

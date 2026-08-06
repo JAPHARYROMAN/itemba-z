@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	_ "time/tzdata"
@@ -21,6 +22,7 @@ type Repository interface {
 	AccountActivity(context.Context, tenancy.Scope, string, time.Time, time.Time) ([]AccountActivity, string, error)
 	LedgerEntries(context.Context, tenancy.Scope, string, string, time.Time, time.Time) (GeneralLedger, error)
 	CashActivity(context.Context, tenancy.Scope, string, time.Time, time.Time) (int64, int64, []CashMovement, string, error)
+	DashboardControls(context.Context, tenancy.Scope, string) (int64, string, error)
 	SaveReportExport(context.Context, tenancy.Scope, string, ExportArtifact, string, string) (ExportArtifact, error)
 }
 
@@ -67,6 +69,77 @@ func safe(values ...int64) error {
 		}
 	}
 	return nil
+}
+
+func decimalAmount(minor int64) string {
+	sign := ""
+	if minor < 0 {
+		sign = "-"
+		minor = -minor
+	}
+	return fmt.Sprintf("%s%d.%02d", sign, minor/100, minor%100)
+}
+
+// Dashboard returns a month-to-date executive snapshot derived from the same
+// governed reporting services used by the financial statements. The period is
+// based on the service clock and the legal company's configured business
+// timezone; repository implementations then translate those calendar dates to
+// exact query instants.
+func (s *Service) Dashboard(ctx context.Context, q Query) (Dashboard, error) {
+	now := s.clock.Now().UTC()
+	providedRange := !q.From.IsZero() || !q.To.IsZero()
+	var err error
+	q, err = normalizeQuery(q, providedRange, false)
+	if err != nil {
+		return Dashboard{}, err
+	}
+	pending, zoneName, err := s.repository.DashboardControls(ctx, q.Scope, q.ActorID)
+	if err != nil {
+		return Dashboard{}, err
+	}
+	zone, err := time.LoadLocation(zoneName)
+	if err != nil {
+		return Dashboard{}, ErrInvalidQuery
+	}
+	localNow := now.In(zone)
+	to := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, time.UTC)
+	from := time.Date(localNow.Year(), localNow.Month(), 1, 0, 0, 0, 0, time.UTC)
+	if providedRange {
+		from, to = q.From, q.To
+	}
+	q.From, q.To, q.AsOf = from, to, to
+
+	profitAndLoss, err := s.ProfitAndLoss(ctx, q)
+	if err != nil {
+		return Dashboard{}, err
+	}
+	balanceSheet, err := s.BalanceSheet(ctx, q)
+	if err != nil {
+		return Dashboard{}, err
+	}
+	cashFlow, err := s.CashFlow(ctx, q)
+	if err != nil {
+		return Dashboard{}, err
+	}
+	if err = safe(profitAndLoss.TotalRevenueMinor, profitAndLoss.NetProfitMinor, cashFlow.ClosingCashMinor, balanceSheet.TotalAssetsMinor, pending); err != nil {
+		return Dashboard{}, err
+	}
+
+	currency := profitAndLoss.Currency
+	metric := func(key, label string, minor int64) Metric {
+		return Metric{Key: key, Label: label, Value: Money{Amount: decimalAmount(minor), Currency: currency}}
+	}
+	return Dashboard{
+		AsOf: now,
+		Metrics: []Metric{
+			metric("revenue", "Month-to-date revenue", profitAndLoss.TotalRevenueMinor),
+			metric("net_profit", "Month-to-date net profit", profitAndLoss.NetProfitMinor),
+			metric("cash_position", "Cash position", cashFlow.ClosingCashMinor),
+			metric("total_assets", "Total assets", balanceSheet.TotalAssetsMinor),
+		},
+		Alerts:           []DashboardAlert{},
+		PendingApprovals: pending,
+	}, nil
 }
 
 func (s *Service) TrialBalance(ctx context.Context, q Query) (TrialBalance, error) {

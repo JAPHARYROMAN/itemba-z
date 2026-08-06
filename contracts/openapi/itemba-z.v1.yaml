@@ -236,7 +236,7 @@ paths:
       summary: Get governed executive metrics
       operationId: getExecutiveDashboard
       tags: [Dashboard]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/LegalCompanyId'
         - $ref: '#/components/parameters/BranchId'
@@ -253,6 +253,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Dashboard'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /v1/customers:
@@ -1396,12 +1400,14 @@ components:
     LegalCompanyId:
       name: legal_company_id
       in: query
-      required: true
+      required: false
+      description: Optional assertion that must match the authenticated legal-company scope.
       schema: { type: string, format: uuid }
     BranchId:
       name: branch_id
       in: query
       required: false
+      description: Optional assertion that must match the authenticated branch scope.
       schema: { type: string, format: uuid }
     Cursor:
       name: cursor
@@ -2740,12 +2746,15 @@ components:
         external_reference: { type: string, maxLength: 200 }
     Metric:
       type: object
+      additionalProperties: false
       required: [key, label, value]
       properties:
         key: { type: string }
         label: { type: string }
         value: { $ref: '#/components/schemas/Money' }
-        trend_percent: { type: [string, 'null'] }
+        trend_percent:
+          type: [string, 'null']
+          description: Null until a governed comparable-period projection is available.
     DashboardAlert:
       type: object
       required: [id, severity, title, source_type, source_id]
@@ -2757,6 +2766,12 @@ components:
         source_id: { type: string, format: uuid }
     Dashboard:
       type: object
+      additionalProperties: false
+      description: >-
+        Governed executive snapshot. Monetary values are derived from posted
+        legal-company ledger entries. Pending approvals cover submitted
+        transactional operation and finance documents in the authenticated
+        branch and warehouse scope.
       required: [as_of, metrics, alerts, pending_approvals]
       properties:
         as_of: { type: string, format: date-time }

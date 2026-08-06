@@ -1,6 +1,7 @@
 import type { components } from "@/generated/itemba-z.v1";
 
 export type WorkingContext = components["schemas"]["WorkingContext"];
+export type Dashboard = components["schemas"]["Dashboard"];
 export type CustomerSummary = components["schemas"]["CustomerSummary"];
 export type CustomerPage = components["schemas"]["CustomerPage"];
 export type CustomerAccountDetail = components["schemas"]["CustomerAccountDetail"];
@@ -94,6 +95,11 @@ export interface PublicProblem {
 export type LiveSnapshot<T> =
   | { state: "ready"; data: T }
   | { state: "unavailable"; problem: PublicProblem };
+
+export interface DashboardWorkspace {
+  context: WorkingContext;
+  dashboard: Dashboard;
+}
 
 export interface SalesBootstrap {
   context: WorkingContext;

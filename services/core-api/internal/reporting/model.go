@@ -20,6 +20,38 @@ type Query struct {
 	AccountID string
 }
 
+// Money is the public decimal representation used by governed executive
+// metrics. Accounting calculations remain in integer minor units until the
+// response boundary.
+type Money struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency"`
+}
+
+type Metric struct {
+	Key          string  `json:"key"`
+	Label        string  `json:"label"`
+	Value        Money   `json:"value"`
+	TrendPercent *string `json:"trend_percent"`
+}
+
+type DashboardAlert struct {
+	ID         string `json:"id"`
+	Severity   string `json:"severity"`
+	Title      string `json:"title"`
+	SourceType string `json:"source_type"`
+	SourceID   string `json:"source_id"`
+}
+
+// Dashboard is a governed read model. Every monetary metric is derived from
+// the legal-company ledger; no estimated or mock value is admitted here.
+type Dashboard struct {
+	AsOf             time.Time        `json:"as_of"`
+	Metrics          []Metric         `json:"metrics"`
+	Alerts           []DashboardAlert `json:"alerts"`
+	PendingApprovals int64            `json:"pending_approvals"`
+}
+
 type AccountActivity struct {
 	AccountID       string                   `json:"account_id"`
 	Code            string                   `json:"code"`

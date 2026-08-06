@@ -18,6 +18,13 @@ Permissions combine action, module, tenant, legal-company, branch, warehouse, ow
 
 The seed matrix is a starting policy. Named users, value thresholds, substitutes, delegations, and emergency access require signed business-owner approval before production.
 
+Executive overview access uses `dashboard.read` in addition to
+`reports.financial.read`. The combination permits legal-company ledger metrics
+and an exact branch/warehouse count of submitted transactional operation and
+finance documents. It grants no mutation, approval, payroll detail, audit-log
+access, or cross-scope query authority; optional company and branch query
+assertions must match the verified identity scope.
+
 Offline-sale exception access is split into `mobile.reconciliation.read` and
 `mobile.reconciliation.resolve`. Production role assignment must preserve this
 separation where policy requires investigation and disposition by different

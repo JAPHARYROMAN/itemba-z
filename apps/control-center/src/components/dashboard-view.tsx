@@ -2,105 +2,147 @@
 
 import Link from "next/link";
 import {
-  ArrowRight, BanknoteArrowUp, Box, CircleDollarSign, CircleGauge, Clock3, FileText,
-  Landmark, PackageSearch, ReceiptText, ShoppingBag, ShoppingCart, Sparkles, TrendingDown,
-  TrendingUp, TriangleAlert, WalletCards,
+  ArrowRight,
+  BanknoteArrowUp,
+  CircleDollarSign,
+  FileCheck2,
+  Landmark,
+  PackageCheck,
+  ReceiptText,
+  Scale,
+  ShieldCheck,
+  ShoppingCart,
+  TriangleAlert,
 } from "lucide-react";
-import type { DashboardData, QuickAction } from "@/domain/erp";
 import { useLanguage } from "@/components/language-provider";
-import { StatusPill } from "@/components/status-pill";
+import { LiveBadge } from "@/components/live-sales/live-state";
+import { text } from "@/lib/i18n";
+import { formatTimestamp } from "@/live-api/format";
+import type { DashboardWorkspace } from "@/live-api/types";
 
-const quickActionIcons = { sale: ShoppingCart, purchase: ShoppingBag, payment: WalletCards, stock: Box };
-const metricIcons = [ReceiptText, Landmark, CircleDollarSign, PackageSearch];
+const metricCopy = {
+  revenue: {
+    label: text("Month-to-date revenue", "Mapato ya mwezi hadi sasa"),
+    detail: text("Posted revenue accounts", "Akaunti za mapato zilizochapishwa"),
+    icon: ReceiptText,
+  },
+  net_profit: {
+    label: text("Month-to-date net profit", "Faida halisi ya mwezi hadi sasa"),
+    detail: text("Posted revenue less expenses", "Mapato yaliyopostiwa ukiondoa gharama"),
+    icon: Scale,
+  },
+  cash_position: {
+    label: text("Cash position", "Hali ya fedha"),
+    detail: text("Ledger balance in governed cash accounts", "Salio la leja katika akaunti za fedha zinazodhibitiwa"),
+    icon: Landmark,
+  },
+  total_assets: {
+    label: text("Total assets", "Jumla ya mali"),
+    detail: text("Posted asset-account balance", "Salio la akaunti za mali lililopostiwa"),
+    icon: CircleDollarSign,
+  },
+} as const;
 
-function RevenueChart({ data }: { data: DashboardData["revenue"] }) {
-  const { l, t } = useLanguage();
-  const width = 640;
-  const height = 210;
-  const xStep = data.length > 1 ? 560 / (data.length - 1) : 0;
-  const max = Math.max(1, ...data.map((point) => point.value)) * 1.12;
-  const points = data.map((point, index) => ({ x: 48 + index * xStep, y: 178 - (point.value / max) * 145, ...point }));
-  const path = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
-  const area = `${path} L ${points.at(-1)?.x ?? 608} 178 L 48 178 Z`;
+const actions = [
+  { permission: "sales.complete", href: "/sales/new", label: text("Record sale", "Rekodi mauzo"), detail: text("Post a controlled cash or credit sale", "Chapisha mauzo ya fedha au mkopo"), icon: ShoppingCart },
+  { permission: "purchases.requests.manage", href: "/purchases", label: text("Start purchase", "Anza ununuzi"), detail: text("Create a governed purchase request", "Unda ombi la ununuzi linalodhibitiwa"), icon: PackageCheck },
+  { permission: "finance.bank.import", href: "/finance", label: text("Import bank statement", "Ingiza taarifa ya benki"), detail: text("Begin a reconciled banking workflow", "Anza mchakato wa upatanisho wa benki"), icon: BanknoteArrowUp },
+  { permission: "inventory.counts.manage", href: "/inventory", label: text("Count inventory", "Hesabu bidhaa"), detail: text("Open a controlled stock count", "Fungua hesabu ya bidhaa inayodhibitiwa"), icon: FileCheck2 },
+] as const;
 
-  return (
-    <div className="chart-wrap">
-      <svg className="revenue-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={t("revenueChartLabel")}>
-        <defs><linearGradient id="chartArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2f7a61" stopOpacity=".25" /><stop offset="100%" stopColor="#2f7a61" stopOpacity="0" /></linearGradient></defs>
-        {[42, 87, 132, 177].map((y) => <line key={y} x1="48" x2="608" y1={y} y2={y} className="chart-grid" />)}
-        <path d={area} fill="url(#chartArea)" /><path d={path} className="chart-line" />
-        {points.map((point) => <g key={point.month.en}><circle cx={point.x} cy={point.y} r="5" className="chart-dot" /><text x={point.x} y="202" textAnchor="middle" className="chart-label">{l(point.month)}</text><text x={point.x} y={point.y - 14} textAnchor="middle" className="chart-value">{point.label}</text></g>)}
-      </svg>
-    </div>
-  );
+function formatDashboardMoney(amount: string, currency: string, locale: "en" | "sw"): string {
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return `${currency} ${amount}`;
+  return new Intl.NumberFormat(locale === "sw" ? "sw-TZ" : "en-TZ", {
+    style: "currency",
+    currency,
+    currencyDisplay: "code",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
-function QuickActionCard({ action }: { action: QuickAction }) {
-  const { l } = useLanguage();
-  const Icon = quickActionIcons[action.icon];
-  return <Link href={action.href} className="quick-action"><span><Icon size={19} /></span><div><strong>{l(action.label)}</strong><small>{l(action.description)}</small></div><ArrowRight size={16} /></Link>;
-}
-
-export function DashboardView({ data }: { data: DashboardData }) {
-  const { t, l } = useLanguage();
+export function DashboardView({ workspace }: { workspace: DashboardWorkspace }) {
+  const { l, locale } = useLanguage();
+  const { context, dashboard } = workspace;
+  const permissions = new Set(context.permissions);
+  const visibleActions = actions.filter((action) => permissions.has(action.permission));
 
   return (
     <div className="page-stack">
       <section className="page-heading dashboard-heading">
-        <div><p className="eyebrow">{t("dashboardDate")}</p><h1>{t("greeting")}</h1><p>{t("dashboardIntro")}</p></div>
-        <div className="heading-state"><span><span className="pulse-dot" />{t("liveControls")}</span><small>{t("lastSynced")}</small></div>
+        <div>
+          <div className="heading-badges"><LiveBadge context={context} /></div>
+          <h1>{l(text("Executive overview", "Muhtasari wa uongozi"))}</h1>
+          <p>{context.company_name} · {context.branch_name} · {context.warehouse_name}</p>
+        </div>
+        <div className="heading-state">
+          <span><span className="pulse-dot" />{l(text("Governed ledger snapshot", "Muhtasari wa leja unaodhibitiwa"))}</span>
+          <small>{l(text("Generated", "Imetengenezwa"))} {formatTimestamp(dashboard.as_of, locale, context.timezone)}</small>
+        </div>
       </section>
 
-      <section aria-labelledby="quick-actions-title">
-        <div className="section-heading"><div><p className="eyebrow">{t("quickActions")}</p><h2 id="quick-actions-title" className="sr-only">{t("quickActions")}</h2></div></div>
-        <div className="quick-actions-grid">{data.quickActions.map((action) => <QuickActionCard key={action.href} action={action} />)}</div>
-      </section>
+      {visibleActions.length > 0 ? (
+        <section aria-labelledby="dashboard-actions-title">
+          <div className="section-heading"><div><p className="eyebrow">{l(text("Authorized actions", "Hatua zilizoidhinishwa"))}</p><h2 id="dashboard-actions-title" className="sr-only">{l(text("Authorized actions", "Hatua zilizoidhinishwa"))}</h2></div></div>
+          <div className="quick-actions-grid">
+            {visibleActions.map((action) => {
+              const Icon = action.icon;
+              return <Link href={action.href} className="quick-action" key={action.href}><span><Icon size={19} /></span><div><strong>{l(action.label)}</strong><small>{l(action.detail)}</small></div><ArrowRight size={16} /></Link>;
+            })}
+          </div>
+        </section>
+      ) : null}
 
-      <section className="metric-grid" aria-label={t("businessPerformanceMetrics")}>
-        {data.metrics.map((metric, index) => {
-          const Icon = metricIcons[index];
-          const TrendIcon = metric.direction === "down" ? TrendingDown : TrendingUp;
-          return <article className="metric-card" key={metric.label.en}><div className="metric-card-top"><span className="metric-icon"><Icon size={19} /></span>{metric.change ? <span className={`metric-change ${metric.direction}`}><TrendIcon size={14} />{metric.change}</span> : null}</div><p>{l(metric.label)}</p><strong>{metric.value}</strong><small>{l(metric.detail)}</small></article>;
+      <section className="metric-grid" aria-label={l(text("Governed financial metrics", "Vipimo vya fedha vinavyodhibitiwa"))}>
+        {dashboard.metrics.map((metric) => {
+          const copy = metricCopy[metric.key as keyof typeof metricCopy];
+          const Icon = copy?.icon ?? CircleDollarSign;
+          return (
+            <article className="metric-card" key={metric.key}>
+              <div className="metric-card-top"><span className="metric-icon"><Icon size={19} /></span><span className="reconciliation-status status-resolved">LIVE</span></div>
+              <p>{copy ? l(copy.label) : metric.label}</p>
+              <strong>{formatDashboardMoney(metric.value.amount, metric.value.currency, locale)}</strong>
+              <small>{copy ? l(copy.detail) : l(text("Governed ERP metric", "Kipimo cha ERP kinachodhibitiwa"))}</small>
+            </article>
+          );
         })}
       </section>
 
-      <div className="dashboard-primary-grid">
-        <section className="card revenue-card">
-          <div className="card-heading"><div><span className="card-kicker"><CircleGauge size={15} /> {t("performance")}</span><h2>{t("revenue")}</h2><p>{t("revenueSubtitle")}</p></div><span className="period-chip">{t("periodMayAugust")}</span></div>
-          <RevenueChart data={data.revenue} />
-        </section>
-        <section className="card sales-mix-card">
-          <div className="card-heading"><div><span className="card-kicker"><Sparkles size={15} /> {t("today")}</span><h2>{t("salesMix")}</h2><p>{t("totalToday")}</p></div></div>
-          <div className="donut-wrap"><div className="donut" aria-label={t("salesMixChartLabel")}><span><strong>246</strong><small>{t("salesCount")}</small></span></div></div>
-          <div className="legend-list">{data.salesMix.map((item) => <div key={item.label.en}><span className="legend-color" style={{ background: item.color }} /><span><strong>{l(item.label)}</strong><small>{item.value}%</small></span><b>{item.amount}</b></div>)}</div>
-        </section>
-      </div>
-
       <div className="dashboard-secondary-grid">
         <section className="card" id="approvals">
-          <div className="card-heading"><div><span className="card-kicker"><Clock3 size={15} /> {t("needsDecision")}</span><h2>{t("approvalInbox")}</h2></div><Link href="/purchases">{t("viewAll")}<ArrowRight size={15} /></Link></div>
-          <div className="approval-list">{data.approvals.map((approval) => <Link href={approval.href} key={approval.id} className="approval-row"><span className={`approval-icon tone-${approval.tone}`}><FileText size={18} /></span><div className="approval-main"><span>{l(approval.type)}</span><strong>{approval.subject}</strong><small>{approval.id} · {approval.requester}</small></div><div className="approval-meta"><strong>{approval.amount}</strong><small>{l(approval.age)}</small></div><ArrowRight size={16} /></Link>)}</div>
+          <div className="card-heading">
+            <div><span className="card-kicker"><FileCheck2 size={15} /> {l(text("Needs a decision", "Inahitaji uamuzi"))}</span><h2>{l(text("Transactional approvals", "Idhini za miamala"))}</h2></div>
+            <Link href="/purchases">{l(text("Open workflows", "Fungua michakato"))}<ArrowRight size={15} /></Link>
+          </div>
+          <div className="permission-empty">
+            <strong>{dashboard.pending_approvals}</strong>
+            <p>{l(text(
+              "Submitted sales, purchase, inventory, and finance documents in this branch and warehouse scope.",
+              "Nyaraka za mauzo, ununuzi, bidhaa na fedha zilizowasilishwa katika tawi na ghala hili.",
+            ))}</p>
+          </div>
         </section>
+
         <section className="card">
-          <div className="card-heading"><div><span className="card-kicker"><TriangleAlert size={15} /> {t("attention")}</span><h2>{t("operationsWatch")}</h2></div></div>
-          <div className="alert-list">{data.alerts.map((alert) => <Link href={alert.href} key={alert.title.en} className="alert-row"><span className={`alert-icon tone-${alert.tone}`}><TriangleAlert size={17} /></span><div><strong>{l(alert.title)}</strong><span>{l(alert.detail)}</span><small>{alert.meta}</small></div><ArrowRight size={16} /></Link>)}</div>
+          <div className="card-heading"><div><span className="card-kicker"><TriangleAlert size={15} /> {l(text("Governed signals", "Ishara zinazodhibitiwa"))}</span><h2>{l(text("Operations watch", "Uangalizi wa shughuli"))}</h2></div></div>
+          {dashboard.alerts.length > 0 ? (
+            <div className="alert-list">
+              {dashboard.alerts.map((alert) => <div className="alert-row" key={alert.id}><span className={`alert-icon tone-${alert.severity === "critical" ? "danger" : alert.severity}`}><TriangleAlert size={17} /></span><div><strong>{alert.title}</strong><span>{alert.source_type}</span><small>{alert.source_id}</small></div></div>)}
+            </div>
+          ) : (
+            <div className="permission-empty"><ShieldCheck size={24} /><strong>{l(text("No governed alerts emitted", "Hakuna tahadhari zilizotolewa"))}</strong><p>{l(text("The API has not emitted an exception for this snapshot. This is not a simulated all-clear.", "API haijatoa hitilafu kwa muhtasari huu. Hii si hali ya majaribio."))}</p></div>
+          )}
         </section>
       </div>
 
-      <div className="dashboard-tertiary-grid">
-        <section className="card">
-          <div className="card-heading"><div><span className="card-kicker"><BanknoteArrowUp size={15} /> {t("salesLabel")}</span><h2>{t("branchPerformance")}</h2></div><Link href="/reports/RPT-SALES-01">{t("viewAll")}<ArrowRight size={15} /></Link></div>
-          <div className="branch-list">{data.branches.map((branch) => <div key={branch.branch}><div><strong>{branch.branch}</strong><span><b>{branch.amount}</b><em>{branch.change}</em></span></div><div className="progress-track"><span style={{ width: `${branch.percent}%` }} /></div></div>)}</div>
-        </section>
-        <section className="card">
-          <div className="card-heading"><div><span className="card-kicker"><Clock3 size={15} /> {t("audit")}</span><h2>{t("recentActivity")}</h2></div></div>
-          <div className="activity-list">{data.activity.map((activity) => <div key={`${activity.subject}-${activity.actor}`}><span className={`activity-dot tone-${activity.tone}`} /><div><p><strong>{activity.actor}</strong> {l(activity.action)}</p><span>{activity.subject} · {l(activity.time)}</span></div></div>)}</div>
-        </section>
-        <section className="card readiness-card">
-          <div className="card-heading"><div><span className="card-kicker"><CircleGauge size={15} /> {t("financeLabel")}</span><h2>{t("closeReadiness")}</h2></div><strong className="readiness-score">76%</strong></div>
-          <div className="readiness-list">{data.closeReadiness.map((item) => <div key={item.label.en}><div><strong>{l(item.label)}</strong><StatusPill status={item.status} compact /></div><div className="progress-track"><span style={{ width: `${item.value}%` }} /></div></div>)}</div>
-        </section>
-      </div>
+      <section className="card">
+        <div className="card-heading"><div><span className="card-kicker"><ShieldCheck size={15} /> {l(text("Data boundary", "Mipaka ya data"))}</span><h2>{l(text("What this overview means", "Maana ya muhtasari huu"))}</h2></div><Link href="/reports">{l(text("Reconcile in reports", "Patanisha katika ripoti"))}<ArrowRight size={15} /></Link></div>
+        <div className="permission-empty"><p>{l(text(
+          "All monetary cards come from posted legal-company ledger entries. Trends, branch rankings, close-readiness scores, and activity feeds remain absent until governed projections are implemented.",
+          "Kadi zote za fedha zinatoka kwenye rekodi za leja za kampuni zilizopostiwa. Mwenendo, viwango vya matawi, alama za utayari wa kufunga na taarifa za shughuli hazitaonyeshwa hadi makadirio yanayodhibitiwa yatakapotekelezwa.",
+        ))}</p></div>
+      </section>
     </div>
   );
 }

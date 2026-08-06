@@ -1,6 +1,11 @@
 import { DashboardView } from "@/components/dashboard-view";
-import { getDashboard } from "@/data/erp-repository";
+import { LiveUnavailable } from "@/components/live-sales/live-state";
+import { loadDashboardWorkspace } from "@/live-api/snapshots";
+
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  return <DashboardView data={await getDashboard()} />;
+  const snapshot = await loadDashboardWorkspace();
+  if (snapshot.state === "unavailable") return <LiveUnavailable problem={snapshot.problem} />;
+  return <DashboardView workspace={snapshot.data} />;
 }

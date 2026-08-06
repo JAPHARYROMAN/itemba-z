@@ -39,12 +39,26 @@ describe("ItembaApiClient", () => {
       return Response.json({ items: [], next_cursor: null });
     });
     const client = new ItembaApiClient({ baseUrl: "http://core-api:8080", identity: bearerIdentity, fetchImplementation, createCorrelationId: () => correlationId });
-    await Promise.all([client.listCustomers(), client.listProducts()]);
+    await Promise.all([client.listCustomers(), client.listProducts(), client.getDashboard()]);
     const urls = fetchImplementation.mock.calls.map(([url]) => String(url));
     expect(urls).toContain("http://core-api:8080/v1/customers?page_size=200");
     expect(urls).toContain("http://core-api:8080/v1/products?page_size=200");
+    expect(urls).toContain("http://core-api:8080/v1/dashboard");
     expect(urls.join(" ")).not.toContain("company_id");
     expect(urls.join(" ")).not.toContain("warehouse_id");
+  });
+
+  it("encodes an optional governed dashboard period only when both dates are supplied", async () => {
+    const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      void input;
+      void init;
+      return Response.json({ as_of: "2026-08-06T10:00:00Z", metrics: [], alerts: [], pending_approvals: 0 });
+    });
+    const client = new ItembaApiClient({ baseUrl: "http://core-api:8080", identity: bearerIdentity, fetchImplementation, createCorrelationId: () => correlationId });
+    await client.getDashboard("2026-08-01", "2026-08-06");
+    expect(String(fetchImplementation.mock.calls[0]?.[0])).toBe("http://core-api:8080/v1/dashboard?from=2026-08-01&to=2026-08-06");
+    await expect(client.getDashboard("2026-08-01")).rejects.toMatchObject({ problem: { code: "dashboard_period_invalid" } });
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
   });
 
   it("uses customer-scoped receivables URLs and preserves the policy idempotency key", async () => {

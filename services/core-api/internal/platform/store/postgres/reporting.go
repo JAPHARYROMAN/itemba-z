@@ -134,6 +134,35 @@ func (s *Store) CashActivity(ctx context.Context, scope tenancy.Scope, actor str
 	return opening, closing, result, currency, err
 }
 
+// DashboardControls covers submitted transactional documents that require
+// an approval decision in the actor's exact branch and warehouse scope. Other
+// governed master-data and workforce approval queues remain module-specific.
+// It also returns the legal company's calendar boundary for default periods.
+func (s *Store) DashboardControls(ctx context.Context, scope tenancy.Scope, actor string) (int64, string, error) {
+	var count int64
+	var zoneName string
+	err := s.WithTransaction(ctx, func(contract sales.Transaction) error {
+		tx := contract.(*transaction)
+		ok, e := tx.Authorize(ctx, scope, actor, "dashboard.read")
+		if e != nil {
+			return e
+		}
+		if !ok {
+			return sales.ErrForbidden
+		}
+		e = tx.tx.QueryRow(ctx, `
+			SELECT
+				(SELECT business_timezone FROM legal_companies WHERE tenant_id=$1 AND id=$2),
+				(SELECT count(*) FROM operation_documents
+				 WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND status='SUBMITTED') +
+				(SELECT count(*) FROM financial_documents
+				 WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND status='SUBMITTED')`,
+			scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID).Scan(&zoneName, &count)
+		return normalizeError(e)
+	})
+	return count, zoneName, err
+}
+
 func (t *transaction) reportingBounds(ctx context.Context, scope tenancy.Scope, from, to time.Time) (time.Time, time.Time, error) {
 	var zoneName string
 	if err := t.tx.QueryRow(ctx, `SELECT business_timezone FROM legal_companies WHERE tenant_id=$1 AND id=$2`, scope.TenantID, scope.CompanyID).Scan(&zoneName); err != nil {

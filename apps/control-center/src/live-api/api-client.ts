@@ -1,6 +1,7 @@
 import type { BackendIdentity } from "@/live-api/auth";
 import { buildIdentityHeaders } from "@/live-api/auth";
 import type {
+	Dashboard,
   ChangeMobileDeviceAllocationCommand, ChangeMobileDeviceStatusCommand, CompleteSaleCommand, CustomerAccountDetail, CustomerPage,
   MobileDevice, MobileDevicePage, MobileReconciliationCase, MobileReconciliationPage,
   MobileReconciliationStatus, ProductPage, PublicProblem, ResolveMobileReconciliationCommand,
@@ -185,6 +186,23 @@ export class ItembaApiClient {
 
   getWorkingContext(): Promise<WorkingContext> {
     return this.request("/v1/context");
+  }
+
+  async getDashboard(from?: string, to?: string): Promise<Dashboard> {
+    if (Boolean(from) !== Boolean(to)) {
+      throw new LiveApiError({
+        type: "urn:itemba-z:control-center:request-contract",
+        title: "Dashboard period invalid",
+        status: 400,
+        code: "dashboard_period_invalid",
+        detail: "Dashboard from and to dates must be provided together.",
+      });
+    }
+    const query = new URLSearchParams();
+    if (from) query.set("from", from);
+    if (to) query.set("to", to);
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return this.request(`/v1/dashboard${suffix}`);
   }
 
   listCustomers(): Promise<CustomerPage> {

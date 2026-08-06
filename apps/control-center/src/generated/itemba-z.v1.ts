@@ -3022,6 +3022,7 @@ export interface components {
             key: string;
             label: string;
             value: components["schemas"]["Money"];
+            /** @description Null until a governed comparable-period projection is available. */
             trend_percent?: string | null;
         };
         DashboardAlert: {
@@ -3034,6 +3035,7 @@ export interface components {
             /** Format: uuid */
             source_id: string;
         };
+        /** @description Governed executive snapshot. Monetary values are derived from posted legal-company ledger entries. Pending approvals cover submitted transactional operation and finance documents in the authenticated branch and warehouse scope. */
         Dashboard: {
             /** Format: date-time */
             as_of: string;
@@ -3871,7 +3873,9 @@ export interface components {
         };
     };
     parameters: {
+        /** @description Optional assertion that must match the authenticated legal-company scope. */
         LegalCompanyId: string;
+        /** @description Optional assertion that must match the authenticated branch scope. */
         BranchId: string;
         Cursor: string;
         PageSize: number;
@@ -4302,8 +4306,10 @@ export interface operations {
     };
     getExecutiveDashboard: {
         parameters: {
-            query: {
-                legal_company_id: components["parameters"]["LegalCompanyId"];
+            query?: {
+                /** @description Optional assertion that must match the authenticated legal-company scope. */
+                legal_company_id?: components["parameters"]["LegalCompanyId"];
+                /** @description Optional assertion that must match the authenticated branch scope. */
                 branch_id?: components["parameters"]["BranchId"];
                 from?: string;
                 to?: string;
@@ -4323,6 +4329,8 @@ export interface operations {
                     "application/json": components["schemas"]["Dashboard"];
                 };
             };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
         };
     };

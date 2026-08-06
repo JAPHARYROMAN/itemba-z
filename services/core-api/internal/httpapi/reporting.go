@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/reporting"
 )
 
@@ -50,6 +51,66 @@ func reportRange(w http.ResponseWriter, r *http.Request, q *reporting.Query) boo
 	}
 	q.From, q.To = from, to
 	return true
+}
+
+func optionalDashboardRange(w http.ResponseWriter, r *http.Request, q *reporting.Query) bool {
+	from, to := strings.TrimSpace(r.URL.Query().Get("from")), strings.TrimSpace(r.URL.Query().Get("to"))
+	if from == "" && to == "" {
+		return true
+	}
+	if from == "" || to == "" {
+		writeProblem(w, http.StatusBadRequest, "invalid_report_query", "from and to must be provided together")
+		return false
+	}
+	var err error
+	q.From, err = reportDate(from)
+	if err == nil {
+		q.To, err = reportDate(to)
+	}
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_report_query", "from and to must use YYYY-MM-DD")
+		return false
+	}
+	return true
+}
+
+func dashboardScopeMatches(w http.ResponseWriter, r *http.Request, q reporting.Query) bool {
+	checks := []struct {
+		name     string
+		expected string
+	}{
+		{"legal_company_id", q.Scope.CompanyID},
+		{"branch_id", q.Scope.BranchID},
+	}
+	for _, check := range checks {
+		value := strings.TrimSpace(r.URL.Query().Get(check.name))
+		if value == "" {
+			continue
+		}
+		canonical, err := identity.CanonicalUUID(value)
+		if err != nil {
+			writeProblem(w, http.StatusBadRequest, "invalid_report_query", check.name+" must be a UUID")
+			return false
+		}
+		if canonical != check.expected {
+			writeProblem(w, http.StatusForbidden, "scope_mismatch", "dashboard scope must match the authenticated organizational scope")
+			return false
+		}
+	}
+	return true
+}
+
+func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) {
+	q, ok := h.reportPrincipal(w, r)
+	if !ok || !dashboardScopeMatches(w, r, q) || !optionalDashboardRange(w, r, &q) {
+		return
+	}
+	value, err := h.reporting.Dashboard(r.Context(), q)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, value)
 }
 func (h *Handler) generalLedger(w http.ResponseWriter, r *http.Request) {
 	q, ok := h.reportPrincipal(w, r)

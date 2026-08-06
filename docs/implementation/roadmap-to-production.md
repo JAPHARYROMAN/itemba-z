@@ -17,8 +17,8 @@ The remaining path is not 5.9% of the total launch effort. Production identity, 
 The initial production-readiness baseline must be established in Wave 0 from evidence. Until then, the defensible status is:
 
 - core ERP functional coverage: 94.1%;
-- implemented OpenAPI operations: 104;
-- planned OpenAPI operations: 1, the governed executive dashboard;
+- implemented OpenAPI operations: 105;
+- planned OpenAPI operations: 0; future work must add reviewed contracts before implementation;
 - production release gates: open;
 - production launch authorization: not granted.
 
@@ -80,6 +80,10 @@ Execution evidence: [`evidence/wave-0`](evidence/wave-0/README.md). Repository i
 ## Wave 1 — Close the remaining executable product gaps
 
 Planning range: 3–5 weeks, parallel with Waves 2 and 3
+
+Execution record: [`wave-1-execution.md`](wave-1-execution.md). The governed
+executive dashboard slice is complete in the repository; the remainder of this
+wave is still open.
 
 ### Core ERP and contracts
 

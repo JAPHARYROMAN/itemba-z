@@ -11,6 +11,7 @@ Wave 0 repository inventory, full-stack verification, Release 1 classification, 
 ## Implemented in this milestone
 
 - Monorepo structure, CI checks, local container dependencies, provider-neutral Terraform foundations, telemetry configuration, security model, ADRs, and versioned contracts.
+- The executive dashboard is now a governed live surface: month-to-date revenue and net profit, cash position, and total assets derive from posted legal-company journals; transactional approval counts are exact branch/warehouse scoped; company/branch query assertions cannot widen authenticated scope; and the Control Center fails closed instead of substituting the former illustrative charts and scores.
 - Go modular core for scoped cash and credit sales, server-owned prices/tax/cost, stock effects, customer balances, balanced journals, payment recording, audit entries, idempotency, immutable reversals, and transactional outbox events.
 - PostgreSQL schema, row-level security policies, append-only guards, transactional repository, migration command, and capability-separated API/outbox-worker logins; an in-memory adapter remains available for unit tests.
 - OIDC/JWT production authentication with tenant, legal-company, branch, and warehouse scope derived from verified claims. Header-based identity is restricted to explicit local development mode.

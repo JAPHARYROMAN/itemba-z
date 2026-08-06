@@ -25,7 +25,7 @@ func TestFinancialStatementsReconcileAndExport(t *testing.T) {
 	scope := tenancy.Scope{TenantID: "30000000-0000-4000-8000-000000000001", CompanyID: "30000000-0000-4000-8000-000000000002", BranchID: "30000000-0000-4000-8000-000000000003", WarehouseID: "30000000-0000-4000-8000-000000000004"}
 	actor := "30000000-0000-4000-8000-000000000005"
 	store := memory.New()
-	for _, permission := range []string{"reports.financial.read", "reports.financial.export"} {
+	for _, permission := range []string{"dashboard.read", "reports.financial.read", "reports.financial.export"} {
 		store.SeedPermission(scope, actor, permission)
 	}
 	for index, a := range []struct {
@@ -69,6 +69,24 @@ func TestFinancialStatementsReconcileAndExport(t *testing.T) {
 	flow, err := service.CashFlow(ctx, query)
 	if err != nil || !flow.Reconciled || flow.Operating.NetMinor != 88 || flow.ClosingCashMinor != 88 {
 		t.Fatalf("cash flow %#v %v", flow, err)
+	}
+	dashboard, err := service.Dashboard(ctx, reporting.Query{Scope: scope, ActorID: actor})
+	if err != nil || len(dashboard.Metrics) != 4 || dashboard.PendingApprovals != 0 {
+		t.Fatalf("dashboard %#v %v", dashboard, err)
+	}
+	want := map[string]string{"revenue": "1.00", "net_profit": "0.70", "cash_position": "0.88", "total_assets": "0.88"}
+	for _, metric := range dashboard.Metrics {
+		if metric.Value.Amount != want[metric.Key] || metric.Value.Currency != "TZS" || metric.TrendPercent != nil {
+			t.Fatalf("dashboard metric %#v", metric)
+		}
+	}
+	localMidnightService, err := reporting.NewService(store, identity.UUIDGenerator{}, clock.Fixed{Time: time.Date(2026, 8, 31, 22, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	localMidnightDashboard, err := localMidnightService.Dashboard(ctx, reporting.Query{Scope: scope, ActorID: actor})
+	if err != nil || localMidnightDashboard.Metrics[0].Value.Amount != "0.00" {
+		t.Fatalf("dashboard must use company-local September period at UTC boundary: %#v %v", localMidnightDashboard, err)
 	}
 	export, err := service.Export(ctx, reporting.ExportCommand{Query: query, Type: reporting.ReportProfitAndLoss, IdempotencyKey: "report-export-000001"})
 	if err != nil {

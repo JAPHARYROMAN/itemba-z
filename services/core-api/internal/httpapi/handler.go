@@ -272,6 +272,7 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("GET /v1/sales", h.listSales)
 	}
 	if h.reporting != nil {
+		mux.HandleFunc("GET /v1/dashboard", h.dashboard)
 		mux.HandleFunc("GET /v1/reports/financial/trial-balance", h.trialBalance)
 		mux.HandleFunc("GET /v1/reports/financial/general-ledger", h.generalLedger)
 		mux.HandleFunc("GET /v1/reports/financial/profit-and-loss", h.profitAndLoss)
