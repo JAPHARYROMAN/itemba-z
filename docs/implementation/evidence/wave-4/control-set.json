@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "updated": "2026-08-06",
+  "repository_status": "IN_PROGRESS",
+  "release_exit_status": "BLOCKED_EXTERNAL",
+  "repository_controls": [
+    {
+      "id": "W4-01",
+      "status": "IMPLEMENTED",
+      "name": "Deployed environment and platform safety contract",
+      "evidence": ["infra/environments/control-set.json", "infra/terraform/variables.tf"]
+    },
+    {
+      "id": "W4-02",
+      "status": "IMPLEMENTED",
+      "name": "Ordered protected-environment promotion preflight",
+      "evidence": [".github/workflows/platform-promotion.yml", "scripts/validate-promotion-inputs.mjs"]
+    },
+    {
+      "id": "W4-03",
+      "status": "IMPLEMENTED",
+      "name": "Proposed critical-journey SLO and alert contract",
+      "evidence": ["infra/observability/slo-catalog.json", "infra/observability/alert-catalog.json", "docs/operations/slo-and-alert-policy.md"]
+    },
+    {
+      "id": "W4-04",
+      "status": "IMPLEMENTED",
+      "name": "Platform incident and recovery procedures",
+      "evidence": ["docs/operations/platform-runbooks.md", "docs/operations/recovery-and-dr.md"]
+    },
+    {
+      "id": "W4-05",
+      "status": "IMPLEMENTED",
+      "name": "Executable evidence validation",
+      "evidence": ["scripts/validate-wave4-controls.mjs", ".github/workflows/ci.yml"]
+    }
+  ],
+  "external_gates": [
+    {
+      "id": "W4-EXT-01",
+      "status": "BLOCKED_EXTERNAL",
+      "required": "Approved hosting provider, Tanzania data-location decision, region and production-grade Terraform provider module"
+    },
+    {
+      "id": "W4-EXT-02",
+      "status": "BLOCKED_EXTERNAL",
+      "required": "Protected GitHub environments, named reviewers, registry and approved deployment/rollback adapter"
+    },
+    {
+      "id": "W4-EXT-03",
+      "status": "BLOCKED_EXTERNAL",
+      "required": "Telemetry backend, owned dashboards, paging routes and retained alert-firing evidence"
+    },
+    {
+      "id": "W4-EXT-04",
+      "status": "BLOCKED_EXTERNAL",
+      "required": "Approved RTO/RPO, automated encrypted backup/PITR/object retention and successful production-like restore evidence"
+    },
+    {
+      "id": "W4-EXT-05",
+      "status": "BLOCKED_EXTERNAL",
+      "required": "Successful load, soak, failover and disaster-recovery exercises plus Operations acceptance"
+    }
+  ]
+}

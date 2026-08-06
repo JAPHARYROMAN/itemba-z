@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "status": "REPOSITORY_ENFORCED_PROVIDER_BINDING_OPEN",
+  "promotion_order": ["configuration", "test", "staging", "pilot", "production"],
+  "environments": [
+    {
+      "name": "configuration",
+      "predecessor": null,
+      "production_data_allowed": false,
+      "approval_required": true
+    },
+    {
+      "name": "test",
+      "predecessor": "configuration",
+      "production_data_allowed": false,
+      "approval_required": true
+    },
+    {
+      "name": "staging",
+      "predecessor": "test",
+      "production_data_allowed": false,
+      "approval_required": true
+    },
+    {
+      "name": "pilot",
+      "predecessor": "staging",
+      "production_data_allowed": true,
+      "approval_required": true
+    },
+    {
+      "name": "production",
+      "predecessor": "pilot",
+      "production_data_allowed": true,
+      "approval_required": true
+    }
+  ],
+  "required_controls": {
+    "managed_tls": true,
+    "private_networking": true,
+    "managed_postgresql": true,
+    "encrypted_object_storage": true,
+    "redis_is_non_authoritative": true,
+    "least_privilege_runtime_identities": true,
+    "point_in_time_recovery": true,
+    "immutable_backup_copy": true,
+    "development_seed_disabled": true,
+    "header_identity_disabled": true,
+    "unsafe_debug_disabled": true
+  }
+}

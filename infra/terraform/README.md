@@ -10,6 +10,12 @@ This directory intentionally defines the provider-neutral deployment contract be
 - immutable backup retention and cross-account recovery;
 - OpenTelemetry log, metric, and trace destinations.
 
+The only deployed environment names are `configuration`, `test`, `staging`,
+`pilot`, and `production`. Local development is deliberately excluded so that
+provider modules cannot accidentally enable development fixtures or header
+identity. The `deployment_safety` object is a mandatory, fail-closed contract;
+Terraform validation rejects a plan if any required control is disabled.
+
 Provider selection is gated by the Tanzania data-protection assessment, cross-border transfer approval where applicable, service availability, recovery capability, support, and total operating cost. No production data may be placed in a region before that decision is recorded.
 
 The root contract requires `secret_custody` and

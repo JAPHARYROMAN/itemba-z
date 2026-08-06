@@ -33,6 +33,8 @@ jobs:
         run: node scripts/validate-wave2-controls.mjs
       - name: Validate Wave 3 integration control evidence
         run: node scripts/validate-wave3-controls.mjs
+      - name: Validate Wave 4 platform control evidence
+        run: node scripts/validate-wave4-controls.mjs
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.5

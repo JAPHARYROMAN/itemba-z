@@ -16,3 +16,17 @@ runtime_secret_references = {
   session_encryption_keys = "secretref://control-center/session-encryption-key-ring"
   object_storage_key      = "secretref://api/object-storage-key"
 }
+
+deployment_safety = {
+  managed_tls                        = true
+  private_networking                 = true
+  managed_postgresql                 = true
+  encrypted_object_storage           = true
+  redis_is_non_authoritative          = true
+  least_privilege_runtime_identities = true
+  point_in_time_recovery              = true
+  immutable_backup_copy               = true
+  development_seed_disabled           = true
+  header_identity_disabled            = true
+  unsafe_debug_disabled               = true
+}

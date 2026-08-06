@@ -3,8 +3,8 @@ variable "environment" {
   type        = string
 
   validation {
-    condition     = contains(["development", "staging", "production"], var.environment)
-    error_message = "environment must be development, staging, or production."
+    condition     = contains(["configuration", "test", "staging", "pilot", "production"], var.environment)
+    error_message = "environment must be configuration, test, staging, pilot, or production. Local development is not a deployed environment."
   }
 }
 
@@ -57,5 +57,27 @@ variable "runtime_secret_references" {
       length(trimspace(name)) >= 3
     ])
     error_message = "At least five named runtime secrets must use provider reference URIs and must not embed credential values."
+  }
+}
+
+variable "deployment_safety" {
+  description = "Fail-closed platform controls that every selected provider module must implement."
+  type = object({
+    managed_tls                        = bool
+    private_networking                 = bool
+    managed_postgresql                 = bool
+    encrypted_object_storage           = bool
+    redis_is_non_authoritative         = bool
+    least_privilege_runtime_identities = bool
+    point_in_time_recovery             = bool
+    immutable_backup_copy              = bool
+    development_seed_disabled          = bool
+    header_identity_disabled           = bool
+    unsafe_debug_disabled              = bool
+  })
+
+  validation {
+    condition     = alltrue(values(var.deployment_safety))
+    error_message = "Every deployment safety control must be true; provider modules must fail closed."
   }
 }

@@ -1,0 +1,99 @@
+name: Platform promotion preflight
+
+run-name: ${{ inputs.target_environment }} promotion preflight for ${{ inputs.release_commit }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Protected destination environment
+        required: true
+        type: choice
+        options: [configuration, test, staging, pilot, production]
+      source_environment:
+        description: Immediately preceding environment, or none for configuration
+        required: true
+        type: choice
+        options: [none, configuration, test, staging, pilot]
+      release_commit:
+        description: Full 40-character Git commit for the release candidate
+        required: true
+        type: string
+      release_bundle_sha256:
+        description: SHA-256 of the attested release bundle
+        required: true
+        type: string
+      migration_bundle_sha256:
+        description: SHA-256 of the reviewed migration bundle
+        required: true
+        type: string
+      predecessor_evidence:
+        description: Durable evidence ID proving the candidate passed the source environment
+        required: true
+        type: string
+      change_ticket:
+        description: Approved change record ID
+        required: true
+        type: string
+      rollback_plan:
+        description: Reviewed rollback plan ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-promotion-${{ inputs.target_environment }}
+  cancel-in-progress: false
+
+jobs:
+  validate-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_commit }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate repository platform controls
+        run: node scripts/validate-wave4-controls.mjs
+      - name: Create immutable promotion preflight record
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.target_environment }}
+          SOURCE_ENVIRONMENT: ${{ inputs.source_environment }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          RELEASE_BUNDLE_SHA256: ${{ inputs.release_bundle_sha256 }}
+          MIGRATION_BUNDLE_SHA256: ${{ inputs.migration_bundle_sha256 }}
+          PREDECESSOR_EVIDENCE: ${{ inputs.predecessor_evidence }}
+          CHANGE_TICKET: ${{ inputs.change_ticket }}
+          ROLLBACK_PLAN: ${{ inputs.rollback_plan }}
+          PROMOTION_RECORD_PATH: ${{ runner.temp }}/promotion-record.json
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_ACTOR: ${{ github.actor }}
+        run: node scripts/validate-promotion-inputs.mjs
+      - name: Retain promotion preflight evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: promotion-preflight-${{ inputs.target_environment }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/promotion-record.json
+          if-no-files-found: error
+          retention-days: 365
+
+  protected-environment-authorization:
+    needs: validate-candidate
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.target_environment }}
+    steps:
+      - name: Retrieve validated promotion record
+        uses: actions/download-artifact@v4
+        with:
+          name: promotion-preflight-${{ inputs.target_environment }}-${{ github.run_id }}
+          path: promotion-evidence
+      - name: Confirm handoff to selected provider adapter
+        run: |
+          sha256sum promotion-evidence/promotion-record.json
+          echo "Protected environment approval completed. Provider deployment remains fail-closed until an approved adapter is configured." >> "$GITHUB_STEP_SUMMARY"

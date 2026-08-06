@@ -4,6 +4,7 @@ output "deployment_contract" {
     environment    = var.environment
     primary_region = var.primary_region
     tags           = local.required_tags
+    safety         = var.deployment_safety
   }
 }
 
