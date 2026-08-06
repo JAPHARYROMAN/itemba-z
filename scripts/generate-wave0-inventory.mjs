@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const args = new Map();
@@ -17,26 +17,29 @@ if (!/^[0-9a-f]{40}$/.test(sourceCommit)) {
   throw new Error("--source-commit must be a full 40-character Git commit SHA");
 }
 
-function filesUnder(directory, name) {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) return filesUnder(path, name);
-    return entry.name === name ? [path] : [];
-  });
+function git(args) {
+  return execFileSync("git", args, { cwd: repositoryRoot, encoding: "utf8" });
 }
 
-function portable(path) {
-  return relative(repositoryRoot, path).split(sep).join("/");
+function filesAtSource(prefix) {
+  return git(["ls-tree", "-r", "--name-only", sourceCommit, "--", prefix])
+    .split(/\r?\n/)
+    .map((path) => path.trim())
+    .filter(Boolean);
+}
+
+function readAtSource(path) {
+  return git(["show", `${sourceCommit}:${path}`]);
 }
 
 function appRoute(path, marker) {
-  const suffix = portable(path).split(marker)[1];
+  const suffix = path.split(marker)[1];
   const withoutFile = suffix.replace(/\/(page|route)\.tsx$/, "");
   return withoutFile === "" ? "/" : withoutFile;
 }
 
 function parseOpenApi() {
-  const lines = readFileSync(join(repositoryRoot, "contracts/openapi/itemba-z.v1.yaml"), "utf8").split(/\r?\n/);
+  const lines = readAtSource("contracts/openapi/itemba-z.v1.yaml").split(/\r?\n/);
   const operations = [];
   let currentPath = null;
   let currentOperation = null;
@@ -60,9 +63,9 @@ function parseOpenApi() {
 }
 
 const openApiOperations = parseOpenApi();
-const pageRoot = join(repositoryRoot, "apps/control-center/src/app");
-const controlCenterPages = filesUnder(pageRoot, "page.tsx").map((path) => {
-  const source = readFileSync(path, "utf8");
+const pageRoot = "apps/control-center/src/app";
+const controlCenterPages = filesAtSource(pageRoot).filter((path) => path.endsWith("/page.tsx") || path === `${pageRoot}/page.tsx`).map((path) => {
+  const source = readAtSource(path);
   let status = "unclassified";
   let evidence = "No authoritative data boundary detected";
   if (source.includes("@/live-api/")) {
@@ -72,26 +75,26 @@ const controlCenterPages = filesUnder(pageRoot, "page.tsx").map((path) => {
     status = "demonstration";
     evidence = "Uses the in-repository mock ERP data source";
   }
-  return { route: appRoute(path, "apps/control-center/src/app"), file: portable(path), status, evidence };
+  return { route: appRoute(path, "apps/control-center/src/app"), file: path, status, evidence };
 }).sort((left, right) => left.route.localeCompare(right.route));
 
-const bffRoutes = filesUnder(join(pageRoot, "api"), "route.ts").map((path) => ({
+const bffRoutes = filesAtSource(`${pageRoot}/api`).filter((path) => path.endsWith("/route.ts")).map((path) => ({
   route: appRoute(path, "apps/control-center/src/app"),
-  file: portable(path),
+  file: path,
 })).sort((left, right) => left.route.localeCompare(right.route));
 
-const mobilePresentationFiles = readdirSync(join(repositoryRoot, "apps/sales-mobile/lib/presentation"), { withFileTypes: true })
-  .filter((entry) => entry.isFile() && entry.name.endsWith(".dart"))
-  .map((entry) => `apps/sales-mobile/lib/presentation/${entry.name}`)
+const mobilePresentationFiles = filesAtSource("apps/sales-mobile/lib/presentation")
+  .filter((path) => /^apps\/sales-mobile\/lib\/presentation\/[^/]+\.dart$/.test(path))
   .sort();
 
-const coreModules = readdirSync(join(repositoryRoot, "services/core-api/internal"), { withFileTypes: true })
-  .filter((entry) => entry.isDirectory())
-  .map((entry) => entry.name)
+const coreModules = [...new Set(filesAtSource("services/core-api/internal")
+  .map((path) => path.split("/")[3])
+  .filter(Boolean))]
   .sort();
 
-const migrations = readdirSync(join(repositoryRoot, "services/core-api/migrations"))
-  .filter((name) => name.endsWith(".up.sql"))
+const migrations = filesAtSource("services/core-api/migrations")
+  .filter((path) => path.endsWith(".up.sql"))
+  .map((path) => path.split("/").at(-1))
   .sort();
 
 const inventory = {
