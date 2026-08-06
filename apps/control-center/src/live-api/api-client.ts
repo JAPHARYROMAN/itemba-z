@@ -19,6 +19,7 @@ import type {
 	Attendance, AttendanceCommand, CreateEmployeeCommand, Employee, EmployeeLoan, LeaveCommand, LeaveRequest, LeaveType, LeaveTypeCommand, LoanCommand, PayrollCommand, PayrollRun, PeopleSnapshot, PeopleTransitionCommand,
 	CreateShiftAssignmentCommand, CreateShiftTemplateCommand, EmployeeDocument, GeneratePayrollArtifactCommand, PayrollArtifact, RegisterEmployeeDocumentCommand, ShiftAssignment, ShiftTemplate, WorkforceSnapshot, WorkforceStatus,
 	ConfigurationSnapshot, ConfigurationVersion, ConfigurationTransitionCommand, CreateConfigurationCommand, CreateNumberSequenceCommand, NumberAllocation, NumberSequence,
+	CreateIntegrationRouteCommand, IntegrationDelivery, IntegrationRoute, IntegrationRouteTransitionCommand, IntegrationSnapshot,
 	CommercialSnapshot, CreateMasterRevisionCommand, MasterRevision, MasterRevisionStatus, CreateRFQCommand, RFQ, RFQStatus, CreateSupplierQuoteCommand, SupplierQuote, SourcingAward,
 	CreateInventoryPolicyCommand, InventoryControlSnapshot, InventoryPolicy, InventoryPolicyStatus, LotRegistration, RegisterReceiptLotsCommand,
 } from "@/live-api/types";
@@ -343,6 +344,11 @@ export class ItembaApiClient {
   transitionConfiguration(id: string, command: ConfigurationTransitionCommand, key: string): Promise<ConfigurationVersion> { return this.request(`/v1/settings/configurations/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey: key }); }
   createNumberSequence(command: CreateNumberSequenceCommand, key: string): Promise<NumberSequence> { return this.request("/v1/settings/number-sequences", { method: "POST", body: command, idempotencyKey: key }); }
   allocateDocumentNumber(id: string, key: string): Promise<NumberAllocation> { return this.request(`/v1/settings/number-sequences/${encodeURIComponent(id)}/allocations`, { method: "POST", idempotencyKey: key }); }
+  getIntegrationWorkspace(): Promise<IntegrationSnapshot> { return this.request("/v1/integrations"); }
+  createIntegrationRoute(command: CreateIntegrationRouteCommand, key: string): Promise<IntegrationRoute> { return this.request("/v1/integrations/routes", { method: "POST", body: command, idempotencyKey: key }); }
+  transitionIntegrationRoute(id: string, command: IntegrationRouteTransitionCommand, key: string): Promise<IntegrationRoute> { return this.request(`/v1/integrations/routes/${encodeURIComponent(id)}/transitions`, { method: "POST", body: command, idempotencyKey: key }); }
+  resetIntegrationCircuit(id: string, reason: string, key: string): Promise<IntegrationRoute> { return this.request(`/v1/integrations/routes/${encodeURIComponent(id)}/circuit-reset`, { method: "POST", body: { reason }, idempotencyKey: key }); }
+  replayIntegrationDelivery(id: string, reason: string, key: string): Promise<IntegrationDelivery> { return this.request(`/v1/integrations/deliveries/${encodeURIComponent(id)}/replay`, { method: "POST", body: { reason }, idempotencyKey: key }); }
 
   listReconciliationCases(status?: MobileReconciliationStatus, cursor?: string): Promise<MobileReconciliationPage> {
     const query = new URLSearchParams({ page_size: "100" });

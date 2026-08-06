@@ -6,9 +6,9 @@ Wave 3 delivers external integrations and professionally approved statutory
 configuration. Repository frameworks do not constitute TRA certification,
 provider approval or professional tax/payroll sign-off.
 
-Repository status: **IN PROGRESS**
+Repository status: **COMPLETE**
 
-Wave 3 exit gate: **OPEN**
+Wave 3 exit gate: **BLOCKED — EXTERNAL EVIDENCE REQUIRED**
 
 ## Slice 1 — Durable integration delivery spine
 
@@ -49,10 +49,8 @@ Verification:
   and transitions the sale to `FISCALIZED` after connector acceptance.
 - Migration 33 applies successfully to the running development database.
 
-Not yet complete:
+External completion blockers:
 
-- Governed route-management, delivery-register, reconciliation and manual
-  replay APIs and Control Center screens.
 - The current official TRA contract, certified adapter, signing/certificate
   implementation and sandbox/certification evidence.
 - Payment webhook, settlement, bank-file, payroll-output, communication and
@@ -60,12 +58,35 @@ Not yet complete:
 - Provider dashboards, alerts, escalation contacts, data-processing decisions
   and signed business/professional reconciliations.
 
-## Next slices
+## Slice 2 — Governed integration operations
 
-1. Expose the governed integration route and delivery/replay APIs plus the
-   bilingual operations register.
-2. Implement the approved TRA adapter and protected sandbox harness against the
+Status: repository implementation complete
+
+Implemented evidence:
+
+- Five versioned OpenAPI operations expose the exact-scope integration
+  workspace, immutable route creation, maker-checker transitions, circuit reset
+  and dead-letter replay.
+- Route activation rejects the maker. Route transitions, circuit resets and
+  replay decisions retain append-only reasons, actors and timestamps plus
+  audit/outbox correlation.
+- Replay preserves every prior attempt and request fact while expanding only a
+  fresh bounded attempt budget. It cannot replay a non-dead-letter delivery or
+  use a non-active route.
+- The bilingual Control Center shows route health, reconciliation totals,
+  delivery/provider evidence, attempt history and permission-shaped controls.
+- PostgreSQL acceptance proves maker-checker rejection, independent activation,
+  circuit recovery, replay and reconciliation without weakening the existing
+  accounting, stock, tenancy or idempotency evidence.
+- CI validates the fail-closed Wave 3 evidence register. No provider is marked
+  integrated or certified without approved external evidence.
+
+## External execution required to close the release gate
+
+1. Implement the approved TRA adapter and protected sandbox harness against the
    confirmed current contract.
-3. Add payment callback and settlement reconciliation adapters.
-4. Add bank import/export adapters and payroll statutory configuration packs.
-5. Add governed communications and supported printer adapters.
+2. Add payment callback and settlement reconciliation adapters.
+3. Add bank import/export adapters and payroll statutory configuration packs.
+4. Add governed communications and supported printer adapters.
+5. Complete provider dashboards, outage drills, reconciliations and accountable
+   sign-off using the selected providers and production organization facts.

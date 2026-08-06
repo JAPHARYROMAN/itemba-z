@@ -64,7 +64,7 @@ func TestRelease1CrossModuleAcceptanceAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql", "000024_governed_settings.up.sql", "000025_commercial_sourcing.up.sql", "000026_inventory_planning_lots_costing.up.sql", "000027_workforce_documents_payroll_exports.up.sql", "000028_financial_report_packs.up.sql", "000029_governed_dashboard.up.sql", "000030_audit_read_model.up.sql", "000031_access_governance.up.sql", "000032_privacy_governance.up.sql", "000033_integration_delivery_spine.up.sql", "000034_integration_lease_recovery.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql", "000024_governed_settings.up.sql", "000025_commercial_sourcing.up.sql", "000026_inventory_planning_lots_costing.up.sql", "000027_workforce_documents_payroll_exports.up.sql", "000028_financial_report_packs.up.sql", "000029_governed_dashboard.up.sql", "000030_audit_read_model.up.sql", "000031_access_governance.up.sql", "000032_privacy_governance.up.sql", "000033_integration_delivery_spine.up.sql", "000034_integration_lease_recovery.up.sql", "000035_integration_operations.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -1025,6 +1025,38 @@ func TestRelease1CrossModuleAcceptanceAndReversal(t *testing.T) {
 	if fiscalStatus != "FISCALIZED" || deliveryCount != 1 || attemptCount != 1 {
 		t.Fatalf("fiscal status=%s deliveries=%d attempts=%d", fiscalStatus, deliveryCount, attemptCount)
 	}
+	integrationService, err := integrations.NewService(store, &identity.SequenceGenerator{Values: []string{
+		"00000000-0000-4000-8000-00000000fc01", "00000000-0000-4000-8000-00000000fc02", "00000000-0000-4000-8000-00000000fc03",
+	}}, clock.Fixed{Time: deliveryNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	governedRoute, err := integrationService.CreateRoute(ctx, integrations.CreateRouteCommand{Scope: scope, Capability: integrations.EmailDelivery, ProviderCode: "MAIL_TEST", ContractVersion: "sandbox-v1", EndpointURL: "https://mail.invalid/deliver", SecretReference: "vault://itemba/test/mail", TimeoutMilliseconds: 5000, MaxAttempts: 3, BaseBackoffSeconds: 5, MaxBackoffSeconds: 60, CircuitFailureThreshold: 3, CircuitOpenSeconds: 120, ValidFrom: deliveryNow.Add(-time.Minute), Reason: "Create governed email provider route", ActorID: userID, IdempotencyKey: "integration-route-create-001"})
+	if err != nil || governedRoute.Status != integrations.RouteDraft {
+		t.Fatalf("create governed route: %+v err=%v", governedRoute, err)
+	}
+	if _, err = integrationService.TransitionRoute(ctx, integrations.TransitionRouteCommand{Scope: scope, RouteID: governedRoute.ID, Status: integrations.RouteActive, Reason: "Maker attempted provider route activation", ActorID: userID, IdempotencyKey: "integration-route-self-activate"}); !errors.Is(err, integrations.ErrSeparationOfDuties) {
+		t.Fatalf("expected integration maker-checker rejection, got %v", err)
+	}
+	governedRoute, err = integrationService.TransitionRoute(ctx, integrations.TransitionRouteCommand{Scope: scope, RouteID: governedRoute.ID, Status: integrations.RouteActive, Reason: "Independent provider qualification approved", ActorID: approverID, IdempotencyKey: "integration-route-activate-001"})
+	if err != nil || governedRoute.Status != integrations.RouteActive {
+		t.Fatalf("activate governed route: %+v err=%v", governedRoute, err)
+	}
+	if _, err = integrationService.ResetCircuit(ctx, integrations.ResetCircuitCommand{Scope: scope, RouteID: governedRoute.ID, Reason: "Reviewed sandbox recovery before circuit reset", ActorID: approverID, IdempotencyKey: "integration-circuit-reset-001"}); err != nil {
+		t.Fatalf("reset integration circuit: %v", err)
+	}
+	const deadDeliveryID = "00000000-0000-4000-8000-00000000fc04"
+	if _, err = pool.Exec(ctx, `INSERT INTO `+pgx.Identifier{schema, "integration_deliveries"}.Sanitize()+`(id,tenant_id,company_id,route_id,capability,operation,source_event_id,aggregate_type,aggregate_id,correlation_id,idempotency_key,request_hash,request_payload,status,attempt_count,max_attempts,available_at,last_error_code,last_error_message,created_at) VALUES($1,$2,$3,$4,'EMAIL','SEND_RECEIPT','00000000-0000-4000-8000-00000000fc05','sale',$5,'00000000-0000-4000-8000-00000000fc06','email-delivery-fc05','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','{}','DEAD_LETTER',3,3,$6,'provider_rejected','sandbox rejection',$6)`, deadDeliveryID, tenantID, companyID, governedRoute.ID, created.ID, deliveryNow); err != nil {
+		t.Fatalf("seed replay delivery: %v", err)
+	}
+	replayedDelivery, err := integrationService.Replay(ctx, integrations.ReplayCommand{Scope: scope, DeliveryID: deadDeliveryID, Reason: "Dead-letter sandbox evidence reviewed for replay", ActorID: userID, IdempotencyKey: "integration-delivery-replay-001"})
+	if err != nil || replayedDelivery.Status != integrations.Pending || replayedDelivery.MaxAttempts != 6 {
+		t.Fatalf("replay delivery: %+v err=%v", replayedDelivery, err)
+	}
+	integrationWorkspace, err := integrationService.Workspace(ctx, scope, userID)
+	if err != nil || len(integrationWorkspace.Routes) < 2 || integrationWorkspace.Reconciliation.Pending < 1 || len(integrationWorkspace.Attempts) < 1 {
+		t.Fatalf("integration workspace incomplete: %+v err=%v", integrationWorkspace.Reconciliation, err)
+	}
 	if err := store.MarkPublished(ctx, tenantID, events[0].ID, "integration-worker", deliveryNow); err != nil {
 		t.Fatalf("mark published: %v", err)
 	}
@@ -1064,7 +1096,7 @@ func TestRelease1CrossModuleAcceptanceAndReversal(t *testing.T) {
 	if err := check.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE processed_at IS NOT NULL`).Scan(&processedCount); err != nil {
 		t.Fatal(err)
 	}
-	if stock != 1 || salesCount != 7 || journalCount != 28 || outboxCount != 117 || processedCount != 1 {
+	if stock != 1 || salesCount != 7 || journalCount != 28 || outboxCount != 121 || processedCount != 1 {
 		t.Fatalf("stock=%d sales=%d journals=%d outbox=%d processed=%d", stock, salesCount, journalCount, outboxCount, processedCount)
 	}
 }

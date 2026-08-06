@@ -59,6 +59,13 @@ export type CreateConfigurationCommand = components["schemas"]["CreateConfigurat
 export type ConfigurationTransitionCommand = components["schemas"]["ConfigurationTransitionCommand"];
 export type CreateNumberSequenceCommand = components["schemas"]["CreateNumberSequenceCommand"];
 export interface ConfigurationWorkspace { context: WorkingContext; configuration: ConfigurationSnapshot }
+export type IntegrationRoute = components["schemas"]["IntegrationRoute"];
+export type IntegrationDelivery = components["schemas"]["IntegrationDelivery"];
+export type IntegrationAttempt = components["schemas"]["IntegrationAttempt"];
+export type IntegrationSnapshot = components["schemas"]["IntegrationWorkspace"];
+export type CreateIntegrationRouteCommand = components["schemas"]["CreateIntegrationRouteCommand"];
+export type IntegrationRouteTransitionCommand = components["schemas"]["IntegrationRouteTransitionCommand"];
+export interface IntegrationOperationsWorkspace { context: WorkingContext; integrations: IntegrationSnapshot }
 
 export type MasterEntityType = "SUPPLIER" | "PRODUCT";
 export type MasterRevisionStatus = "DRAFT" | "SUBMITTED" | "ACTIVE" | "REJECTED";

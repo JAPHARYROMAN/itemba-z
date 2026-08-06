@@ -22,7 +22,10 @@ Wave 0 repository inventory, full-stack verification, Release 1 classification, 
   outbox events project idempotently into TRA delivery work; leased workers
   retain append-only attempts, capped backoff, dead letters, route health and
   unique provider references without rolling back committed ERP transactions.
-  No TRA/provider adapter or statutory approval is implied by this framework.
+  Governed exact-scope APIs and a bilingual Control Center register now expose
+  immutable route lifecycle, route health, reconciliation, attempt evidence,
+  circuit reset and permission-separated dead-letter replay. No TRA/provider
+  adapter or statutory approval is implied by this framework.
 - Versioned OpenAPI read and command boundaries for working context, customers, products, sales, linked reversals, device enrollment, and idempotent mobile synchronization, with checked TypeScript and Dart bindings.
 - Next.js bilingual Control Center workspaces backed only by live APIs for sales, customer accounts, commercial operations, inventory operations, POS governance, offline reconciliation, and cash/bank reconciliation. Remaining generic module screens are demonstrations until their APIs are built.
 - Flutter Android Sales POS live transport with encrypted SQLCipher state, Android-Keystore-backed credentials, immutable catalog-snapshot download and acknowledgement, bounded server-issued cache leases, authoritative offline limits and stock allocations, durable queued sales, idempotent synchronization, and truthful internal-versus-fiscal receipt state. Offline posting is currently fail-closed except for physical CASH and zero-rated lines.
@@ -58,7 +61,7 @@ Wave 0 repository inventory, full-stack verification, Release 1 classification, 
 - Complete remaining HR depth through professionally validated statutory payroll calculations and provider-specific configuration packs; the governed scheduling, document, and configurable payroll-output engines are now implemented.
 - Complete the Flutter online credit-sale entry and customer-account cache UX; the server contract and online synchronization path are authoritative, while offline credit intentionally remains fail-closed.
 - Select and register the production identity provider, approve and test MFA/claims/revocation policies against the implemented browser-session lifecycle; deploy the API and clients behind managed TLS, provision production devices, and add governed queue-support workflows.
-- Complete the governed integration operations APIs and implement and professionally validate TRA EFD/VFD, payment, banking-import, email, WhatsApp, payroll/statutory, privacy, hosting, and cross-border-transfer provider adapters on the Wave 3 delivery spine.
+- Select providers and implement and professionally validate the contract-specific TRA EFD/VFD, payment, banking-import, email, WhatsApp, payroll/statutory, privacy, hosting, and cross-border-transfer adapters on the repository-complete Wave 3 delivery spine.
 - Add effective-dated Tanzanian configuration only after accountant, tax, payroll, and legal approval; no statutory values may be hardcoded.
 - Execute source-data assessment, cleansing, two trial migrations, stock verification, opening-balance reconciliation, parallel payroll runs, training, pilot rollout, hypercare, penetration/load/recovery tests, and every gate in `release-gates.md`.
 - Add production secret management, backup/restore automation, point-in-time recovery evidence, deployment promotion controls, dashboards, alerts, and operational runbooks for the selected hosting platform.

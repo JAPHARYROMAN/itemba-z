@@ -12,6 +12,8 @@ import (
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/integrations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
 
 func (s *Store) ProjectFiscalDelivery(ctx context.Context, event outbox.Event, deliveryID, operation, requestHash string) error {
@@ -284,4 +286,287 @@ func safeText(value string, limit int) string {
 		return value[:limit]
 	}
 	return value
+}
+
+func (s *Store) IntegrationWorkspace(ctx context.Context, scope tenancy.Scope, actor string) (integrations.Workspace, error) {
+	result := integrations.Workspace{Scope: scope, Routes: []integrations.Route{}, Deliveries: []integrations.Delivery{}, Attempts: []integrations.Attempt{}}
+	routesByID := map[string]integrations.Route{}
+	err := s.WithTransaction(ctx, func(contract sales.Transaction) error {
+		tx := contract.(*transaction)
+		allowed, err := tx.Authorize(ctx, scope, actor, "integrations.read")
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return sales.ErrForbidden
+		}
+		rows, err := tx.tx.Query(ctx, `SELECT r.id::text,r.capability,r.provider_code,r.contract_version,r.endpoint_url,r.secret_reference,
+			r.timeout_milliseconds,r.max_attempts,r.base_backoff_seconds,r.max_backoff_seconds,r.circuit_failure_threshold,r.circuit_open_seconds,
+			r.status,r.valid_from,r.valid_until,r.reason,r.created_by::text,r.created_at,COALESCE(r.approved_by::text,''),r.approved_at,
+			COALESCE(h.consecutive_failures,0),h.opened_until,h.last_success_at,h.last_failure_at,h.updated_at
+			FROM integration_routes r LEFT JOIN integration_route_health h ON h.tenant_id=r.tenant_id AND h.route_id=r.id
+			WHERE r.tenant_id=$1 AND r.company_id=$2 ORDER BY r.created_at DESC`, scope.TenantID, scope.CompanyID)
+		if err != nil {
+			return normalizeError(err)
+		}
+		for rows.Next() {
+			var route integrations.Route
+			if err = rows.Scan(&route.ID, &route.Capability, &route.ProviderCode, &route.ContractVersion, &route.EndpointURL, &route.SecretReference, &route.TimeoutMilliseconds, &route.MaxAttempts, &route.BaseBackoffSeconds, &route.MaxBackoffSeconds, &route.CircuitFailureThreshold, &route.CircuitOpenSeconds, &route.Status, &route.ValidFrom, &route.ValidUntil, &route.Reason, &route.CreatedBy, &route.CreatedAt, &route.ApprovedBy, &route.ApprovedAt, &route.Health.ConsecutiveFailures, &route.Health.OpenedUntil, &route.Health.LastSuccessAt, &route.Health.LastFailureAt, &route.Health.UpdatedAt); err != nil {
+				rows.Close()
+				return normalizeError(err)
+			}
+			route.TenantID, route.CompanyID = scope.TenantID, scope.CompanyID
+			route.Timeout = time.Duration(route.TimeoutMilliseconds) * time.Millisecond
+			route.BaseBackoff = time.Duration(route.BaseBackoffSeconds) * time.Second
+			route.MaxBackoff = time.Duration(route.MaxBackoffSeconds) * time.Second
+			route.CircuitOpen = time.Duration(route.CircuitOpenSeconds) * time.Second
+			result.Routes = append(result.Routes, route)
+			routesByID[route.ID] = route
+		}
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return normalizeError(err)
+		}
+		rows.Close()
+		rows, err = tx.tx.Query(ctx, `SELECT d.id::text,d.route_id::text,d.capability,d.operation,d.source_event_id::text,d.aggregate_type,d.aggregate_id::text,d.correlation_id::text,d.idempotency_key,d.request_hash,d.status,d.attempt_count,d.max_attempts,d.available_at,COALESCE(d.locked_by,''),COALESCE(d.provider_reference,''),COALESCE(d.last_error_code,''),COALESCE(d.last_error_message,''),d.created_at,d.completed_at,r.provider_code,r.contract_version
+			FROM integration_deliveries d JOIN integration_routes r ON r.tenant_id=d.tenant_id AND r.id=d.route_id
+			WHERE d.tenant_id=$1 AND d.company_id=$2 ORDER BY d.created_at DESC LIMIT 200`, scope.TenantID, scope.CompanyID)
+		if err != nil {
+			return normalizeError(err)
+		}
+		for rows.Next() {
+			var delivery integrations.Delivery
+			if err = rows.Scan(&delivery.ID, &delivery.Route.ID, &delivery.Capability, &delivery.Operation, &delivery.SourceEventID, &delivery.AggregateType, &delivery.AggregateID, &delivery.CorrelationID, &delivery.IdempotencyKey, &delivery.RequestHash, &delivery.Status, &delivery.AttemptCount, &delivery.MaxAttempts, &delivery.AvailableAt, &delivery.LockedBy, &delivery.ProviderReference, &delivery.LastErrorCode, &delivery.LastErrorMessage, &delivery.CreatedAt, &delivery.CompletedAt, &delivery.Route.ProviderCode, &delivery.Route.ContractVersion); err != nil {
+				rows.Close()
+				return normalizeError(err)
+			}
+			delivery.TenantID, delivery.CompanyID = scope.TenantID, scope.CompanyID
+			if route, found := routesByID[delivery.Route.ID]; found {
+				delivery.Route = route
+			} else {
+				delivery.Route.TenantID, delivery.Route.CompanyID = scope.TenantID, scope.CompanyID
+			}
+			result.Deliveries = append(result.Deliveries, delivery)
+		}
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return normalizeError(err)
+		}
+		rows.Close()
+		rows, err = tx.tx.Query(ctx, `SELECT a.id::text,a.delivery_id::text,a.attempt_number,a.worker_id,a.outcome,COALESCE(a.error_code,''),COALESCE(a.error_message,''),COALESCE(a.provider_reference,''),a.started_at,a.completed_at FROM integration_delivery_attempts a WHERE a.tenant_id=$1 AND a.company_id=$2 ORDER BY a.completed_at DESC LIMIT 500`, scope.TenantID, scope.CompanyID)
+		if err != nil {
+			return normalizeError(err)
+		}
+		for rows.Next() {
+			var attempt integrations.Attempt
+			if err = rows.Scan(&attempt.ID, &attempt.DeliveryID, &attempt.AttemptNumber, &attempt.WorkerID, &attempt.Outcome, &attempt.ErrorCode, &attempt.ErrorMessage, &attempt.ProviderReference, &attempt.StartedAt, &attempt.CompletedAt); err != nil {
+				rows.Close()
+				return normalizeError(err)
+			}
+			result.Attempts = append(result.Attempts, attempt)
+		}
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return normalizeError(err)
+		}
+		rows.Close()
+		for _, delivery := range result.Deliveries {
+			result.Reconciliation.Total++
+			switch delivery.Status {
+			case integrations.Pending:
+				result.Reconciliation.Pending++
+			case integrations.InFlight:
+				result.Reconciliation.InFlight++
+			case integrations.RetryScheduled:
+				result.Reconciliation.Retrying++
+			case integrations.Succeeded:
+				result.Reconciliation.Succeeded++
+			case integrations.DeadLetter:
+				result.Reconciliation.DeadLetter++
+			}
+		}
+		result.Reconciliation.Unreconciled = result.Reconciliation.Pending + result.Reconciliation.InFlight + result.Reconciliation.Retrying + result.Reconciliation.DeadLetter
+		return nil
+	})
+	return result, err
+}
+
+func (s *Store) CreateIntegrationRoute(ctx context.Context, scope tenancy.Scope, route integrations.Route, idem, hash string) (integrations.Route, error) {
+	err := s.WithTransaction(ctx, func(contract sales.Transaction) error {
+		tx := contract.(*transaction)
+		allowed, err := tx.Authorize(ctx, scope, route.CreatedBy, "integrations.manage")
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return sales.ErrForbidden
+		}
+		acquired, resultID, err := tx.ClaimIdempotency(ctx, scope, "integrations.route.create.v1", idem, hash)
+		if err != nil {
+			return err
+		}
+		if !acquired {
+			route.ID = resultID
+			return nil
+		}
+		_, err = tx.tx.Exec(ctx, `INSERT INTO integration_routes(id,tenant_id,company_id,capability,provider_code,contract_version,endpoint_url,secret_reference,timeout_milliseconds,max_attempts,base_backoff_seconds,max_backoff_seconds,circuit_failure_threshold,circuit_open_seconds,status,valid_from,valid_until,created_by,reason,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'DRAFT',$15,$16,$17,$18,$19)`, route.ID, route.TenantID, route.CompanyID, route.Capability, route.ProviderCode, route.ContractVersion, route.EndpointURL, route.SecretReference, route.TimeoutMilliseconds, route.MaxAttempts, route.BaseBackoffSeconds, route.MaxBackoffSeconds, route.CircuitFailureThreshold, route.CircuitOpenSeconds, route.ValidFrom, route.ValidUntil, route.CreatedBy, route.Reason, route.CreatedAt)
+		if err != nil {
+			return normalizeError(err)
+		}
+		_, err = tx.tx.Exec(ctx, `INSERT INTO integration_route_health(tenant_id,company_id,route_id,updated_at) VALUES($1,$2,$3,$4)`, route.TenantID, route.CompanyID, route.ID, route.CreatedAt)
+		if err != nil {
+			return normalizeError(err)
+		}
+		if err = tx.financialEvidence(ctx, scope, route.CreatedBy, "integrations.route_created", "integration_route", route.ID, route.ID, route.CreatedAt); err != nil {
+			return err
+		}
+		return tx.CompleteIdempotency(ctx, scope, "integrations.route.create.v1", idem, route.ID)
+	})
+	return route, err
+}
+
+func (s *Store) TransitionIntegrationRoute(ctx context.Context, scope tenancy.Scope, actor, id string, to integrations.RouteStatus, reason, idem, hash string, at time.Time) (integrations.Route, error) {
+	route := integrations.Route{ID: id, TenantID: scope.TenantID, CompanyID: scope.CompanyID}
+	err := s.WithTransaction(ctx, func(contract sales.Transaction) error {
+		tx := contract.(*transaction)
+		allowed, err := tx.Authorize(ctx, scope, actor, "integrations.manage")
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return sales.ErrForbidden
+		}
+		op := "integrations.route.transition." + string(to) + ".v1"
+		acquired, _, err := tx.ClaimIdempotency(ctx, scope, op, idem, hash)
+		if err != nil {
+			return err
+		}
+		if !acquired {
+			return nil
+		}
+		if err = tx.tx.QueryRow(ctx, `SELECT status,created_by::text,capability,provider_code,contract_version,endpoint_url,secret_reference,timeout_milliseconds,max_attempts,base_backoff_seconds,max_backoff_seconds,circuit_failure_threshold,circuit_open_seconds,valid_from,valid_until,reason,created_at FROM integration_routes WHERE tenant_id=$1 AND company_id=$2 AND id=$3 FOR UPDATE`, scope.TenantID, scope.CompanyID, id).Scan(&route.Status, &route.CreatedBy, &route.Capability, &route.ProviderCode, &route.ContractVersion, &route.EndpointURL, &route.SecretReference, &route.TimeoutMilliseconds, &route.MaxAttempts, &route.BaseBackoffSeconds, &route.MaxBackoffSeconds, &route.CircuitFailureThreshold, &route.CircuitOpenSeconds, &route.ValidFrom, &route.ValidUntil, &route.Reason, &route.CreatedAt); err != nil {
+			return normalizeError(err)
+		}
+		from := route.Status
+		valid := from == integrations.RouteDraft && (to == integrations.RouteActive || to == integrations.RouteRetired) || from == integrations.RouteActive && (to == integrations.RouteSuspended || to == integrations.RouteRetired) || from == integrations.RouteSuspended && (to == integrations.RouteActive || to == integrations.RouteRetired)
+		if !valid {
+			return integrations.ErrInvalidTransition
+		}
+		if from == integrations.RouteDraft && actor == route.CreatedBy {
+			return integrations.ErrSeparationOfDuties
+		}
+		_, err = tx.tx.Exec(ctx, `UPDATE integration_routes SET status=$1,approved_by=$2,approved_at=$3 WHERE tenant_id=$4 AND company_id=$5 AND id=$6`, to, actor, at, scope.TenantID, scope.CompanyID, id)
+		if err != nil {
+			return normalizeError(err)
+		}
+		_, err = tx.tx.Exec(ctx, `INSERT INTO integration_route_transitions(tenant_id,company_id,route_id,from_status,to_status,reason,actor_id,occurred_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, scope.TenantID, scope.CompanyID, id, from, to, reason, actor, at)
+		if err != nil {
+			return normalizeError(err)
+		}
+		if err = tx.financialEvidence(ctx, scope, actor, "integrations.route_"+strings.ToLower(string(to)), "integration_route", id, id, at); err != nil {
+			return err
+		}
+		if err = tx.CompleteIdempotency(ctx, scope, op, idem, id); err != nil {
+			return err
+		}
+		route.Status = to
+		route.ApprovedBy = actor
+		route.ApprovedAt = &at
+		return nil
+	})
+	return route, err
+}
+
+func (s *Store) ReplayIntegrationDelivery(ctx context.Context, scope tenancy.Scope, actor, deliveryID, replayID, reason, idem, hash string, at time.Time) (integrations.Delivery, error) {
+	delivery := integrations.Delivery{ID: deliveryID, TenantID: scope.TenantID, CompanyID: scope.CompanyID}
+	err := s.WithTransaction(ctx, func(contract sales.Transaction) error {
+		tx := contract.(*transaction)
+		allowed, err := tx.Authorize(ctx, scope, actor, "integrations.replay")
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return sales.ErrForbidden
+		}
+		acquired, _, err := tx.ClaimIdempotency(ctx, scope, "integrations.delivery.replay.v1", idem, hash)
+		if err != nil {
+			return err
+		}
+		if !acquired {
+			return nil
+		}
+		var routeAttempts int
+		if err = tx.tx.QueryRow(ctx, `SELECT d.status,d.attempt_count,d.max_attempts,d.capability,d.operation,d.aggregate_type,d.aggregate_id::text,d.correlation_id::text,d.created_at,r.id::text,r.max_attempts,r.provider_code,r.contract_version FROM integration_deliveries d JOIN integration_routes r ON r.tenant_id=d.tenant_id AND r.id=d.route_id WHERE d.tenant_id=$1 AND d.company_id=$2 AND d.id=$3 AND r.status='ACTIVE' FOR UPDATE OF d`, scope.TenantID, scope.CompanyID, deliveryID).Scan(&delivery.Status, &delivery.AttemptCount, &delivery.MaxAttempts, &delivery.Capability, &delivery.Operation, &delivery.AggregateType, &delivery.AggregateID, &delivery.CorrelationID, &delivery.CreatedAt, &delivery.Route.ID, &routeAttempts, &delivery.Route.ProviderCode, &delivery.Route.ContractVersion); err != nil {
+			return normalizeError(err)
+		}
+		if delivery.Status != integrations.DeadLetter {
+			return integrations.ErrReplayUnavailable
+		}
+		newBudget := delivery.AttemptCount + routeAttempts
+		_, err = tx.tx.Exec(ctx, `UPDATE integration_deliveries SET status='PENDING',max_attempts=$1,available_at=$2,locked_by=NULL,locked_until=NULL,last_error_code=NULL,last_error_message=NULL WHERE tenant_id=$3 AND company_id=$4 AND id=$5`, newBudget, at, scope.TenantID, scope.CompanyID, deliveryID)
+		if err != nil {
+			return normalizeError(err)
+		}
+		_, err = tx.tx.Exec(ctx, `INSERT INTO integration_delivery_replays(id,tenant_id,company_id,delivery_id,previous_attempt_count,new_attempt_budget,reason,actor_id,occurred_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, replayID, scope.TenantID, scope.CompanyID, deliveryID, delivery.AttemptCount, newBudget, reason, actor, at)
+		if err != nil {
+			return normalizeError(err)
+		}
+		if delivery.Capability == integrations.TRAFiscalization && delivery.AggregateType == "sale" {
+			if _, err = tx.tx.Exec(ctx, `UPDATE sales SET fiscal_status='PENDING' WHERE tenant_id=$1 AND company_id=$2 AND id=$3 AND fiscal_status='FAILED'`, scope.TenantID, scope.CompanyID, delivery.AggregateID); err != nil {
+				return normalizeError(err)
+			}
+		}
+		if err = tx.financialEvidence(ctx, scope, actor, "integrations.delivery_replayed", "integration_delivery", deliveryID, replayID, at); err != nil {
+			return err
+		}
+		if err = tx.CompleteIdempotency(ctx, scope, "integrations.delivery.replay.v1", idem, deliveryID); err != nil {
+			return err
+		}
+		delivery.Status = integrations.Pending
+		delivery.MaxAttempts = newBudget
+		delivery.AvailableAt = at
+		return nil
+	})
+	return delivery, err
+}
+
+func (s *Store) ResetIntegrationCircuit(ctx context.Context, scope tenancy.Scope, actor, routeID, resetID, reason, idem, hash string, at time.Time) (integrations.Route, error) {
+	route := integrations.Route{ID: routeID, TenantID: scope.TenantID, CompanyID: scope.CompanyID}
+	err := s.WithTransaction(ctx, func(contract sales.Transaction) error {
+		tx := contract.(*transaction)
+		allowed, err := tx.Authorize(ctx, scope, actor, "integrations.manage")
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return sales.ErrForbidden
+		}
+		acquired, _, err := tx.ClaimIdempotency(ctx, scope, "integrations.circuit.reset.v1", idem, hash)
+		if err != nil {
+			return err
+		}
+		if !acquired {
+			return nil
+		}
+		if err = tx.tx.QueryRow(ctx, `SELECT r.status,r.provider_code,r.capability,h.consecutive_failures,h.opened_until FROM integration_routes r JOIN integration_route_health h ON h.tenant_id=r.tenant_id AND h.route_id=r.id WHERE r.tenant_id=$1 AND r.company_id=$2 AND r.id=$3 FOR UPDATE OF h`, scope.TenantID, scope.CompanyID, routeID).Scan(&route.Status, &route.ProviderCode, &route.Capability, &route.Health.ConsecutiveFailures, &route.Health.OpenedUntil); err != nil {
+			return normalizeError(err)
+		}
+		_, err = tx.tx.Exec(ctx, `INSERT INTO integration_circuit_resets(id,tenant_id,company_id,route_id,previous_failures,previous_opened_until,reason,actor_id,occurred_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, resetID, scope.TenantID, scope.CompanyID, routeID, route.Health.ConsecutiveFailures, route.Health.OpenedUntil, reason, actor, at)
+		if err != nil {
+			return normalizeError(err)
+		}
+		_, err = tx.tx.Exec(ctx, `UPDATE integration_route_health SET consecutive_failures=0,opened_until=NULL,updated_at=$1 WHERE tenant_id=$2 AND company_id=$3 AND route_id=$4`, at, scope.TenantID, scope.CompanyID, routeID)
+		if err != nil {
+			return normalizeError(err)
+		}
+		if err = tx.financialEvidence(ctx, scope, actor, "integrations.circuit_reset", "integration_route", routeID, resetID, at); err != nil {
+			return err
+		}
+		if err = tx.CompleteIdempotency(ctx, scope, "integrations.circuit.reset.v1", idem, routeID); err != nil {
+			return err
+		}
+		route.Health = integrations.RouteHealth{UpdatedAt: &at}
+		return nil
+	})
+	return route, err
 }

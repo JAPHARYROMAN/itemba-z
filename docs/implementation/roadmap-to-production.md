@@ -17,7 +17,7 @@ The remaining path is not 5.9% of the total launch effort. Production identity, 
 The initial production-readiness baseline must be established in Wave 0 from evidence. Until then, the defensible status is:
 
 - approved repository core ERP functional coverage: 100%;
-- implemented OpenAPI operations: 106;
+- implemented OpenAPI operations: 111;
 - planned OpenAPI operations: 0; future work must add reviewed contracts before implementation;
 - production release gates: open;
 - production launch authorization: not granted.
@@ -148,9 +148,11 @@ penetration-test closure letter.
 
 Planning range: 6–12 weeks and the likely critical path
 
-Execution record: [`wave-3-execution.md`](wave-3-execution.md). The durable,
-provider-neutral delivery spine is implemented; governed operations APIs and
-all approved provider/statutory adapters remain open.
+Execution record: [`wave-3-execution.md`](wave-3-execution.md). The repository-
+controlled delivery spine, governed operations APIs, replay/reconciliation and
+bilingual workspace are complete. Approved provider/statutory adapters,
+protected sandbox evidence and professional/business sign-off remain external
+blockers, so the Wave 3 release exit is not closed.
 
 Each connector must satisfy the integration register: owner, versioned contract, authentication, idempotency, timeout/retry budget, circuit breaking, dead-letter handling, manual replay, reconciliation, monitoring, data protection and escalation.
 

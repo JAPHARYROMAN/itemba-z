@@ -31,6 +31,8 @@ jobs:
         run: node -e "JSON.parse(require('fs').readFileSync('contracts/events/event-envelope.v1.schema.json','utf8'))"
       - name: Validate Wave 2 security and privacy control evidence
         run: node scripts/validate-wave2-controls.mjs
+      - name: Validate Wave 3 integration control evidence
+        run: node scripts/validate-wave3-controls.mjs
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.5

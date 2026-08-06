@@ -45,7 +45,66 @@ tags:
     description: Replenishment policies, lot and expiry traceability, and costing evidence.
   - name: Audit
     description: Immutable, actor-attributed timelines for governed records.
+  - name: Integrations
+    description: Governed external-provider routes, delivery evidence, reconciliation, replay, and circuit recovery.
 paths:
+  /v1/integrations:
+    get:
+      summary: Get the integration operations workspace
+      operationId: getIntegrationWorkspace
+      tags: [Integrations]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Integration workspace, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationWorkspace' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/integrations/routes:
+    post:
+      summary: Create an immutable integration route version
+      operationId: createIntegrationRoute
+      tags: [Integrations]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateIntegrationRouteCommand' } } } }
+      responses:
+        '201': { description: Route draft created, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationRoute' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/integrations/routes/{routeID}/transitions:
+    parameters: [ { name: routeID, in: path, required: true, schema: { type: string, format: uuid } } ]
+    post:
+      summary: Independently activate, suspend, or retire a route
+      operationId: transitionIntegrationRoute
+      tags: [Integrations]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationRouteTransitionCommand' } } } }
+      responses:
+        '200': { description: Route transitioned, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationRoute' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/integrations/routes/{routeID}/circuit-reset:
+    parameters: [ { name: routeID, in: path, required: true, schema: { type: string, format: uuid } } ]
+    post:
+      summary: Reset an integration circuit with immutable evidence
+      operationId: resetIntegrationCircuit
+      tags: [Integrations]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReasonCommand' } } } }
+      responses:
+        '200': { description: Circuit reset, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationRoute' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/integrations/deliveries/{deliveryID}/replay:
+    parameters: [ { name: deliveryID, in: path, required: true, schema: { type: string, format: uuid } } ]
+    post:
+      summary: Replay a dead-letter delivery under a fresh bounded attempt budget
+      operationId: replayIntegrationDelivery
+      tags: [Integrations]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReasonCommand' } } } }
+      responses:
+        '202': { description: Delivery queued for replay, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationDelivery' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
   /v1/inventory/control:
     get:
       summary: Get the governed inventory-control workspace
@@ -1497,6 +1556,17 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    IntegrationCapability: { type: string, enum: [TRA_FISCALIZATION, PAYMENT_CALLBACK, BANK_STATEMENT_IMPORT, PAYROLL_EXPORT, EMAIL, WHATSAPP, RECEIPT_PRINT] }
+    IntegrationRouteStatus: { type: string, enum: [DRAFT, ACTIVE, SUSPENDED, RETIRED] }
+    IntegrationDeliveryStatus: { type: string, enum: [PENDING, IN_FLIGHT, RETRY_SCHEDULED, SUCCEEDED, DEAD_LETTER, CANCELLED] }
+    IntegrationRouteHealth: { type: object, additionalProperties: false, required: [consecutive_failures], properties: { consecutive_failures: { type: integer, minimum: 0 }, opened_until: { type: string, format: date-time }, last_success_at: { type: string, format: date-time }, last_failure_at: { type: string, format: date-time }, updated_at: { type: string, format: date-time } } }
+    IntegrationRoute: { type: object, additionalProperties: false, required: [id, tenant_id, company_id, capability, provider_code, contract_version, endpoint_url, secret_reference, timeout_milliseconds, max_attempts, base_backoff_seconds, max_backoff_seconds, circuit_failure_threshold, circuit_open_seconds, status, valid_from, reason, created_by, created_at, health], properties: { id: { type: string, format: uuid }, tenant_id: { type: string, format: uuid }, company_id: { type: string, format: uuid }, capability: { $ref: '#/components/schemas/IntegrationCapability' }, provider_code: { type: string }, contract_version: { type: string }, endpoint_url: { type: string, format: uri }, secret_reference: { type: string, format: uri }, timeout_milliseconds: { type: integer }, max_attempts: { type: integer }, base_backoff_seconds: { type: integer }, max_backoff_seconds: { type: integer }, circuit_failure_threshold: { type: integer }, circuit_open_seconds: { type: integer }, status: { $ref: '#/components/schemas/IntegrationRouteStatus' }, valid_from: { type: string, format: date-time }, valid_until: { type: string, format: date-time }, reason: { type: string }, created_by: { type: string, format: uuid }, created_at: { type: string, format: date-time }, approved_by: { type: string, format: uuid }, approved_at: { type: string, format: date-time }, health: { $ref: '#/components/schemas/IntegrationRouteHealth' } } }
+    IntegrationDelivery: { type: object, additionalProperties: true, required: [id, tenant_id, company_id, route, capability, operation, source_event_id, aggregate_type, aggregate_id, correlation_id, idempotency_key, request_hash, status, attempt_count, max_attempts, available_at, created_at], properties: { id: { type: string, format: uuid }, tenant_id: { type: string, format: uuid }, company_id: { type: string, format: uuid }, route: { $ref: '#/components/schemas/IntegrationRoute' }, capability: { $ref: '#/components/schemas/IntegrationCapability' }, operation: { type: string }, source_event_id: { type: string, format: uuid }, aggregate_type: { type: string }, aggregate_id: { type: string, format: uuid }, correlation_id: { type: string, format: uuid }, idempotency_key: { type: string }, request_hash: { type: string }, status: { $ref: '#/components/schemas/IntegrationDeliveryStatus' }, attempt_count: { type: integer }, max_attempts: { type: integer }, available_at: { type: string, format: date-time }, locked_by: { type: string }, provider_reference: { type: string }, last_error_code: { type: string }, last_error_message: { type: string }, created_at: { type: string, format: date-time }, completed_at: { type: string, format: date-time } } }
+    IntegrationAttempt: { type: object, additionalProperties: false, required: [id, delivery_id, attempt_number, worker_id, outcome, started_at, completed_at], properties: { id: { type: string, format: uuid }, delivery_id: { type: string, format: uuid }, attempt_number: { type: integer }, worker_id: { type: string }, outcome: { $ref: '#/components/schemas/IntegrationDeliveryStatus' }, error_code: { type: string }, error_message: { type: string }, provider_reference: { type: string }, started_at: { type: string, format: date-time }, completed_at: { type: string, format: date-time } } }
+    IntegrationReconciliation: { type: object, additionalProperties: false, required: [total, pending, in_flight, retrying, succeeded, dead_letter, unreconciled], properties: { total: { type: integer }, pending: { type: integer }, in_flight: { type: integer }, retrying: { type: integer }, succeeded: { type: integer }, dead_letter: { type: integer }, unreconciled: { type: integer } } }
+    IntegrationWorkspace: { type: object, additionalProperties: false, required: [scope, routes, deliveries, attempts, reconciliation], properties: { scope: { $ref: '#/components/schemas/Scope' }, routes: { type: array, items: { $ref: '#/components/schemas/IntegrationRoute' } }, deliveries: { type: array, items: { $ref: '#/components/schemas/IntegrationDelivery' } }, attempts: { type: array, items: { $ref: '#/components/schemas/IntegrationAttempt' } }, reconciliation: { $ref: '#/components/schemas/IntegrationReconciliation' } } }
+    CreateIntegrationRouteCommand: { type: object, additionalProperties: false, required: [capability, provider_code, contract_version, endpoint_url, secret_reference, timeout_milliseconds, max_attempts, base_backoff_seconds, max_backoff_seconds, circuit_failure_threshold, circuit_open_seconds, valid_from, reason], properties: { capability: { $ref: '#/components/schemas/IntegrationCapability' }, provider_code: { type: string, pattern: '^[A-Z0-9][A-Z0-9_-]{1,63}$' }, contract_version: { type: string }, endpoint_url: { type: string, format: uri, pattern: '^https://' }, secret_reference: { type: string, format: uri }, timeout_milliseconds: { type: integer, minimum: 1000, maximum: 120000 }, max_attempts: { type: integer, minimum: 1, maximum: 20 }, base_backoff_seconds: { type: integer, minimum: 1, maximum: 3600 }, max_backoff_seconds: { type: integer, minimum: 1, maximum: 86400 }, circuit_failure_threshold: { type: integer, minimum: 1, maximum: 100 }, circuit_open_seconds: { type: integer, minimum: 1, maximum: 86400 }, valid_from: { type: string, format: date-time }, valid_until: { type: string, format: date-time }, reason: { type: string, minLength: 8, maxLength: 500 } } }
+    IntegrationRouteTransitionCommand: { type: object, additionalProperties: false, required: [status, reason], properties: { status: { type: string, enum: [ACTIVE, SUSPENDED, RETIRED] }, reason: { type: string, minLength: 8, maxLength: 500 } } }
     AuditRecord:
       type: object
       additionalProperties: false

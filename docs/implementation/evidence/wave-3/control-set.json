@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "updated": "2026-08-06",
+  "repository_status": "COMPLETE",
+  "release_exit_status": "BLOCKED_EXTERNAL",
+  "repository_controls": [
+    { "id": "W3-01", "status": "IMPLEMENTED", "evidence": ["services/core-api/migrations/000033_integration_delivery_spine.up.sql", "services/core-api/internal/integrations/processor.go"] },
+    { "id": "W3-02", "status": "IMPLEMENTED", "evidence": ["services/core-api/migrations/000035_integration_operations.up.sql", "services/core-api/internal/platform/store/postgres/integrations.go"] },
+    { "id": "W3-03", "status": "IMPLEMENTED", "evidence": ["contracts/openapi/itemba-z.v1.yaml", "apps/control-center/src/app/integrations/page.tsx"] },
+    { "id": "W3-04", "status": "IMPLEMENTED", "evidence": ["services/core-api/internal/integrations/processor_test.go", "services/core-api/internal/platform/store/postgres/integration_test.go"] }
+  ],
+  "external_gates": [
+    { "capability": "TRA_FISCALIZATION", "status": "BLOCKED_EXTERNAL", "required": "Current approved contract, certificate/signing custody, TRA/provider sandbox and professional certification evidence" },
+    { "capability": "PAYMENT_CALLBACK", "status": "BLOCKED_EXTERNAL", "required": "Selected merchant/provider contracts, signing keys, test accounts and settlement rules" },
+    { "capability": "BANK_STATEMENT_IMPORT", "status": "BLOCKED_EXTERNAL", "required": "Selected bank format versions, test files, account owners and bank validation" },
+    { "capability": "PAYROLL_EXPORT", "status": "BLOCKED_EXTERNAL", "required": "Professionally approved statutory policy and selected bank/authority formats" },
+    { "capability": "EMAIL", "status": "BLOCKED_EXTERNAL", "required": "Approved provider, data-processing terms, domain authentication and sandbox credentials" },
+    { "capability": "WHATSAPP", "status": "BLOCKED_EXTERNAL", "required": "Approved business account, templates, consent policy and provider credentials" },
+    { "capability": "RECEIPT_PRINT", "status": "BLOCKED_EXTERNAL", "required": "Approved printer models, device access and physical rendering evidence" }
+  ],
+  "official_sources": [
+    "https://virtual.tra.go.tz/efdmsRctApi/",
+    "https://www.pdpc.go.tz/services/registration/",
+    "https://www.pdpc.go.tz/sw/services/cross-border-data-transfer-permit/"
+  ]
+}

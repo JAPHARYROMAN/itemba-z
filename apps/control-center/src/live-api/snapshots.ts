@@ -18,6 +18,7 @@ import type {
 	SupplierWorkspace,
 	GlobalSearchWorkspace,
 	InventoryControlWorkspace,
+	IntegrationOperationsWorkspace,
 } from "@/live-api/types";
 import { text } from "@/lib/i18n";
 
@@ -52,6 +53,11 @@ export async function loadPeopleWorkspace(): Promise<LiveSnapshot<PeopleWorkspac
 
 export async function loadConfigurationWorkspace(): Promise<LiveSnapshot<ConfigurationWorkspace>> {
   try { const repository = await createServerRepository(); const [context, configuration] = await Promise.all([repository.getWorkingContext(), repository.getConfigurationSnapshot()]); return { state: "ready", data: { context, configuration } }; }
+  catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
+}
+
+export async function loadIntegrationOperationsWorkspace(): Promise<LiveSnapshot<IntegrationOperationsWorkspace>> {
+  try { const repository = await createServerRepository(); const [context, integrations] = await Promise.all([repository.getWorkingContext(), repository.getIntegrationWorkspace()]); return { state: "ready", data: { context, integrations } }; }
   catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
 }
 

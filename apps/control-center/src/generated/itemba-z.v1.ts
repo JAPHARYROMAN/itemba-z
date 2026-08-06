@@ -4,6 +4,97 @@
  */
 
 export interface paths {
+    "/v1/integrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the integration operations workspace */
+        get: operations["getIntegrationWorkspace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an immutable integration route version */
+        post: operations["createIntegrationRoute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/routes/{routeID}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                routeID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Independently activate, suspend, or retire a route */
+        post: operations["transitionIntegrationRoute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/routes/{routeID}/circuit-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                routeID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset an integration circuit with immutable evidence */
+        post: operations["resetIntegrationCircuit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/deliveries/{deliveryID}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliveryID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replay a dead-letter delivery under a fresh bounded attempt budget */
+        post: operations["replayIntegrationDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/inventory/control": {
         parameters: {
             query?: never;
@@ -1668,6 +1759,151 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        IntegrationCapability: "TRA_FISCALIZATION" | "PAYMENT_CALLBACK" | "BANK_STATEMENT_IMPORT" | "PAYROLL_EXPORT" | "EMAIL" | "WHATSAPP" | "RECEIPT_PRINT";
+        /** @enum {string} */
+        IntegrationRouteStatus: "DRAFT" | "ACTIVE" | "SUSPENDED" | "RETIRED";
+        /** @enum {string} */
+        IntegrationDeliveryStatus: "PENDING" | "IN_FLIGHT" | "RETRY_SCHEDULED" | "SUCCEEDED" | "DEAD_LETTER" | "CANCELLED";
+        IntegrationRouteHealth: {
+            consecutive_failures: number;
+            /** Format: date-time */
+            opened_until?: string;
+            /** Format: date-time */
+            last_success_at?: string;
+            /** Format: date-time */
+            last_failure_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        IntegrationRoute: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tenant_id: string;
+            /** Format: uuid */
+            company_id: string;
+            capability: components["schemas"]["IntegrationCapability"];
+            provider_code: string;
+            contract_version: string;
+            /** Format: uri */
+            endpoint_url: string;
+            /** Format: uri */
+            secret_reference: string;
+            timeout_milliseconds: number;
+            max_attempts: number;
+            base_backoff_seconds: number;
+            max_backoff_seconds: number;
+            circuit_failure_threshold: number;
+            circuit_open_seconds: number;
+            status: components["schemas"]["IntegrationRouteStatus"];
+            /** Format: date-time */
+            valid_from: string;
+            /** Format: date-time */
+            valid_until?: string;
+            reason: string;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            approved_by?: string;
+            /** Format: date-time */
+            approved_at?: string;
+            health: components["schemas"]["IntegrationRouteHealth"];
+        };
+        IntegrationDelivery: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tenant_id: string;
+            /** Format: uuid */
+            company_id: string;
+            route: components["schemas"]["IntegrationRoute"];
+            capability: components["schemas"]["IntegrationCapability"];
+            operation: string;
+            /** Format: uuid */
+            source_event_id: string;
+            aggregate_type: string;
+            /** Format: uuid */
+            aggregate_id: string;
+            /** Format: uuid */
+            correlation_id: string;
+            idempotency_key: string;
+            request_hash: string;
+            status: components["schemas"]["IntegrationDeliveryStatus"];
+            attempt_count: number;
+            max_attempts: number;
+            /** Format: date-time */
+            available_at: string;
+            locked_by?: string;
+            provider_reference?: string;
+            last_error_code?: string;
+            last_error_message?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            completed_at?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        IntegrationAttempt: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            delivery_id: string;
+            attempt_number: number;
+            worker_id: string;
+            outcome: components["schemas"]["IntegrationDeliveryStatus"];
+            error_code?: string;
+            error_message?: string;
+            provider_reference?: string;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            completed_at: string;
+        };
+        IntegrationReconciliation: {
+            total: number;
+            pending: number;
+            in_flight: number;
+            retrying: number;
+            succeeded: number;
+            dead_letter: number;
+            unreconciled: number;
+        };
+        IntegrationWorkspace: {
+            scope: components["schemas"]["Scope"];
+            routes: components["schemas"]["IntegrationRoute"][];
+            deliveries: components["schemas"]["IntegrationDelivery"][];
+            attempts: components["schemas"]["IntegrationAttempt"][];
+            reconciliation: components["schemas"]["IntegrationReconciliation"];
+        };
+        CreateIntegrationRouteCommand: {
+            capability: components["schemas"]["IntegrationCapability"];
+            provider_code: string;
+            contract_version: string;
+            /** Format: uri */
+            endpoint_url: string;
+            /** Format: uri */
+            secret_reference: string;
+            timeout_milliseconds: number;
+            max_attempts: number;
+            base_backoff_seconds: number;
+            max_backoff_seconds: number;
+            circuit_failure_threshold: number;
+            circuit_open_seconds: number;
+            /** Format: date-time */
+            valid_from: string;
+            /** Format: date-time */
+            valid_until?: string;
+            reason: string;
+        };
+        IntegrationRouteTransitionCommand: {
+            /** @enum {string} */
+            status: "ACTIVE" | "SUSPENDED" | "RETIRED";
+            reason: string;
+        };
         AuditRecord: {
             /** Format: uuid */
             id: string;
@@ -3931,6 +4167,142 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getIntegrationWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Integration workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationWorkspace"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createIntegrationRoute: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateIntegrationRouteCommand"];
+            };
+        };
+        responses: {
+            /** @description Route draft created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationRoute"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    transitionIntegrationRoute: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                routeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntegrationRouteTransitionCommand"];
+            };
+        };
+        responses: {
+            /** @description Route transitioned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationRoute"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    resetIntegrationCircuit: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                routeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReasonCommand"];
+            };
+        };
+        responses: {
+            /** @description Circuit reset */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationRoute"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    replayIntegrationDelivery: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                deliveryID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReasonCommand"];
+            };
+        };
+        responses: {
+            /** @description Delivery queued for replay */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationDelivery"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
     getInventoryControlWorkspace: {
         parameters: {
             query?: never;

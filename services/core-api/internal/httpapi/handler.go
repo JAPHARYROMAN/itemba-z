@@ -22,6 +22,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/integrations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventorycontrol"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
@@ -56,6 +57,7 @@ type Handler struct {
 	commercial       *commercial.Service
 	inventorycontrol *inventorycontrol.Service
 	workforce        *workforce.Service
+	integrations     *integrations.Service
 	logger           *slog.Logger
 	authenticator    Authenticator
 }
@@ -229,6 +231,18 @@ func NewLiveWithWorkforce(salesService *sales.Service, readService *readmodel.Se
 	return handler, nil
 }
 
+func NewLiveWithIntegrationOperations(salesService *sales.Service, readService *readmodel.Service, mobileService *mobile.Service, receivablesService *receivables.Service, operationsService *operations.Service, bankingService *banking.Service, financialService *financialops.Service, reportingService *reporting.Service, advancedService *advancedfinance.Service, treasuryService *treasury.Service, groupService *groupfinance.Service, peopleService *people.Service, configurationService *configuration.Service, commercialService *commercial.Service, inventoryService *inventorycontrol.Service, workforceService *workforce.Service, integrationService *integrations.Service, logger *slog.Logger, authenticator Authenticator) (*Handler, error) {
+	handler, err := NewLiveWithWorkforce(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, commercialService, inventoryService, workforceService, logger, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	if integrationService == nil {
+		return nil, errors.New("integration operations service is required")
+	}
+	handler.integrations = integrationService
+	return handler, nil
+}
+
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
@@ -349,6 +363,13 @@ func (h *Handler) Routes() http.Handler {
 		mux.HandleFunc("POST /v1/hr/shift-assignments/{assignmentID}/transitions", h.transitionShiftAssignment)
 		mux.HandleFunc("POST /v1/hr/employee-documents", h.registerEmployeeDocument)
 		mux.HandleFunc("POST /v1/hr/payroll-runs/{payrollID}/exports", h.generatePayrollArtifact)
+	}
+	if h.integrations != nil {
+		mux.HandleFunc("GET /v1/integrations", h.integrationWorkspace)
+		mux.HandleFunc("POST /v1/integrations/routes", h.createIntegrationRoute)
+		mux.HandleFunc("POST /v1/integrations/routes/{routeID}/transitions", h.transitionIntegrationRoute)
+		mux.HandleFunc("POST /v1/integrations/routes/{routeID}/circuit-reset", h.resetIntegrationCircuit)
+		mux.HandleFunc("POST /v1/integrations/deliveries/{deliveryID}/replay", h.replayIntegrationDelivery)
 	}
 	if h.mobile != nil {
 		mux.HandleFunc("POST /v1/mobile/devices/enroll", h.enrollDevice)
@@ -1338,6 +1359,10 @@ func (h *Handler) writeError(writer http.ResponseWriter, request *http.Request, 
 		status, code = http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, configuration.ErrInvalidTransition), errors.Is(err, configuration.ErrSeparationOfDuties), errors.Is(err, configuration.ErrEffectiveOverlap):
 		status, code = http.StatusConflict, "configuration_conflict"
+	case errors.Is(err, integrations.ErrInvalidCommand):
+		status, code = http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, integrations.ErrInvalidTransition), errors.Is(err, integrations.ErrSeparationOfDuties), errors.Is(err, integrations.ErrReplayUnavailable):
+		status, code = http.StatusConflict, "integration_control_conflict"
 	case errors.Is(err, commercial.ErrInvalidCommand):
 		status, code = http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, commercial.ErrInvalidTransition), errors.Is(err, commercial.ErrSeparationOfDuties), errors.Is(err, commercial.ErrSourceMismatch), errors.Is(err, commercial.ErrAwardExists):

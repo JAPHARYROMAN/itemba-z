@@ -7,6 +7,7 @@ import {
   Bell, ChartNoAxesCombined, ClipboardList,
   Landmark, LayoutDashboard, Menu, PackageOpen, Search, Settings2,
   ShoppingCart, Smartphone, Truck, UserRoundCog, UsersRound, Wifi, X, ListChecks,
+  Cable,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
@@ -23,6 +24,7 @@ const iconMap: Record<NavigationIcon, LucideIcon> = {
   reports: ChartNoAxesCombined, settings: Settings2,
   reconciliation: ListChecks,
   devices: Smartphone,
+  integrations: Cable,
 };
 
 export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {

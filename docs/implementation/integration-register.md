@@ -20,6 +20,8 @@ Initial categories are TRA EFD/VFD, approved banks, mobile-money/payment methods
 
 Migration 33 and `internal/integrations` implement the shared delivery state
 machine, outbox projection, idempotency, retry/dead-letter, circuit-health and
-attempt-evidence boundary. A category remains **not integrated** until its row
+attempt-evidence boundary. Migrations 35 and the `/v1/integrations` operations
+add maker-checker route lifecycle, append-only circuit/replay decisions,
+reconciliation and bilingual operator controls. A category remains **not integrated** until its row
 in this register identifies the approved provider and links the versioned
 contract, protected test evidence, reconciliation and owner sign-off.

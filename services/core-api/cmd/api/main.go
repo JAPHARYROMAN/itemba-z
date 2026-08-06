@@ -19,6 +19,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/httpapi"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/integrations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventorycontrol"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
@@ -242,7 +243,17 @@ func main() {
 		logger.Error("initialize workforce service", "error", err)
 		os.Exit(1)
 	}
-	handler, err := httpapi.NewLiveWithWorkforce(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, commercialService, inventoryService, workforceService, logger, authenticator)
+	integrationRepository, ok := repository.(integrations.OperationsRepository)
+	if !ok {
+		logger.Error("repository does not implement integration operations")
+		os.Exit(1)
+	}
+	integrationService, err := integrations.NewService(integrationRepository, identity.UUIDGenerator{}, clock.System{})
+	if err != nil {
+		logger.Error("initialize integration operations service", "error", err)
+		os.Exit(1)
+	}
+	handler, err := httpapi.NewLiveWithIntegrationOperations(salesService, readService, mobileService, receivablesService, operationsService, bankingService, financialService, reportingService, advancedService, treasuryService, groupService, peopleService, configurationService, commercialService, inventoryService, workforceService, integrationService, logger, authenticator)
 	if err != nil {
 		logger.Error("initialize HTTP API", "error", err)
 		os.Exit(1)

@@ -81,3 +81,28 @@ func TestProcessorFailsClosedForUnknownConnector(t *testing.T) {
 		t.Fatalf("count=%d failed=%+v dead=%v err=%v", count, repository.failed, repository.dead, err)
 	}
 }
+
+func TestProcessorRejectsMalformedProviderEvidence(t *testing.T) {
+	repository := &processorRepository{deliveries: []Delivery{deliveryFixture()}}
+	registry := ConnectorMap{"TRA_FISCALIZATION:TRA_TEST": connectorFunc(func(context.Context, Route, Delivery) (Result, error) {
+		return Result{ProviderReference: "FISCAL-INVALID", Response: json.RawMessage(`[]`)}, nil
+	})}
+	processor := Processor{Repository: repository, Registry: registry, Clock: clock.Fixed{Time: time.Now()}, WorkerID: "worker-1", BatchSize: 10, Lease: time.Minute}
+	if count, err := processor.RunOnce(context.Background()); err != nil || count != 0 || len(repository.dead) != 1 || !repository.dead[0] || repository.failed[0].Code != "invalid_provider_response" {
+		t.Fatalf("count=%d failed=%+v dead=%v err=%v", count, repository.failed, repository.dead, err)
+	}
+}
+
+func TestProcessorClassifiesProviderTimeoutForRetry(t *testing.T) {
+	delivery := deliveryFixture()
+	delivery.Route.Timeout = time.Millisecond
+	repository := &processorRepository{deliveries: []Delivery{delivery}}
+	registry := ConnectorMap{"TRA_FISCALIZATION:TRA_TEST": connectorFunc(func(ctx context.Context, _ Route, _ Delivery) (Result, error) {
+		<-ctx.Done()
+		return Result{}, ctx.Err()
+	})}
+	processor := Processor{Repository: repository, Registry: registry, Clock: clock.Fixed{Time: time.Now()}, WorkerID: "worker-1", BatchSize: 10, Lease: time.Minute}
+	if count, err := processor.RunOnce(context.Background()); err != nil || count != 0 || len(repository.failed) != 1 || repository.dead[0] || repository.failed[0].Code != "provider_timeout" {
+		t.Fatalf("count=%d failed=%+v dead=%v err=%v", count, repository.failed, repository.dead, err)
+	}
+}
