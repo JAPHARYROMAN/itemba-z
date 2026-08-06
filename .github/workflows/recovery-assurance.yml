@@ -126,7 +126,7 @@ jobs:
             ${{ runner.temp }}/forward-compatible-manifest.json
             ${{ runner.temp }}/recovery-exercise.json
           if-no-files-found: error
-          retention-days: 365
+          retention-days: 90
 
   previous-binary-rollback-compatibility:
     if: github.event_name == 'pull_request'
@@ -189,7 +189,7 @@ jobs:
           name: previous-binary-compatibility-${{ github.run_id }}
           path: ${{ runner.temp }}/previous-api.log
           if-no-files-found: error
-          retention-days: 365
+          retention-days: 90
       - name: Stop previous release API
         if: always()
         run: |

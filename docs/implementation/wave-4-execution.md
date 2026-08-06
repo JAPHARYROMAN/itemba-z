@@ -9,7 +9,8 @@ Production exit: **BLOCKED — external platform and operating evidence required
   controls are represented in machine-readable contracts and Terraform.
 - A protected-environment promotion preflight validates ordered promotion,
   immutable release/migration hashes, predecessor evidence, change authority
-  and a rollback plan. It retains an authorization artifact for one year.
+  and a rollback plan. It retains an authorization artifact for 90 days, the
+  repository's configured maximum.
 - Proposed critical-journey SLOs, error-budget policy and a complete alert-to-
   runbook catalog are versioned and executable through repository validation.
 - Incident runbooks cover identity, database, migration, outbox, connector,

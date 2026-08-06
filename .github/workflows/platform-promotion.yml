@@ -80,7 +80,7 @@ jobs:
           name: promotion-preflight-${{ inputs.target_environment }}-${{ github.run_id }}
           path: ${{ runner.temp }}/promotion-record.json
           if-no-files-found: error
-          retention-days: 365
+          retention-days: 90
 
   protected-environment-authorization:
     needs: validate-candidate

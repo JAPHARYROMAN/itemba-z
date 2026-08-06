@@ -35,7 +35,7 @@ for (const environment of requiredOrder) if (!terraform.includes(`"${environment
 for (const marker of ["alltrue(values(var.deployment_safety))", "development_seed_disabled", "header_identity_disabled", "unsafe_debug_disabled"]) if (!terraform.includes(marker)) fail(`Terraform safety contract is missing ${marker}`);
 
 const promotion = read(".github/workflows/platform-promotion.yml");
-for (const marker of ["workflow_dispatch", "cancel-in-progress: false", "environment:", "release_bundle_sha256", "migration_bundle_sha256", "predecessor_evidence", "change_ticket", "rollback_plan", "retention-days: 365", "BLOCKED_UNTIL_APPROVED_ADAPTER_IS_CONFIGURED"]) {
+for (const marker of ["workflow_dispatch", "cancel-in-progress: false", "environment:", "release_bundle_sha256", "migration_bundle_sha256", "predecessor_evidence", "change_ticket", "rollback_plan", "retention-days: 90", "BLOCKED_UNTIL_APPROVED_ADAPTER_IS_CONFIGURED"]) {
   if (!promotion.includes(marker) && !read("scripts/validate-promotion-inputs.mjs").includes(marker)) fail(`promotion gate is missing ${marker}`);
 }
 execFileSync(process.execPath, ["scripts/validate-promotion-inputs.mjs", "--self-test"], { stdio: "inherit" });
@@ -86,13 +86,13 @@ const operationalMigration = read("services/core-api/migrations/000036_platform_
 for (const marker of ["SECURITY DEFINER", "REVOKE ALL", "itemba_outbox_oldest_unpublished_seconds", "itemba_integration_backlog", "itemba_reconciliation_open_critical"]) if (!operationalMigration.includes(marker)) fail(`operational metric migration is missing ${marker}`);
 
 const recoveryWorkflow = read(".github/workflows/recovery-assurance.yml");
-for (const marker of ["pg_dump", "pg_restore", "source-manifest.json", "restored-manifest.json", "forward-compatible-manifest.json", "previous-binary", "retention-days: 365"]) if (!recoveryWorkflow.includes(marker)) fail(`recovery workflow is missing ${marker}`);
+for (const marker of ["pg_dump", "pg_restore", "source-manifest.json", "restored-manifest.json", "forward-compatible-manifest.json", "previous-binary", "retention-days: 90"]) if (!recoveryWorkflow.includes(marker)) fail(`recovery workflow is missing ${marker}`);
 const recoveryManifest = read("services/core-api/internal/platform/recovery/manifest.go");
 if (!recoveryManifest.includes("SequenceSHA256")) fail("recovery manifest omits sequence state");
 for (const table of ["journals", "journal_lines", "inventory_stock_ledger", "customer_ledger", "supplier_ledger", "audit_events", "outbox_events", "integration_deliveries", "employee_documents", "payroll_export_artifacts", "report_exports"]) if (!recoveryManifest.includes(`"${table}"`)) fail(`recovery manifest is missing ${table}`);
 
 const platformExercise = read(".github/workflows/platform-exercises.yml");
-for (const marker of ["platform-load-probe.mjs", "ITEMBA_METRICS_ADDRESS", "ITEMBA_LOAD_MAX_P95_MS", "ITEMBA_LOAD_MAX_ERROR_RATE", "retention-days: 365"]) if (!platformExercise.includes(marker)) fail(`platform exercise is missing ${marker}`);
+for (const marker of ["platform-load-probe.mjs", "ITEMBA_METRICS_ADDRESS", "ITEMBA_LOAD_MAX_P95_MS", "ITEMBA_LOAD_MAX_ERROR_RATE", "retention-days: 90"]) if (!platformExercise.includes(marker)) fail(`platform exercise is missing ${marker}`);
 execFileSync(process.execPath, ["scripts/platform-load-probe.mjs", "--self-test"], { stdio: "inherit" });
 
 const release = read(".github/workflows/release-supply-chain.yml");

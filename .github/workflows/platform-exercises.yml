@@ -114,7 +114,7 @@ jobs:
             ${{ runner.temp }}/metrics.txt
             ${{ runner.temp }}/platform-api.log
           if-no-files-found: error
-          retention-days: 365
+          retention-days: 90
       - name: Stop isolated API
         if: always()
         run: |

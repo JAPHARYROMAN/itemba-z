@@ -57,7 +57,7 @@ tool compares migration checksums, sequence state and authoritative table stream
 stock, customer/supplier subledgers, audit, outbox, integration delivery and
 document/export metadata. It reapplies migrations to the restored database and
 proves the prior API binary starts against the candidate schema on pull requests.
-Artifacts are retained for one year.
+Artifacts are retained for the repository maximum of 90 days.
 
 This exercise proves the procedure and reconciliation tooling. It does not
 claim managed-provider encryption, PITR, object-blob recovery, regional failure
