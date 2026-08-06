@@ -9,8 +9,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/itemba-z/itemba-z/services/core-api/internal/integrations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/identity"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/store/postgres"
 )
 
@@ -21,6 +23,18 @@ func (p loggingPublisher) Publish(_ context.Context, event outbox.Event) error {
 		"event_type", event.EventType, "aggregate_id", event.AggregateID,
 		"correlation_id", event.CorrelationID, "causation_id", event.CausationID)
 	return nil
+}
+
+type projectingPublisher struct {
+	projector *integrations.Projector
+	next      outbox.Publisher
+}
+
+func (p projectingPublisher) Publish(ctx context.Context, event outbox.Event) error {
+	if err := p.projector.Publish(ctx, event); err != nil {
+		return err
+	}
+	return p.next.Publish(ctx, event)
 }
 
 func main() {
@@ -41,7 +55,13 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
-	processor := outbox.Processor{Repository: store, Publisher: loggingPublisher{logger}, Clock: clock.System{},
+	projector, err := integrations.NewProjector(store, identity.UUIDGenerator{})
+	if err != nil {
+		logger.Error("initialize integration projector", "error", err)
+		os.Exit(1)
+	}
+	publisher := projectingPublisher{projector: projector, next: loggingPublisher{logger}}
+	processor := outbox.Processor{Repository: store, Publisher: publisher, Clock: clock.System{},
 		WorkerID: workerID(), BatchSize: 50, Lease: time.Minute, RetryDelay: 30 * time.Second}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()

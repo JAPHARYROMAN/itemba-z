@@ -156,6 +156,21 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  integration-worker:
+    profiles: [application]
+    build:
+      context: ../../services/core-api
+    entrypoint: ["/app/integration-worker"]
+    environment:
+      ITEMBA_INTEGRATION_WORKER_ID: local-compose-integration-worker
+      DATABASE_URL: postgres://${POSTGRES_WORKER_RUNTIME_USER}:${POSTGRES_WORKER_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      dev-seed:
+        condition: service_completed_successfully
+      provision-worker-runtime:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   control-center:
     profiles: [application]
     build:

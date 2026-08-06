@@ -148,6 +148,10 @@ penetration-test closure letter.
 
 Planning range: 6–12 weeks and the likely critical path
 
+Execution record: [`wave-3-execution.md`](wave-3-execution.md). The durable,
+provider-neutral delivery spine is implemented; governed operations APIs and
+all approved provider/statutory adapters remain open.
+
 Each connector must satisfy the integration register: owner, versioned contract, authentication, idempotency, timeout/retry budget, circuit breaking, dead-letter handling, manual replay, reconciliation, monitoring, data protection and escalation.
 
 ### TRA EFD/VFD

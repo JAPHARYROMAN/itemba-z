@@ -23,8 +23,10 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/groupfinance"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/integrations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/mobile"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/people"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/clock"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/platform/dbrole"
@@ -37,6 +39,12 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/treasury"
 )
+
+type integrationConnectorFunc func(context.Context, integrations.Route, integrations.Delivery) (integrations.Result, error)
+
+func (f integrationConnectorFunc) Deliver(ctx context.Context, route integrations.Route, delivery integrations.Delivery) (integrations.Result, error) {
+	return f(ctx, route, delivery)
+}
 
 // TestRelease1CrossModuleAcceptanceAndReversal is the repository acceptance
 // pack for order-to-cash, procure-to-pay, inventory, record-to-report, and
@@ -56,7 +64,7 @@ func TestRelease1CrossModuleAcceptanceAndReversal(t *testing.T) {
 	}
 	defer pool.Close()
 	schema := "itembaz_test_" + time.Now().UTC().Format("20060102150405")
-	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql", "000024_governed_settings.up.sql", "000025_commercial_sourcing.up.sql", "000026_inventory_planning_lots_costing.up.sql", "000027_workforce_documents_payroll_exports.up.sql", "000028_financial_report_packs.up.sql", "000029_governed_dashboard.up.sql", "000030_audit_read_model.up.sql", "000031_access_governance.up.sql", "000032_privacy_governance.up.sql"} {
+	for _, name := range []string{"000001_core.up.sql", "000002_live_golden.up.sql", "000003_runtime_security.up.sql", "000004_runtime_capabilities.up.sql", "000005_offline_and_version_ack.up.sql", "000006_version_ack_serialization.up.sql", "000007_offline_sales_leases.up.sql", "000008_catalog_snapshot_tokens.up.sql", "000009_catalog_publications.up.sql", "000010_mobile_reconciliation.up.sql", "000011_offline_posting_policy.up.sql", "000012_mobile_device_governance.up.sql", "000013_customer_receivables.up.sql", "000014_commercial_operations.up.sql", "000015_bank_reconciliation.up.sql", "000016_financial_controls.up.sql", "000017_chart_of_accounts.up.sql", "000018_financial_reporting.up.sql", "000019_advanced_finance.up.sql", "000020_treasury.up.sql", "000021_group_finance.up.sql", "000022_purchase_asset_clearing.up.sql", "000023_people_payroll.up.sql", "000024_governed_settings.up.sql", "000025_commercial_sourcing.up.sql", "000026_inventory_planning_lots_costing.up.sql", "000027_workforce_documents_payroll_exports.up.sql", "000028_financial_report_packs.up.sql", "000029_governed_dashboard.up.sql", "000030_audit_read_model.up.sql", "000031_access_governance.up.sql", "000032_privacy_governance.up.sql", "000033_integration_delivery_spine.up.sql", "000034_integration_lease_recovery.up.sql"} {
 		applyTestMigration(t, ctx, pool, schema, name)
 	}
 	defer func() {
@@ -960,6 +968,62 @@ func TestRelease1CrossModuleAcceptanceAndReversal(t *testing.T) {
 				t.Fatalf("mobile provenance missing from outbox payload: %+v err=%v", eventSale, err)
 			}
 		}
+	}
+	var fiscalEvent outbox.Event
+	for _, event := range events {
+		if event.EventType == "sale.posted" {
+			fiscalEvent = event
+			break
+		}
+	}
+	if fiscalEvent.ID == "" {
+		t.Fatal("claimed outbox batch omitted a posted sale for fiscal projection")
+	}
+	const integrationRouteID = "00000000-0000-4000-8000-00000000fb01"
+	integrationRoutes := pgx.Identifier{schema, "integration_routes"}.Sanitize()
+	if _, err := pool.Exec(ctx, `INSERT INTO `+integrationRoutes+`(
+		id,tenant_id,company_id,capability,provider_code,contract_version,endpoint_url,secret_reference,
+		timeout_milliseconds,max_attempts,base_backoff_seconds,max_backoff_seconds,
+		circuit_failure_threshold,circuit_open_seconds,status,valid_from,created_by,approved_by,
+		reason,created_at,approved_at
+	) VALUES($1,$2,$3,'TRA_FISCALIZATION','TRA_TEST','test-v1','https://fiscal.invalid',
+		'vault://itemba/test/tra',5000,3,5,60,3,120,'ACTIVE',$4,$5,$6,
+		'PostgreSQL integration lifecycle verification',$4,$4)`, integrationRouteID, tenantID, companyID,
+		fiscalEvent.OccurredAt.Add(-time.Hour), userID, approverID); err != nil {
+		t.Fatalf("seed integration route: %v", err)
+	}
+	projector, err := integrations.NewProjector(store, &identity.SequenceGenerator{Values: []string{
+		"00000000-0000-4000-8000-00000000fb02", "00000000-0000-4000-8000-00000000fb03",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := projector.Publish(ctx, fiscalEvent); err != nil {
+		t.Fatalf("project fiscal delivery: %v", err)
+	}
+	if err := projector.Publish(ctx, fiscalEvent); err != nil {
+		t.Fatalf("idempotent fiscal projection: %v", err)
+	}
+	registry := integrations.ConnectorMap{"TRA_FISCALIZATION:TRA_TEST": integrationConnectorFunc(func(context.Context, integrations.Route, integrations.Delivery) (integrations.Result, error) {
+		return integrations.Result{ProviderReference: "TRA-TEST-001", Response: json.RawMessage(`{"status":"accepted"}`)}, nil
+	})}
+	integrationProcessor := integrations.Processor{Repository: store, Registry: registry, Clock: clock.Fixed{Time: deliveryNow}, WorkerID: "fiscal-worker", BatchSize: 10, Lease: time.Minute}
+	if completed, err := integrationProcessor.RunOnce(ctx); err != nil || completed != 1 {
+		t.Fatalf("process fiscal delivery completed=%d err=%v", completed, err)
+	}
+	var fiscalStatus string
+	var deliveryCount, attemptCount int
+	if err := pool.QueryRow(ctx, `SELECT fiscal_status FROM `+pgx.Identifier{schema, "sales"}.Sanitize()+` WHERE id=$1`, fiscalEvent.AggregateID).Scan(&fiscalStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM `+pgx.Identifier{schema, "integration_deliveries"}.Sanitize()+` WHERE source_event_id=$1`, fiscalEvent.ID).Scan(&deliveryCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM `+pgx.Identifier{schema, "integration_delivery_attempts"}.Sanitize()).Scan(&attemptCount); err != nil {
+		t.Fatal(err)
+	}
+	if fiscalStatus != "FISCALIZED" || deliveryCount != 1 || attemptCount != 1 {
+		t.Fatalf("fiscal status=%s deliveries=%d attempts=%d", fiscalStatus, deliveryCount, attemptCount)
 	}
 	if err := store.MarkPublished(ctx, tenantID, events[0].ID, "integration-worker", deliveryNow); err != nil {
 		t.Fatalf("mark published: %v", err)

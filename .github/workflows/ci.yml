@@ -181,7 +181,7 @@ jobs:
         env:
           ITEMBA_API_BASE_URL: http://127.0.0.1:8080
         run: node scripts/verify-live-golden-sale.mjs
-      - name: Verify worker-only outbox runtime
+      - name: Verify worker-only outbox and integration runtimes
         working-directory: services/core-api
         run: |
           go build -o "$RUNNER_TEMP/itemba-worker" ./cmd/worker
@@ -195,12 +195,26 @@ jobs:
             exit "$status"
           fi
           grep -q 'published local outbox event' "$RUNNER_TEMP/itemba-worker.log"
+          go build -o "$RUNNER_TEMP/itemba-integration-worker" ./cmd/integration-worker
+          set +e
+          DATABASE_URL="$WORKER_RUNTIME_DATABASE_URL" ITEMBA_INTEGRATION_WORKER_ID=ci-integration-worker \
+            timeout --signal=TERM 5s "$RUNNER_TEMP/itemba-integration-worker" > "$RUNNER_TEMP/itemba-integration-worker.log" 2>&1
+          status=$?
+          set -e
+          if test "$status" -ne 0 && test "$status" -ne 124; then
+            cat "$RUNNER_TEMP/itemba-integration-worker.log"
+            exit "$status"
+          fi
+          grep -q 'ITEMBA-Z integration worker ready' "$RUNNER_TEMP/itemba-integration-worker.log"
       - name: Print API log on failure
         if: failure()
         run: |
           cat "$RUNNER_TEMP/itemba-api.log"
           if test -f "$RUNNER_TEMP/itemba-worker.log"; then
             cat "$RUNNER_TEMP/itemba-worker.log"
+          fi
+          if test -f "$RUNNER_TEMP/itemba-integration-worker.log"; then
+            cat "$RUNNER_TEMP/itemba-integration-worker.log"
           fi
       - name: Stop live core API
         if: always()

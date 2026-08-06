@@ -31,6 +31,7 @@ jobs:
           mkdir -p ../../artifacts/release
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-api ./cmd/api
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-worker ./cmd/worker
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-integration-worker ./cmd/integration-worker
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-migrate ./cmd/migrate
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../../artifacts/release/itemba-accessctl ./cmd/accessctl
       - name: Build Control Center
@@ -59,6 +60,7 @@ jobs:
           subject-path: |
             artifacts/release/itemba-api
             artifacts/release/itemba-worker
+            artifacts/release/itemba-integration-worker
             artifacts/release/itemba-migrate
             artifacts/release/itemba-accessctl
             artifacts/release/itemba-control-center.tar.gz

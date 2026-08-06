@@ -75,3 +75,10 @@ Group finance separates `finance.intercompany.read`, `manage`, `approve`, and
 bound to the actor's assigned legal-company scope. The maker cannot approve,
 the source approver cannot confirm the counterparty posting, and consolidation
 access does not grant transaction mutation.
+
+External integration operations separate `integrations.read`,
+`integrations.manage`, and `integrations.replay`. Read access exposes scoped,
+redacted delivery and attempt evidence. Management governs new immutable route
+versions but cannot approve the maker's route. Replay is reserved for reviewed
+dead letters and cannot edit a prior request, response or attempt; it also does
+not grant permission to post or reverse the underlying ERP transaction.
