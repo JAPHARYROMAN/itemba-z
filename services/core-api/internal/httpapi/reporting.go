@@ -108,11 +108,15 @@ func (h *Handler) cashFlow(w http.ResponseWriter, r *http.Request) {
 }
 
 type exportFinancialReportRequest struct {
-	ReportType reporting.ReportType `json:"report_type"`
-	From       string               `json:"from,omitempty"`
-	To         string               `json:"to,omitempty"`
-	AsOf       string               `json:"as_of,omitempty"`
-	AccountID  string               `json:"account_id,omitempty"`
+	ReportType     reporting.ReportType   `json:"report_type"`
+	Format         reporting.ExportFormat `json:"format,omitempty"`
+	From           string                 `json:"from,omitempty"`
+	To             string                 `json:"to,omitempty"`
+	AsOf           string                 `json:"as_of,omitempty"`
+	ComparisonFrom string                 `json:"comparison_from,omitempty"`
+	ComparisonTo   string                 `json:"comparison_to,omitempty"`
+	ComparisonAsOf string                 `json:"comparison_as_of,omitempty"`
+	AccountID      string                 `json:"account_id,omitempty"`
 }
 
 func (h *Handler) exportFinancialReport(w http.ResponseWriter, r *http.Request) {
@@ -150,8 +154,31 @@ func (h *Handler) exportFinancialReport(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	parseComparison := func(value string) (time.Time, bool) {
+		if value == "" {
+			return time.Time{}, true
+		}
+		parsed, parseErr := reportDate(value)
+		if parseErr != nil {
+			writeProblem(w, 400, "invalid_report_query", "comparison dates must use YYYY-MM-DD")
+			return time.Time{}, false
+		}
+		return parsed, true
+	}
+	comparisonFrom, valid := parseComparison(body.ComparisonFrom)
+	if !valid {
+		return
+	}
+	comparisonTo, valid := parseComparison(body.ComparisonTo)
+	if !valid {
+		return
+	}
+	comparisonAsOf, valid := parseComparison(body.ComparisonAsOf)
+	if !valid {
+		return
+	}
 	q.AccountID = body.AccountID
-	value, err := h.reporting.Export(r.Context(), reporting.ExportCommand{Query: q, Type: body.ReportType, IdempotencyKey: key})
+	value, err := h.reporting.Export(r.Context(), reporting.ExportCommand{Query: q, Type: body.ReportType, Format: body.Format, ComparisonFrom: comparisonFrom, ComparisonTo: comparisonTo, ComparisonAsOf: comparisonAsOf, IdempotencyKey: key})
 	if err != nil {
 		h.writeError(w, r, err)
 		return

@@ -3,6 +3,7 @@ package reporting_test
 import (
 	"context"
 	"encoding/base64"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ func TestFinancialStatementsReconcileAndExport(t *testing.T) {
 	for index, a := range []struct {
 		id, name string
 		kind     financialops.AccountType
-	}{{"cash", "Cash", financialops.AccountAsset}, {"tax", "Tax payable", financialops.AccountLiability}, {"revenue", "Revenue", financialops.AccountRevenue}, {"expense", "Expense", financialops.AccountExpense}} {
+	}{{"cash", "Cash", financialops.AccountAsset}, {"tax", "Tax payable", financialops.AccountLiability}, {"revenue", "Revenue", financialops.AccountRevenue}, {"expense", "=Expense", financialops.AccountExpense}} {
 		store.SeedGLAccount(financialops.GLAccount{RecordID: "30000000-0000-4000-8000-00000000001" + string(rune('0'+index)), ID: a.id, TenantID: scope.TenantID, CompanyID: scope.CompanyID, Code: a.id, Name: a.name, Type: a.kind, Status: financialops.GovernanceActive})
 	}
 	store.SeedBankAccount(banking.Account{ID: "30000000-0000-4000-8000-000000000010", Scope: scope, Code: "CASH", Name: "Cash", Type: banking.CashAccount, Currency: "TZS", GLAccountID: "cash", Active: true})
@@ -74,11 +75,21 @@ func TestFinancialStatementsReconcileAndExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	content, err := base64.StdEncoding.DecodeString(export.ContentBase64)
-	if err != nil || len(content) == 0 {
+	if err != nil || len(content) == 0 || !strings.Contains(string(content), "'=Expense") {
 		t.Fatalf("invalid export %v", err)
 	}
 	repeat, err := service.Export(ctx, reporting.ExportCommand{Query: query, Type: reporting.ReportProfitAndLoss, IdempotencyKey: "report-export-000001"})
 	if err != nil || repeat.ID != export.ID {
 		t.Fatalf("export replay %#v %v", repeat, err)
+	}
+	for _, tc := range []struct {
+		format     reporting.ExportFormat
+		key, magic string
+	}{{reporting.ExportPDF, "report-export-pdf-0001", "%PDF"}, {reporting.ExportXLSX, "report-export-xlsx-001", "PK"}} {
+		artifact, exportErr := service.Export(ctx, reporting.ExportCommand{Query: query, Type: reporting.ReportProfitAndLoss, Format: tc.format, ComparisonFrom: from.AddDate(-1, 0, 0), ComparisonTo: to.AddDate(-1, 0, 0), IdempotencyKey: tc.key})
+		decoded, decodeErr := base64.StdEncoding.DecodeString(artifact.ContentBase64)
+		if exportErr != nil || decodeErr != nil || !strings.HasPrefix(string(decoded), tc.magic) || len(artifact.SHA256) != 64 || artifact.Format != tc.format {
+			t.Fatalf("invalid %s report pack %#v %v %v", tc.format, artifact, exportErr, decodeErr)
+		}
 	}
 }

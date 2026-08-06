@@ -20,7 +20,8 @@ describe("FinancialReports", () => {
     render(<LanguageProvider><FinancialReports workspace={workspace} /></LanguageProvider>);
     expect(screen.getByRole("heading", { name: "Financial statements" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Trial balance" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Export CSV" })).toBeInTheDocument();
+		expect(screen.getByRole("combobox", { name: "Export format" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Export PDF" })).toBeInTheDocument();
     expect(screen.getByText("Balanced")).toBeInTheDocument();
   });
 });

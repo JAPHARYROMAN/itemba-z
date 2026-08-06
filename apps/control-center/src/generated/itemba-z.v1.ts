@@ -2559,12 +2559,32 @@ export interface components {
         ExportFinancialReportCommand: {
             /** @enum {string} */
             report_type: "TRIAL_BALANCE" | "GENERAL_LEDGER" | "PROFIT_AND_LOSS" | "BALANCE_SHEET" | "CASH_FLOW";
+            /**
+             * @default CSV
+             * @enum {string}
+             */
+            format: "CSV" | "PDF" | "XLSX";
             /** Format: date */
             from?: string;
             /** Format: date */
             to?: string;
             /** Format: date */
             as_of?: string;
+            /**
+             * Format: date
+             * @description Optional comparison-period start for profit and loss or cash flow.
+             */
+            comparison_from?: string;
+            /**
+             * Format: date
+             * @description Optional comparison-period end for profit and loss or cash flow.
+             */
+            comparison_to?: string;
+            /**
+             * Format: date
+             * @description Optional comparison date for balance sheet.
+             */
+            comparison_as_of?: string;
             account_id?: string;
         };
         ReportExportArtifact: {
@@ -2572,9 +2592,12 @@ export interface components {
             id: string;
             /** @enum {string} */
             report_type: "TRIAL_BALANCE" | "GENERAL_LEDGER" | "PROFIT_AND_LOSS" | "BALANCE_SHEET" | "CASH_FLOW";
+            /** @enum {string} */
+            format: "CSV" | "PDF" | "XLSX";
             filename: string;
             /** @enum {string} */
-            media_type: "text/csv";
+            media_type: "text/csv" | "application/pdf" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            sha256: string;
             /** Format: byte */
             content_base64: string;
             /** Format: date-time */

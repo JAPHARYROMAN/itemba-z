@@ -150,14 +150,36 @@ const (
 type ExportCommand struct {
 	Query
 	Type           ReportType
+	Format         ExportFormat
+	ComparisonFrom time.Time
+	ComparisonTo   time.Time
+	ComparisonAsOf time.Time
 	IdempotencyKey string
 }
 
+type ExportFormat string
+
+const (
+	ExportCSV  ExportFormat = "CSV"
+	ExportPDF  ExportFormat = "PDF"
+	ExportXLSX ExportFormat = "XLSX"
+)
+
+type ReportPack struct {
+	ReportType      ReportType `json:"report_type"`
+	Current         any        `json:"current"`
+	Comparison      any        `json:"comparison,omitempty"`
+	CurrentLabel    string     `json:"current_label"`
+	ComparisonLabel string     `json:"comparison_label,omitempty"`
+}
+
 type ExportArtifact struct {
-	ID            string     `json:"id"`
-	ReportType    ReportType `json:"report_type"`
-	Filename      string     `json:"filename"`
-	MediaType     string     `json:"media_type"`
-	ContentBase64 string     `json:"content_base64"`
-	GeneratedAt   time.Time  `json:"generated_at"`
+	ID            string       `json:"id"`
+	ReportType    ReportType   `json:"report_type"`
+	Format        ExportFormat `json:"format"`
+	Filename      string       `json:"filename"`
+	MediaType     string       `json:"media_type"`
+	SHA256        string       `json:"sha256"`
+	ContentBase64 string       `json:"content_base64"`
+	GeneratedAt   time.Time    `json:"generated_at"`
 }

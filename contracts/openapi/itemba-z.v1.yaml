@@ -2283,19 +2283,25 @@ components:
       required: [report_type]
       properties:
         report_type: { type: string, enum: [TRIAL_BALANCE, GENERAL_LEDGER, PROFIT_AND_LOSS, BALANCE_SHEET, CASH_FLOW] }
+        format: { type: string, enum: [CSV, PDF, XLSX], default: CSV }
         from: { type: string, format: date }
         to: { type: string, format: date }
         as_of: { type: string, format: date }
+        comparison_from: { type: string, format: date, description: Optional comparison-period start for profit and loss or cash flow. }
+        comparison_to: { type: string, format: date, description: Optional comparison-period end for profit and loss or cash flow. }
+        comparison_as_of: { type: string, format: date, description: Optional comparison date for balance sheet. }
         account_id: { type: string }
     ReportExportArtifact:
       type: object
       additionalProperties: false
-      required: [id, report_type, filename, media_type, content_base64, generated_at]
+      required: [id, report_type, format, filename, media_type, sha256, content_base64, generated_at]
       properties:
         id: { type: string, format: uuid }
         report_type: { type: string, enum: [TRIAL_BALANCE, GENERAL_LEDGER, PROFIT_AND_LOSS, BALANCE_SHEET, CASH_FLOW] }
+        format: { type: string, enum: [CSV, PDF, XLSX] }
         filename: { type: string }
-        media_type: { type: string, enum: [text/csv] }
+        media_type: { type: string, enum: [text/csv, application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet] }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
         content_base64: { type: string, format: byte }
         generated_at: { type: string, format: date-time }
     JournalEntry:

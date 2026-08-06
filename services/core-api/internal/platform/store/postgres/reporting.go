@@ -169,9 +169,9 @@ func (s *Store) SaveReportExport(ctx context.Context, scope tenancy.Scope, actor
 			return e
 		}
 		if !acquired {
-			return tx.tx.QueryRow(ctx, `SELECT id::text,report_type,filename,media_type,content_base64,generated_at FROM report_exports WHERE tenant_id=$1 AND company_id=$2 AND id=$3`, scope.TenantID, scope.CompanyID, resultID).Scan(&result.ID, &result.ReportType, &result.Filename, &result.MediaType, &result.ContentBase64, &result.GeneratedAt)
+			return tx.tx.QueryRow(ctx, `SELECT id::text,report_type,export_format,filename,media_type,sha256,content_base64,generated_at FROM report_exports WHERE tenant_id=$1 AND company_id=$2 AND id=$3`, scope.TenantID, scope.CompanyID, resultID).Scan(&result.ID, &result.ReportType, &result.Format, &result.Filename, &result.MediaType, &result.SHA256, &result.ContentBase64, &result.GeneratedAt)
 		}
-		_, e = tx.tx.Exec(ctx, `INSERT INTO report_exports(id,tenant_id,company_id,report_type,filename,media_type,content_base64,generated_by,generated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, artifact.ID, scope.TenantID, scope.CompanyID, artifact.ReportType, artifact.Filename, artifact.MediaType, artifact.ContentBase64, actor, artifact.GeneratedAt)
+		_, e = tx.tx.Exec(ctx, `INSERT INTO report_exports(id,tenant_id,company_id,report_type,export_format,filename,media_type,sha256,content_base64,generated_by,generated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, artifact.ID, scope.TenantID, scope.CompanyID, artifact.ReportType, artifact.Format, artifact.Filename, artifact.MediaType, artifact.SHA256, artifact.ContentBase64, actor, artifact.GeneratedAt)
 		if e != nil {
 			return normalizeError(e)
 		}

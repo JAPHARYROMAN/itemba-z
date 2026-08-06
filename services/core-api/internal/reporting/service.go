@@ -262,24 +262,24 @@ func cashActivity(source string) string {
 }
 
 func (s *Service) Export(ctx context.Context, c ExportCommand) (ExportArtifact, error) {
-	var data any
-	var err error
-	switch c.Type {
-	case ReportTrialBalance:
-		data, err = s.TrialBalance(ctx, c.Query)
-	case ReportGeneralLedger:
-		data, err = s.GeneralLedger(ctx, c.Query)
-	case ReportProfitAndLoss:
-		data, err = s.ProfitAndLoss(ctx, c.Query)
-	case ReportBalanceSheet:
-		data, err = s.BalanceSheet(ctx, c.Query)
-	case ReportCashFlow:
-		data, err = s.CashFlow(ctx, c.Query)
-	default:
+	if c.Format == "" {
+		c.Format = ExportCSV
+	}
+	if c.Format != ExportCSV && c.Format != ExportPDF && c.Format != ExportXLSX {
 		return ExportArtifact{}, ErrInvalidQuery
 	}
+	data, label, err := s.report(ctx, c.Type, c.Query)
 	if err != nil {
 		return ExportArtifact{}, err
+	}
+	pack := ReportPack{ReportType: c.Type, Current: data, CurrentLabel: label}
+	if !c.ComparisonFrom.IsZero() || !c.ComparisonTo.IsZero() || !c.ComparisonAsOf.IsZero() {
+		comparison := c.Query
+		comparison.From, comparison.To, comparison.AsOf = c.ComparisonFrom, c.ComparisonTo, c.ComparisonAsOf
+		pack.Comparison, pack.ComparisonLabel, err = s.report(ctx, c.Type, comparison)
+		if err != nil {
+			return ExportArtifact{}, err
+		}
 	}
 	if len(c.IdempotencyKey) < 16 || len(c.IdempotencyKey) > 128 {
 		return ExportArtifact{}, ErrInvalidQuery
@@ -288,11 +288,33 @@ func (s *Service) Export(ctx context.Context, c ExportCommand) (ExportArtifact, 
 	if err != nil {
 		return ExportArtifact{}, err
 	}
-	artifact, err := renderCSV(id, c.Type, data, s.clock.Now().UTC())
+	artifact, err := renderReport(id, pack, c.Format, s.clock.Now().UTC())
 	if err != nil {
 		return ExportArtifact{}, err
 	}
 	encoded, _ := json.Marshal(c)
 	sum := sha256.Sum256(encoded)
 	return s.repository.SaveReportExport(ctx, c.Scope.Normalize(), identity.NormalizeClaim(c.ActorID), artifact, c.IdempotencyKey, hex.EncodeToString(sum[:]))
+}
+
+func (s *Service) report(ctx context.Context, kind ReportType, query Query) (any, string, error) {
+	switch kind {
+	case ReportTrialBalance:
+		v, e := s.TrialBalance(ctx, query)
+		return v, v.AsOf.Format("2006-01-02"), e
+	case ReportGeneralLedger:
+		v, e := s.GeneralLedger(ctx, query)
+		return v, v.From.Format("2006-01-02") + " to " + v.To.Format("2006-01-02"), e
+	case ReportProfitAndLoss:
+		v, e := s.ProfitAndLoss(ctx, query)
+		return v, v.From.Format("2006-01-02") + " to " + v.To.Format("2006-01-02"), e
+	case ReportBalanceSheet:
+		v, e := s.BalanceSheet(ctx, query)
+		return v, v.AsOf.Format("2006-01-02"), e
+	case ReportCashFlow:
+		v, e := s.CashFlow(ctx, query)
+		return v, v.From.Format("2006-01-02") + " to " + v.To.Format("2006-01-02"), e
+	default:
+		return nil, "", ErrInvalidQuery
+	}
 }
