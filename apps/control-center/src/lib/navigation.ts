@@ -1,6 +1,7 @@
 import type { LocalizedText, ModuleKey } from "@/domain/erp";
 import { text } from "@/lib/i18n";
 import { salesLandingHref } from "@/lib/sales-permissions";
+import { purchaseLandingHref } from "@/lib/purchase-permissions";
 
 export type NavigationIcon =
   | "dashboard"
@@ -63,6 +64,7 @@ function matchesPermissionRule(permission: string, rule: string): boolean {
 
 export function canSeeNavigationItem(item: NavigationItem, permissions: readonly string[]): boolean {
   if (item.href === "/sales") return salesLandingHref(permissions) !== null;
+  if (item.href === "/purchases") return purchaseLandingHref(permissions) !== null;
   if (!item.permissionRules?.length) return true;
   return item.permissionRules.some((rule) => permissions.some((permission) => matchesPermissionRule(permission, rule)));
 }
@@ -73,8 +75,8 @@ export function visibleNavigationGroups(permissions: readonly string[]) {
       ...group,
       items: group.items.flatMap((item) => {
         if (!canSeeNavigationItem(item, permissions)) return [];
-        if (item.href !== "/sales") return [item];
-        const href = salesLandingHref(permissions);
+        if (item.href !== "/sales" && item.href !== "/purchases") return [item];
+        const href = item.href === "/sales" ? salesLandingHref(permissions) : purchaseLandingHref(permissions);
         return href ? [{ ...item, href }] : [];
       }),
     }))

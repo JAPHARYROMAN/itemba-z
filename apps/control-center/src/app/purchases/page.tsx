@@ -1,6 +1,13 @@
-import { OperationsWorkbench } from "@/components/operations/operations-workbench";
-import { SourcingWorkbench } from "@/components/sourcing/sourcing-workbench";
+import type { Metadata } from "next";
 import { LiveUnavailable } from "@/components/live-sales/live-state";
-import { loadCommercialWorkspace, loadOperationsWorkspace } from "@/live-api/snapshots";
+import { PurchaseHome } from "@/components/purchases/purchase-home";
+import { loadPurchaseWorkspace } from "@/live-api/snapshots";
+
+export const metadata: Metadata = { title: "Purchases", description: "Task-first procure-to-pay workspace." };
 export const dynamic = "force-dynamic";
-export default async function PurchasesPage() { const [operations,commercial]=await Promise.all([loadOperationsWorkspace(),loadCommercialWorkspace()]);if(commercial.state==="unavailable")return <LiveUnavailable problem={commercial.problem}/>;if(operations.state==="unavailable")return <LiveUnavailable problem={operations.problem}/>;return <><SourcingWorkbench workspace={commercial.data}/><OperationsWorkbench mode="purchases" workspace={operations.data}/></>; }
+
+export default async function PurchasesPage() {
+  const snapshot = await loadPurchaseWorkspace("overview");
+  if (snapshot.state === "unavailable") return <LiveUnavailable problem={snapshot.problem} />;
+  return <PurchaseHome workspace={snapshot.data} />;
+}

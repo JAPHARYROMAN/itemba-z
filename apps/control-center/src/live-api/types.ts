@@ -176,6 +176,8 @@ export interface TransitionOperationCommand { status: OperationStatus; reason: s
 export interface SupplierSummary { id: string; code: string; name: string; active: boolean; payment_terms_days: number }
 export interface SupplierPage { items: SupplierSummary[]; next_cursor: string | null }
 export interface OperationsWorkspace { context: WorkingContext; customers: CustomerSummary[]; products: ProductSummary[]; suppliers: SupplierSummary[]; documents: OperationDocument[]; nextCursor: string | null }
+export interface PurchaseWorkspace { context: WorkingContext; products: ProductSummary[]; suppliers: SupplierSummary[]; documents: OperationDocument[] }
+export interface PurchaseDocumentWorkspace extends PurchaseWorkspace { document: OperationDocument }
 export interface ReceiveCustomerCollectionCommand { invoice_sale_id: string; method: PaymentMethod; amount_minor: number; currency: string }
 export interface CustomerCollection { id: string; customer_id: string; invoice_sale_id: string; method: PaymentMethod; account_id: string; amount_minor: number; currency: string; occurred_at: string; correlation_id: string }
 export type BankAccount = components["schemas"]["BankAccount"];

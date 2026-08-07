@@ -7,6 +7,8 @@ import type {
   CustomerAccountWorkspace, CustomerAccountsWorkspace, DashboardWorkspace, DeviceManagementWorkspace, LiveSnapshot, MobileReconciliationStatus, ReconciliationDetailWorkspace,
   ReconciliationWorkspace, SaleDetailWorkspace, SalesBootstrap, SalesRegisterWorkspace, SalesWorkspace,
 	OperationsWorkspace,
+	PurchaseWorkspace,
+	PurchaseDocumentWorkspace,
 	BankingWorkspace,
 	FinanceControlWorkspace,
 	FinancialReportsWorkspace,
@@ -24,6 +26,7 @@ import type {
 } from "@/live-api/types";
 import { text } from "@/lib/i18n";
 import { canAccessSalesRoute, type SalesRoute } from "@/lib/sales-permissions";
+import { canAccessPurchaseRoute, type PurchaseRoute } from "@/lib/purchase-permissions";
 
 function salesAccessDenied<T>(route: SalesRoute): LiveSnapshot<T> {
   const problem: PublicProblem = {
@@ -35,6 +38,12 @@ function salesAccessDenied<T>(route: SalesRoute): LiveSnapshot<T> {
   };
   return { state: "unavailable", problem };
 }
+
+function purchaseAccessDenied<T>(route: PurchaseRoute): LiveSnapshot<T> {
+  return { state: "unavailable", problem: { type: "urn:itemba-z:control-center:permissions", title: "Purchasing task unavailable", status: 403, code: "purchase_task_not_permitted", detail: `The current role does not have every permission required for the ${route} Purchasing task.` } };
+}
+
+const PURCHASE_DOCUMENT_TYPES = ["PURCHASE_REQUEST", "PURCHASE_ORDER", "GOODS_RECEIPT", "SUPPLIER_INVOICE", "SUPPLIER_PAYMENT", "PURCHASE_RETURN"] as const;
 
 function newestDocumentsFirst(left: OperationsWorkspace["documents"][number], right: OperationsWorkspace["documents"][number]): number {
   return Date.parse(right.created_at) - Date.parse(left.created_at) || right.id.localeCompare(left.id);
@@ -240,6 +249,43 @@ export async function loadOperationsWorkspace(): Promise<LiveSnapshot<Operations
     const [context, customers, products, suppliers, documents] = await Promise.all([repository.getWorkingContext(), repository.listCustomers(), repository.listProducts(), repository.listSuppliers(), repository.listOperationDocuments()]);
     return { state: "ready", data: { context, customers: customers.items, products: products.items, suppliers: suppliers.items, documents: documents.items, nextCursor: documents.next_cursor ?? null } };
   } catch (error) { return { state: "unavailable", problem: publicProblem(error) }; }
+}
+
+export async function loadPurchaseWorkspace(route: Exclude<PurchaseRoute, "sourcing">): Promise<LiveSnapshot<PurchaseWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const context = await repository.getWorkingContext();
+    if (!canAccessPurchaseRoute(context.permissions, route)) return purchaseAccessDenied(route);
+    const needsCatalog = route !== "overview";
+    const [products, suppliers, pages] = await Promise.all([
+      needsCatalog ? repository.listProducts() : Promise.resolve({ items: [] }),
+      needsCatalog ? repository.listSuppliers() : Promise.resolve({ items: [] }),
+      Promise.all(PURCHASE_DOCUMENT_TYPES.map((type) => listAllOperationDocuments(repository, type))),
+    ]);
+    return { state: "ready", data: { context, products: products.items, suppliers: suppliers.items, documents: pages.flat().sort(newestDocumentsFirst) } };
+  } catch (error) {
+    return { state: "unavailable", problem: publicProblem(error) };
+  }
+}
+
+export async function loadPurchaseDocument(documentId: string): Promise<LiveSnapshot<PurchaseDocumentWorkspace>> {
+  try {
+    const repository = await createServerRepository();
+    const context = await repository.getWorkingContext();
+    if (!canAccessPurchaseRoute(context.permissions, "overview")) return purchaseAccessDenied("overview");
+    const [document, products, suppliers, pages] = await Promise.all([
+      repository.getOperationDocument(documentId),
+      repository.listProducts(),
+      repository.listSuppliers(),
+      Promise.all(PURCHASE_DOCUMENT_TYPES.map((type) => listAllOperationDocuments(repository, type))),
+    ]);
+    if (!PURCHASE_DOCUMENT_TYPES.includes(document.type as typeof PURCHASE_DOCUMENT_TYPES[number])) {
+      return { state: "unavailable", problem: { type: "about:blank", title: "Purchase document not found", status: 404, code: "purchase_document_not_found", detail: "The requested record is not a Purchasing document in this operating scope." } };
+    }
+    return { state: "ready", data: { context, document, products: products.items, suppliers: suppliers.items, documents: pages.flat().sort(newestDocumentsFirst) } };
+  } catch (error) {
+    return { state: "unavailable", problem: publicProblem(error) };
+  }
 }
 
 export async function loadCustomerAccount(customerId: string): Promise<LiveSnapshot<CustomerAccountWorkspace>> {

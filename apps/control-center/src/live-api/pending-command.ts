@@ -90,6 +90,10 @@ export function operationTransitionPendingScope(context: PendingCommandOwnerCont
   return `operations:transition:${commandOwnerScope(context)}:document=${encodeURIComponent(documentId)}`;
 }
 
+export function commercialCommandPendingScope(context: PendingCommandOwnerContext, action: string, entityId = "new"): string {
+  return `commercial:${encodeURIComponent(action)}:${commandOwnerScope(context)}:entity=${encodeURIComponent(entityId)}`;
+}
+
 export function pendingCommandStorageKey(scope: string): string {
   return `${STORAGE_PREFIX}${scope}`;
 }

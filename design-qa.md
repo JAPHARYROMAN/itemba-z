@@ -87,4 +87,21 @@
 - Customer credit-limit entry now uses exact string-to-minor-unit conversion, and risk states are rendered as business language rather than raw enums.
 - Automated gates after the extension: ESLint passed, TypeScript passed, 36 Vitest files / 111 tests passed, production build passed, and npm audit reported zero vulnerabilities.
 
+## Purchasing workspace extension
+
+- Verified live routes: `/purchases`, `/purchases/requests`, `/purchases/sourcing`, `/purchases/orders`, `/purchases/receipts`, `/purchases/bills`, `/purchases/payments`, `/purchases/returns`, and `/purchases/[documentId]`.
+- Desktop implementation: `C:\Users\user\OneDrive\Documents\itemba-z\.qa\purchases\purchases-desktop-final.png`.
+- Mobile implementation: `C:\Users\user\OneDrive\Documents\itemba-z\.qa\purchases\purchases-mobile-final.png`.
+- The Purchasing home now provides task-first entry points and exception-oriented attention states across the complete procure-to-pay chain.
+- Each operational task has a dedicated composer and register. Downstream tasks select approved business document numbers; supplier and line evidence remain linked to the authoritative source instead of requiring pasted identifiers.
+- Competitive sourcing now focuses on RFQs, comparable supplier quotes, independent approval, and traceable award decisions. Supplier master-data governance remains in the Supplier workspace.
+- Create, transition, and sourcing mutations preserve one idempotency key across ambiguous retries. Currency entry uses exact major-to-minor conversion and total validation rejects unsafe integer values.
+- Purchase document details follow summary, business evidence, recursive source chain, and progressively disclosed System details.
+- Permission tests cover route visibility, least-privilege landing, and exact manage capabilities. Source and transition tests cover approved/posted eligibility and append-only status decisions.
+- English and Swahili route states were inspected in the live browser. Desktop at 1440 × 1000 and mobile at 390 × 844 render one main landmark and one H1, expose no raw UUID, and have no page-level horizontal overflow.
+- A mobile input clipping defect found during visual QA was resolved with zero-minimum grid columns, constrained controls, and responsive card padding; final measured product, quantity, and price fields stay within the viewport.
+- The rebuilt Control Center container is healthy and serves the final experience at `http://localhost:3000/purchases`.
+- Final automated gates: OpenAPI generation passed, ESLint passed, TypeScript passed, 39 Vitest files / 117 tests passed, Next.js production build passed, and the production-runtime dependency audit reported zero vulnerabilities.
+- The full development audit reports the current high-severity `js-yaml` advisory only through `openapi-typescript` → `@redocly/openapi-core` 1.x. The patched Redocly 2.x release is incompatible with `openapi-typescript` 7.13.0 and was verified to break generation; the affected development-only packages are not copied into the production runner image.
+
 final result: passed

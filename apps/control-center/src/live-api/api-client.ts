@@ -255,6 +255,10 @@ export class ItembaApiClient {
     return this.request(`/v1/operations/documents?${query.toString()}`);
   }
 
+  getOperationDocument(documentId: string): Promise<OperationDocument> {
+    return this.request(`/v1/operations/documents/${encodeURIComponent(documentId)}`);
+  }
+
   listSuppliers(): Promise<SupplierPage> { return this.request("/v1/suppliers?page_size=200"); }
 
   receiveCustomerCollection(customerId: string, command: ReceiveCustomerCollectionCommand, idempotencyKey: string): Promise<CustomerCollection> { return this.request(`/v1/customers/${encodeURIComponent(customerId)}/collections`, { method: "POST", body: command, idempotencyKey }); }
