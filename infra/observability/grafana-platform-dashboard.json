@@ -1,0 +1,58 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Core API request rate",
+      "type": "timeseries",
+      "targets": [{ "expr": "sum(rate(itemba_http_requests_total[5m]))", "legendFormat": "requests/s", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "Core API p95 latency",
+      "type": "timeseries",
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(itemba_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95 seconds", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 }
+    },
+    {
+      "id": 3,
+      "title": "Core API error ratio",
+      "type": "timeseries",
+      "targets": [{ "expr": "sum(rate(itemba_http_requests_total{status_class=~\"5..\"}[5m])) / clamp_min(sum(rate(itemba_http_requests_total[5m])), 0.001)", "legendFormat": "5xx ratio", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 }
+    },
+    {
+      "id": 4,
+      "title": "Oldest outbox event",
+      "type": "timeseries",
+      "targets": [{ "expr": "max(itemba_outbox_oldest_unpublished_seconds)", "legendFormat": "seconds", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 }
+    },
+    {
+      "id": 5,
+      "title": "Integration backlog",
+      "type": "timeseries",
+      "targets": [{ "expr": "sum by (capability) (itemba_integration_backlog)", "legendFormat": "{{capability}}", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 }
+    },
+    {
+      "id": 6,
+      "title": "Backup verification age",
+      "type": "stat",
+      "targets": [{ "expr": "time() - itemba_backup_last_verified_timestamp_seconds", "legendFormat": "seconds", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["itemba-z", "wave-4", "platform"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "utc",
+  "title": "ITEMBA-Z Platform Operations",
+  "uid": "itemba-z-platform",
+  "version": 1
+}

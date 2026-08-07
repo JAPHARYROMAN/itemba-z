@@ -8,6 +8,7 @@ import 'package:sales_mobile/data/demo_data.dart';
 import 'package:sales_mobile/data/encrypted_database_opener.dart';
 import 'package:sales_mobile/data/local_database_schema.dart';
 import 'package:sales_mobile/data/sqlcipher_local_store.dart';
+import 'package:sales_mobile/domain/connection_models.dart';
 import 'package:sales_mobile/domain/models.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -35,6 +36,51 @@ void main() {
       final store = fixture.store;
       await store.initialize();
 
+      final connection = MobileConnection(
+        baseUrl: Uri.parse('https://api.example.test'),
+        identityMode: MobileIdentityMode.bearer,
+      );
+      final enrollment = DeviceEnrollment(
+        deviceId: '00000000-0000-4000-8000-000000000006',
+        deviceName: 'Counter 1',
+        status: 'ACTIVE',
+        actorId: '00000000-0000-4000-8000-000000000001',
+        scope: const EnrollmentScope(
+          tenantId: '00000000-0000-4000-8000-000000000002',
+          companyId: '00000000-0000-4000-8000-000000000003',
+          branchId: '00000000-0000-4000-8000-000000000004',
+          warehouseId: '00000000-0000-4000-8000-000000000005',
+        ),
+        appVersion: '1.0.0+1',
+        catalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
+        masterDataVersion: 4,
+        priceVersion: 8,
+        availableMasterDataVersion: 4,
+        availablePriceVersion: 8,
+        availableCatalogSnapshotToken: '00000000-0000-4000-8000-000000000010',
+        timezone: 'Africa/Dar_es_Salaam',
+        offlineEnabled: false,
+        transactionValueLimitMinor: 0,
+        dailyValueLimitMinor: 0,
+        remainingDailyValueMinor: 0,
+        offlineSalesValidUntil: DateTime.utc(2026, 8, 4, 12),
+        stockAllocations: const [],
+        enrolledAt: DateTime.utc(2026, 8, 4, 8),
+        lastSeenAt: DateTime.utc(2026, 8, 4, 8),
+      );
+      final allocation = DeviceAllocation.failClosed(
+        serverOfflineEnabled: false,
+      );
+      await store.saveConnection(connection);
+      await store.saveCandidateDeviceId(enrollment.deviceId);
+      await store.saveEnrollment(enrollment);
+      await store.saveAllocation(allocation);
+      expect((await store.readConnection())?.baseUrl, connection.baseUrl);
+      expect(await store.readCandidateDeviceId(), enrollment.deviceId);
+      expect((await store.readEnrollment())?.deviceId, enrollment.deviceId);
+      expect((await store.readEnrollment())?.availableMasterDataVersion, 4);
+      expect((await store.readAllocation())?.offlineEnabled, isFalse);
+
       await store.replaceCachedCustomers(
         demoCustomers,
         masterDataVersion: demoDevice.masterDataVersion,
@@ -59,7 +105,13 @@ void main() {
         products
             .firstWhere((product) => product.id == 'product-cement')
             .sellingPrice,
-        18500,
+        1850000,
+      );
+      expect(
+        products
+            .firstWhere((product) => product.id == 'product-cement')
+            .taxBasisPoints,
+        0,
       );
 
       final draft = _draft();
@@ -84,10 +136,25 @@ void main() {
       final queued = (await store.readSyncQueue()).single;
       expect(queued.idempotencyKey, command.idempotencyKey);
       expect(queued.sale.total, sale.total);
+      await store.recordSyncFailure(
+        sale: sale.copyWith(syncStatus: SyncStatus.reconciliationRequired),
+        idempotencyKey: command.idempotencyKey,
+        authoritativeRejection: false,
+      );
+      expect(
+        (await store.readSales()).single.syncStatus,
+        SyncStatus.reconciliationRequired,
+      );
+      expect(
+        await store.readSyncQueue(),
+        hasLength(1),
+        reason: 'reconciliation must retain the exact command',
+      );
 
       const result = SyncResult(
         serverSaleId: 'sale-2401',
-        receiptNumber: 'ITZ-DAR-002401',
+        receiptReference: 'sale-2401',
+        fiscalStatus: FiscalStatus.notConfigured,
         wasDuplicate: false,
       );
       await store.saveSyncResult(command.idempotencyKey, result);
@@ -139,6 +206,52 @@ void main() {
     expect(await store.readSyncQueue(), hasLength(1));
   });
 
+  test('version 9 allocation migrates to an expired offline lease', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'itemba-z-lease-migration-',
+    );
+    addTearDown(() async {
+      if (directory.existsSync()) await directory.delete(recursive: true);
+    });
+    final databasePath = path_utils.join(directory.path, 'migration.db');
+    final v9 = await databaseFactoryFfi.openDatabase(
+      databasePath,
+      options: OpenDatabaseOptions(
+        version: 9,
+        onConfigure: LocalDatabaseSchema.configure,
+        onCreate: LocalDatabaseSchema.create,
+      ),
+    );
+    await v9.insert('device_allocation', {
+      'singleton_id': 1,
+      'offline_enabled': 1,
+      'transaction_limit_minor': 100000,
+      'daily_value_limit_minor': 200000,
+      'remaining_daily_minor': 200000,
+      'product_quantities_json': '{}',
+      'updated_at_epoch': DateTime.utc(2026, 8, 4).millisecondsSinceEpoch,
+    });
+    await v9.close();
+
+    final store = SqlCipherLocalStore(
+      databasePath: databasePath,
+      keyProvider: DatabaseKeyProvider(vault: _MemorySecretVault()),
+      opener: const _FfiTestDatabaseOpener(),
+    );
+    addTearDown(store.close);
+    await store.initialize();
+
+    final migrated = await store.readAllocation();
+    expect(
+      migrated?.offlineSalesValidUntil,
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+    );
+    expect(
+      migrated?.offlineSalesValidUntil.isBefore(DateTime.now().toUtc()),
+      isTrue,
+    );
+  });
+
   test(
     'populated v3 database migrates money and quantity to v4 integers',
     () async {
@@ -165,7 +278,7 @@ void main() {
       final migrated = await databaseFactoryFfi.openDatabase(
         fixture.store.databasePath,
       );
-      expect(await migrated.getVersion(), 4);
+      expect(await migrated.getVersion(), LocalDatabaseSchema.version);
       await _expectIntegerColumns(migrated, 'cached_customers', [
         'credit_limit',
         'current_exposure',
@@ -399,7 +512,7 @@ SaleDraft _draft() {
 
 CompletedSale _sale(SaleDraft draft) => CompletedSale(
   serverSaleId: '',
-  receiptNumber: 'Offline pending',
+  receiptReference: 'Offline pending',
   clientTransactionId: draft.clientTransactionId,
   deviceId: demoDevice.deviceId,
   customer: draft.customer,
@@ -421,6 +534,7 @@ SyncCommand _command(CompletedSale sale) => SyncCommand(
   branchId: demoDevice.branchId,
   warehouseId: demoDevice.warehouseId,
   appVersion: demoDevice.appVersion,
+  catalogSnapshotToken: demoDevice.catalogSnapshotToken,
   masterDataVersion: demoDevice.masterDataVersion,
   priceVersion: demoDevice.priceVersion,
   syncAttemptNumber: 1,

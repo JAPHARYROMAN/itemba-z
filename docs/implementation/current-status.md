@@ -1,27 +1,97 @@
 # Current implementation status
 
-Updated: 2026-08-04
+Updated: 2026-08-06
 
 This repository is the first executable ITEMBA-Z foundation. It proves the architecture and the internal golden transaction without representing the full production Release 1 acceptance boundary.
+
+## Wave 0 production-readiness baseline
+
+Wave 0 repository inventory, full-stack verification, Release 1 classification, readiness scoring, owner/sign-off roles, provider dependencies, source-data categories, organization facts and decision controls are recorded in [`evidence/wave-0`](evidence/wave-0/README.md). The first evidence-based production-readiness baseline is **46.5/100**, distinct from the Wave 1 **100% approved repository core ERP functional-coverage** score. Repository Wave 0 work is complete, but the exit gate remains blocked pending authorized named owners, production organization facts, provider selections/access, actual controlled source-data inventory and business/professional approval.
 
 ## Implemented in this milestone
 
 - Monorepo structure, CI checks, local container dependencies, provider-neutral Terraform foundations, telemetry configuration, security model, ADRs, and versioned contracts.
+- The executive dashboard is now a governed live surface: month-to-date revenue and net profit, cash position, and total assets derive from posted legal-company journals; transactional approval counts are exact branch/warehouse scoped; company/branch query assertions cannot widen authenticated scope; and the Control Center fails closed instead of substituting the former illustrative charts and scores.
 - Go modular core for scoped cash and credit sales, server-owned prices/tax/cost, stock effects, customer balances, balanced journals, payment recording, audit entries, idempotency, immutable reversals, and transactional outbox events.
-- PostgreSQL schema, row-level security policies, append-only guards, transactional repository, migration command, and outbox worker; an in-memory adapter remains available for unit tests.
-- OIDC/JWT production authentication with tenant, legal-company, branch, and warehouse scope derived from verified claims. Header-based identity is restricted to explicit local development mode.
-- Next.js bilingual Control Center experience across the Release 1 navigation and representative screens, backed by typed demonstration data pending live module APIs.
-- Flutter Android Sales POS flow with bilingual operation, controlled cash/offline policy, credit checks, idempotent sync behavior, and encrypted local persistence foundations.
+- PostgreSQL schema, row-level security policies, append-only guards, transactional repository, migration command, and capability-separated API/outbox-worker logins; an in-memory adapter remains available for unit tests.
+- OIDC/JWT production authentication with tenant, legal-company, branch, and warehouse scope derived from verified claims. The Control Center implements provider-neutral authorization code + PKCE login, validated callbacks, encrypted key-rotatable browser sessions, active-use token renewal, revocation/logout, inactivity and absolute timeout, forced reauthentication, and mandatory configured `acr`/`amr`/`auth_time` assurance. The Go API independently enforces the same MFA assurance. Header identity is restricted to explicit local development mode.
+- Wave 2 repository controls now include immediate leaver/revoked-assignment denial, time-bound delegation and break glass, periodic-review evidence, managed-secret reference contracts, blocking SAST/dependency/secret/IaC/container/DAST workflows, SPDX SBOM and signed provenance pipelines, privacy retention/hold/rights/disposal schemas, incident response and independent-test scope. Provider, owner, privacy/legal and assessor evidence remains blocked and is not counted as production approval.
+- Wave 3 now has a durable provider-neutral integration spine. Approved,
+  effective legal-company routes retain only managed-secret references and
+  govern timeout, retry, circuit and contract policy. Posted-sale and reversal
+  outbox events project idempotently into TRA delivery work; leased workers
+  retain append-only attempts, capped backoff, dead letters, route health and
+  unique provider references without rolling back committed ERP transactions.
+  Governed exact-scope APIs and a bilingual Control Center register now expose
+  immutable route lifecycle, route health, reconciliation, attempt evidence,
+  circuit reset and permission-separated dead-letter replay. No TRA/provider
+  adapter or statutory approval is implied by this framework.
+- Wave 4 repository-controlled work is complete with a repository-enforced five-environment
+  promotion order, fail-closed Terraform safety contract, protected-environment
+  promotion preflight, proposed critical-journey SLO/error budgets, complete
+  alert-to-runbook routing, and proposed RTO/RPO plus restore-reconciliation
+  procedures; credential-redacting runtime telemetry; private bounded metrics;
+  production collector, alert and dashboard contracts; and scheduled isolated
+  restore, previous-binary rollback-compatibility and load exercises.
+  Cloud/provider binding, managed backups and PITR, live telemetry/paging,
+  production-like load/failover/restore evidence and Operations acceptance
+  remain external production gates.
+- Wave 5 repository-controlled work is complete with a strict checksum-bound
+  migration manifest, privileged serializable staging, append-only batch facts,
+  exact-decimal ten-domain reconciliation, two synthetic CI rehearsals, an
+  executable qualification matrix and accountable acceptance records. Synthetic
+  batches cannot cross production lifecycle gates, and final cutover cannot
+  validate without distinct reconciled production trials 1 and 2 on the same
+  mapping version. Real source mappings, trial signatures, payroll parallels,
+  human UAT, penetration/production-like exercises, defect closure and named
+  pilot approvals remain external production gates.
+- Versioned OpenAPI read and command boundaries for working context, customers, products, sales, linked reversals, device enrollment, and idempotent mobile synchronization, with checked TypeScript and Dart bindings.
+- Next.js bilingual Control Center workspaces backed only by live APIs for sales, customer accounts, commercial operations, inventory operations, POS governance, offline reconciliation, and cash/bank reconciliation. Remaining generic module screens are demonstrations until their APIs are built.
+- Flutter Android Sales POS live transport with encrypted SQLCipher state, Android-Keystore-backed credentials, immutable catalog-snapshot download and acknowledgement, bounded server-issued cache leases, authoritative offline limits and stock allocations, durable queued sales, idempotent synchronization, and truthful internal-versus-fiscal receipt state. Offline posting is currently fail-closed except for physical CASH and zero-rated lines.
+- A legal-company catalog snapshot token now rotates with governed customer, product, price, and tax publication under the acknowledgement lock. Every paginated mobile download is pinned to one token; the encrypted install, device acknowledgement, offline lease, sync command, posted sale, audit, and outbox evidence retain that identity.
+- Each acknowledged token now owns append-only historical customer, product, price, cost, posting-account, and effective tax facts. Lease-authorized offline cash posts from that immutable publication after later configuration drift, while stock, limits, and fiscal-period checks remain live. Missing evidence returns `offline_reconciliation_required`; the POS preserves the exact command in a bilingual, restart-safe reconciliation state and excludes it from automatic retry.
+- Missing historical evidence now also creates one append-only server reconciliation case per device transaction. Exact-scope operators with separate read/resolve permissions can inspect the retained command and append one idempotent disposition (`CASH_REFUNDED`, `POSTED_EXTERNALLY`, or `DUPLICATE_CONFIRMED`); opening and resolution emit audit/outbox evidence and never post stock or accounting implicitly.
+- Offline posting now records distinct immutable `document_at`, `received_at`, and `accounting_at` values. An effective-dated, append-only company policy fixes accounting to authoritative server receipt time, bounds future device-clock skew, and requires document and accounting receipt to belong to the same fiscal period. Clock-skew and cross-period commands create governed reconciliation cases with no stock or accounting effects.
+- The bilingual Control Center now includes a live, permission-aware reconciliation register and evidence detail workflow. Operators can inspect exact retained commands and record only controlled, confirmed dispositions; the UI never implies that a disposition posts accounting.
+- Exact-scope device operators now have a bilingual live governance workspace backed by separate read/manage permissions. Idempotent, reason-required suspension ends current offline authorization; reactivation requires a fresh acknowledgement before offline work resumes. Allocation commands retain append-only before/after/consumed evidence and reject reductions below synchronized use or reservations above live warehouse stock.
+- Customer receivables now retain invoice-level, append-only items and allocations, reconcile them to the customer ledger, and expose current/30/60/90+ ageing. Effective-dated credit policies govern limits, payment terms, overdue tolerance, and `STANDARD`/`WATCH`/`HOLD` risk state; General Customer credit remains prohibited. Credit sales create due-dated invoices atomically, linked reversals create and allocate credit notes, and unreconciled or overdue accounts fail closed.
+- The bilingual Control Center now provides a live customer-account register, authoritative exposure and ageing detail, open-document evidence, and a permission-separated policy scheduling workflow with preserved idempotency across ambiguous responses. Online mobile synchronization may submit credit sales through the same server policy; offline credit remains prohibited and the Flutter entry flow is still pending.
+- A reproducible local application profile plus PostgreSQL-backed CI verifies migration, development seed, API startup, an allocated offline cash sale, duplicate replay/conflict behavior, General Customer credit rejection, and linked reversal through HTTP.
+- Sales and procure-to-pay now cover quotations, sales orders and reservations, purchase requests, purchase orders, goods receipts, three-way-matched supplier invoices, supplier payments, purchase returns, customer collections, AP/AR allocations, and their atomic journal, audit, and outbox effects.
+- Inventory operations now cover authorized warehouse transfers with in-transit accounting, physical counts, controlled adjustments, stock reservation/release, standard-cost postings, and immutable movement evidence.
+- Governed inventory control now adds maker-checker warehouse policies, outstanding-purchase-order replenishment projections, exact receipt lot allocation, immutable lot movements, FEFO issue selection, expiry visibility, and retained standard/moving-average cost evidence. Activation fails closed unless existing lot balances reconcile to authoritative warehouse stock, and the bilingual Inventory workspace exposes planning, approvals, allocations, expiry, and cost history.
+- Cash and bank reconciliation now provides scoped account masters, balanced multi-line statement import, exact signed-value GL candidates, one-to-one append-only matches, duplicate-reference protection, and maker-checker final approval. The bilingual Finance workspace exposes the complete evidence flow.
+- Governed finance now includes balanced manual journals, linked reversals, internal cash/bank transfers, bank adjustments, immutable supporting evidence, and maker-checker fiscal-period close/reopen controls with reconciliation blockers.
+- The legal-company chart of accounts is now governed from submission through independent approval. Effective-dated, type-compatible mappings drive sales, payment, procurement, and inventory postings; manual journals accept only active non-control accounts explicitly enabled for manual posting. PostgreSQL migration 17 backfills legacy posting accounts and mappings, and the bilingual Finance workspace exposes both governance queues.
+- Record-to-report now includes legal-company trial balance, general-ledger account drill-down with running balances and source evidence, profit and loss, balance sheet with current earnings and classification exceptions, and opening-to-closing cash flow split across operating, investing, financing, and explicitly unclassified movements. Every statement is derived directly from immutable journals in the company base currency. Separate read/export permissions protect the bilingual live Reports workspace; idempotent CSV exports are retained with audit and outbox evidence.
+- Advanced finance now includes immutable legal-company budgets with maker-checker approval and business-timezone budget-versus-actual reporting derived from the ledger. The scoped fixed-asset register controls capitalization, straight-line depreciation, and disposal through balanced journals, open-period validation, idempotency, role separation, and retained audit/outbox evidence. The bilingual Finance workspace exposes creation, approval, depreciation, and comparison workflows.
+- Treasury now includes immutable term-loan and overdraft facilities, maker-checker activation, append-only drawdowns, interest accruals, principal repayments, interest payments, ledger-derived balances, limit enforcement, and settlement-only closure. Every transaction creates a balanced journal with atomic audit/outbox evidence, and the bilingual Finance workspace exposes the permission-aware lifecycle.
+- Group finance now supports dual-company intercompany cash transfers and cost allocations. Source and counterparty approvals are context-bound, final confirmation atomically posts a balanced journal to each legal company, and the consolidated report derives company totals from immutable journals before explicitly eliminating reciprocal balances and internal activity. The bilingual Finance workspace exposes the governed queue and balanced group view.
+- Purchase-to-asset clearing now derives fixed-asset cost and acquisition evidence from a posted, three-way-matched supplier invoice line, net of posted returns. Activation reclassifies the product's governed inventory account into fixed assets, retains invoice/product provenance, and prevents duplicate capitalization. The bilingual Finance workspace lists eligible posted invoice lines.
+- People and payroll now provide scoped employee masters, append-only attendance with linked reversals, effective-dated bilingual leave types, overlap-safe maker-checker leave approval, governed employee-loan disbursement, payroll preparation and independent posting, employee-level payslip lines, loan deductions, balanced journals, immutable workflow history, audit/outbox evidence, and idempotent commands. The bilingual Human Resources workspace exposes the live employee, leave, loan, payroll, and payslip registers.
+- Workforce operations now add bilingual, effective-dated shift templates and overlap-safe employee assignments with independent approval; sensitive, checksum-bound employee-document metadata with separate read/manage permissions; and reproducible bank/statutory payroll CSV artifacts generated only from posted payroll and an approved, effective configuration explicitly bound to the requested output format. Each artifact retains its content hash and configuration hash, while all statutory values and layouts remain governed configuration rather than code.
+- Financial reporting now produces retained CSV, PDF, and XLSX packs from immutable journal-derived statements. Profit and loss, balance sheet, and cash-flow exports support explicit prior-period comparisons and variance columns; every artifact is idempotent, permission-scoped, checksum-bound, and stored with its exact media format. PDF and workbook layouts are print-ready, bilingual data is rendered with embedded Unicode fonts, and spreadsheet-formula injection is neutralized.
+- Governed Settings now provides immutable, effective-dated bilingual configuration across sales, purchasing, inventory, finance, HR, numbering, templates, notifications, imports, and integrations. Maker-checker activation rejects overlapping active versions, external credentials are represented only by secret-manager references, and atomic idempotent number allocation prevents duplicate document numbers. The bilingual Settings workspace exposes configuration and numbering control.
+- Commercial sourcing now provides governed supplier and product revisions, independent activation into canonical masters, approved RFQs, immutable like-for-like supplier quotations, lowest-first comparison, and an independently selected award that atomically creates a traceable draft purchase order. The bilingual Purchases workspace exposes the full queue, while PostgreSQL scope policies, mutation guards, audit/outbox evidence, and idempotency protect every command.
 
 ## Remaining before Release 1 can be claimed
 
-- Complete live APIs and posting rules for customer/supplier master data, purchasing, returns, stock operations and costing, AR/AP, cash/bank, budgeting, assets, treasury, intercompany, consolidation, HR, attendance, leave, loans, payroll, reports, and settings.
-- Connect the Control Center and POS to authenticated deployed APIs, generate TypeScript/Dart clients, and complete device enrollment, allocation, conflict, receipt, and fiscal synchronization workflows.
-- Implement and professionally validate TRA EFD/VFD, payment, banking-import, email, WhatsApp, payroll/statutory, privacy, hosting, and cross-border-transfer integrations.
+- Complete remaining finance workflows: bank-specific import adapters and scheduled report delivery; comparative statements and governed PDF/XLSX packs are now implemented.
+- Complete remaining HR depth through professionally validated statutory payroll calculations and provider-specific configuration packs; the governed scheduling, document, and configurable payroll-output engines are now implemented.
+- Complete the Flutter online credit-sale entry and customer-account cache UX; the server contract and online synchronization path are authoritative, while offline credit intentionally remains fail-closed.
+- Select and register the production identity provider, approve and test MFA/claims/revocation policies against the implemented browser-session lifecycle; deploy the API and clients behind managed TLS, provision production devices, and add governed queue-support workflows.
+- Select providers and implement and professionally validate the contract-specific TRA EFD/VFD, payment, banking-import, email, WhatsApp, payroll/statutory, privacy, hosting, and cross-border-transfer adapters on the repository-complete Wave 3 delivery spine.
 - Add effective-dated Tanzanian configuration only after accountant, tax, payroll, and legal approval; no statutory values may be hardcoded.
-- Execute source-data assessment, cleansing, two trial migrations, stock verification, opening-balance reconciliation, parallel payroll runs, training, pilot rollout, hypercare, penetration/load/recovery tests, and every gate in `release-gates.md`.
-- Add production secret management, backup/restore automation, point-in-time recovery evidence, deployment promotion controls, dashboards, alerts, and operational runbooks for the selected hosting platform.
+- Use the implemented Wave 5 migration assurance pipeline to execute real source-data assessment, mapping adapters, cleansing, two signed production trial migrations, stock verification, opening-balance reconciliation, parallel payroll runs, training, UAT, penetration/load/recovery qualification and every gate in `release-gates.md`.
+- Bind the implemented Wave 4 platform contracts to the selected hosting
+  provider: production secret management, reviewed provider Terraform,
+  registry/deployment adapter, protected reviewers, live dashboards and paging,
+  automated backup/PITR/object retention, and retained load, failover, restore
+  and disaster-recovery evidence.
 
 ## Contract convention
 
 OpenAPI operations marked `x-implementation-status: implemented` are available in the current Go HTTP boundary. Operations marked `planned` are reviewed forward contracts and must not be treated as deployed capabilities.
+Exactly 100 minor units equal TZS 1. Public numeric money, quantity, count, and
+version values stay within JavaScript's exact integer range; PostgreSQL bigint
+storage does not widen the JSON contract.

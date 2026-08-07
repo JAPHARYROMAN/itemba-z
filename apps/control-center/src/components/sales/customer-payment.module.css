@@ -1,0 +1,812 @@
+.page {
+  display: grid;
+  gap: var(--spacing-2xl);
+  color: var(--color-text-primary);
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--spacing-2xl);
+}
+
+.header > div {
+  max-width: 760px;
+}
+
+.eyebrow {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--color-text-brand);
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.header h1,
+.success h1,
+.blocked h1 {
+  margin: 0;
+  font-size: clamp(30px, 3vw, 40px);
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+}
+
+.header > div > p:last-child,
+.success > p:not(.eyebrow),
+.blocked p {
+  margin: var(--spacing-md) 0 0;
+  color: var(--color-text-secondary);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.backLink,
+.primaryButton,
+.secondaryButton {
+  min-height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: 0 var(--spacing-lg);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+.backLink,
+.secondaryButton {
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-brand);
+  background: var(--color-bg-surface);
+}
+
+.backLink:hover,
+.secondaryButton:hover {
+  border-color: #afc6ba;
+  background: var(--color-bg-brand-soft);
+}
+
+.primaryButton {
+  border: 1px solid var(--color-action-primary);
+  color: var(--color-text-inverse);
+  background: var(--color-action-primary);
+  box-shadow: 0 8px 20px rgba(37, 107, 84, 0.15);
+}
+
+.primaryButton:hover:not(:disabled) {
+  border-color: var(--color-action-primary-hover);
+  background: var(--color-action-primary-hover);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.72);
+  list-style: none;
+}
+
+.progress li {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+}
+
+.progress li > span {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-surface);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.progress .currentStep {
+  color: var(--color-text-brand);
+  background: var(--color-bg-brand-soft);
+}
+
+.progress .currentStep > span {
+  border-color: var(--color-action-primary);
+  color: var(--color-text-inverse);
+  background: var(--color-action-primary);
+}
+
+.progress .completedStep {
+  color: var(--color-text-secondary);
+}
+
+.progress .completedStep > span {
+  border-color: #b9d6c7;
+  color: var(--color-status-success-text);
+  background: var(--color-status-success-bg);
+}
+
+.recovery,
+.problem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  border: 1px solid;
+  border-radius: var(--radius-lg);
+}
+
+.recovery {
+  border-color: #bed5c8;
+  color: var(--color-status-success-text);
+  background: var(--color-status-success-bg);
+}
+
+.problem {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  border-color: #e3c1bb;
+  color: var(--color-status-danger-text);
+  background: var(--color-status-danger-bg);
+}
+
+.recovery strong,
+.problem strong {
+  font-size: 14px;
+}
+
+.recovery p,
+.problem p {
+  margin: 3px 0 0;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.taskShell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-items: start;
+  gap: var(--spacing-xl);
+}
+
+.taskCard,
+.contextCard,
+.success,
+.blocked {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface);
+  box-shadow: var(--elevation-card);
+}
+
+.taskCard {
+  min-width: 0;
+}
+
+.taskCard > section {
+  display: grid;
+  gap: var(--spacing-2xl);
+  padding: clamp(22px, 3vw, 34px);
+}
+
+.sectionHeading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--spacing-md);
+}
+
+.sectionHeading > span,
+.contextIcon,
+.successIcon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  color: var(--color-text-brand);
+  background: var(--color-bg-brand-soft);
+}
+
+.sectionHeading h2,
+.contextCard h2 {
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+.sectionHeading p {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.field {
+  display: grid;
+  gap: var(--spacing-sm);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.field select,
+.moneyInput {
+  width: 100%;
+  min-height: 50px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  background: var(--color-bg-surface);
+  font: inherit;
+  font-size: 15px;
+}
+
+.field select {
+  padding: 0 var(--spacing-md);
+}
+
+.field select:focus,
+.moneyInput:focus-within {
+  border-color: var(--color-border-focus);
+  outline: 0;
+  box-shadow: var(--focus-ring);
+}
+
+.field > small {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.field .fieldError {
+  color: var(--color-status-danger-text);
+}
+
+.loading,
+.emptyState {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-2xl);
+  border: 1px dashed var(--color-border-default);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-surface-subtle);
+  text-align: center;
+}
+
+.spin {
+  display: inline-flex;
+  animation: spin 900ms linear infinite;
+}
+
+.emptyState svg {
+  color: var(--color-status-success-text);
+}
+
+.emptyState strong {
+  color: var(--color-text-primary);
+  font-size: 15px;
+}
+
+.emptyState p {
+  max-width: 420px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.invoiceList,
+.methodList {
+  display: grid;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.invoiceList legend,
+.methodList legend {
+  margin-bottom: var(--spacing-sm);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.invoiceList > label,
+.methodList > label {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.invoiceList > label {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.methodList {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.methodList > label {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.invoiceList > label:hover,
+.methodList > label:hover {
+  border-color: #afc6ba;
+  box-shadow: 0 4px 14px rgba(25, 76, 61, 0.06);
+}
+
+.invoiceList > label:focus-within,
+.methodList > label:focus-within {
+  outline: 0;
+  box-shadow: var(--focus-ring);
+}
+
+.invoiceList > label.choiceSelected,
+.methodList > label.choiceSelected {
+  border-color: var(--color-action-primary);
+  background: var(--color-bg-brand-soft);
+}
+
+.invoiceList input,
+.methodList input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.choiceMarker {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-full);
+  color: transparent;
+  background: var(--color-bg-surface);
+}
+
+.choiceSelected .choiceMarker {
+  border-color: var(--color-action-primary);
+  color: var(--color-text-inverse);
+  background: var(--color-action-primary);
+}
+
+.invoiceIdentity,
+.methodList label > span:nth-child(3) {
+  min-width: 0;
+  display: grid;
+  gap: var(--spacing-xs);
+}
+
+.invoiceIdentity strong,
+.methodList strong {
+  font-size: 14px;
+}
+
+.invoiceIdentity small,
+.methodList small,
+.invoiceAmount small {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.invoiceAmount {
+  display: grid;
+  justify-items: end;
+  gap: var(--spacing-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.invoiceAmount strong {
+  font-size: 15px;
+}
+
+.amountPanel {
+  padding: var(--spacing-xl);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface-subtle);
+}
+
+.moneyInput {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  overflow: hidden;
+}
+
+.moneyInput b {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--spacing-md);
+  border-right: 1px solid var(--color-border-default);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-surface-subtle);
+  font-size: 13px;
+}
+
+.moneyInput input {
+  min-width: 0;
+  height: 48px;
+  padding: 0 var(--spacing-md);
+  border: 0;
+  outline: 0;
+  color: var(--color-text-primary);
+  background: transparent;
+  font: inherit;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.methodIcon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  color: var(--color-text-brand);
+  background: var(--color-bg-brand-soft);
+}
+
+.stepActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--color-border-default);
+}
+
+.reviewList,
+.successSummary {
+  display: grid;
+  margin: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.reviewList > div,
+.successSummary > div {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.55fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  border-top: 1px solid var(--color-border-default);
+}
+
+.reviewList > div:first-child,
+.successSummary > div:first-child {
+  border-top: 0;
+}
+
+.reviewList dt,
+.successSummary dt {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.reviewList dd,
+.successSummary dd {
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+}
+
+.reviewList dd strong,
+.reviewList dd small {
+  display: block;
+}
+
+.reviewList dd small {
+  margin-top: 3px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.reviewList .reviewAmount {
+  color: var(--color-text-inverse);
+  background: var(--color-action-primary);
+}
+
+.reviewAmount dt {
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.reviewAmount dd {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+}
+
+.controlNote {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  border: 1px solid #c6dacd;
+  border-radius: var(--radius-md);
+  color: var(--color-text-brand);
+  background: var(--color-bg-brand-soft);
+}
+
+.controlNote svg {
+  flex: 0 0 auto;
+}
+
+.controlNote p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.contextCard {
+  position: sticky;
+  top: var(--spacing-xl);
+  display: grid;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-xl);
+}
+
+.contextCard dl {
+  display: grid;
+  gap: var(--spacing-md);
+  margin: 0;
+}
+
+.contextCard dl > div {
+  display: grid;
+  gap: 3px;
+}
+
+.contextCard dt {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.contextCard dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.contextCard > p {
+  margin: 0;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border-default);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.success,
+.blocked {
+  display: grid;
+  justify-items: center;
+  padding: clamp(32px, 6vw, 64px);
+  text-align: center;
+}
+
+.successIcon {
+  width: 64px;
+  height: 64px;
+  margin-bottom: var(--spacing-xl);
+  color: var(--color-status-success-text);
+  background: var(--color-status-success-bg);
+}
+
+.successSummary {
+  width: min(620px, 100%);
+  margin-top: var(--spacing-2xl);
+  text-align: left;
+}
+
+.successActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-2xl);
+}
+
+.blocked {
+  color: var(--color-text-secondary);
+}
+
+.blocked h1 {
+  margin-top: var(--spacing-lg);
+  color: var(--color-text-primary);
+}
+
+.blocked > a {
+  margin-top: var(--spacing-xl);
+  color: var(--color-text-brand);
+  font-weight: 680;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 980px) {
+  .taskShell {
+    grid-template-columns: 1fr;
+  }
+
+  .contextCard {
+    position: static;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .contextCard dl,
+  .contextCard > p {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .page {
+    gap: var(--spacing-xl);
+  }
+
+  .header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .backLink {
+    align-self: flex-start;
+  }
+
+  .progress {
+    padding: var(--spacing-xs);
+  }
+
+  .progress li {
+    min-height: 48px;
+    gap: var(--spacing-xs);
+    font-size: 12px;
+  }
+
+  .progress li > span {
+    width: 24px;
+    height: 24px;
+  }
+
+  .recovery {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .recovery .secondaryButton {
+    grid-column: 1 / -1;
+  }
+
+  .taskCard > section {
+    gap: var(--spacing-xl);
+    padding: var(--spacing-lg);
+  }
+
+  .methodList {
+    grid-template-columns: 1fr;
+  }
+
+  .invoiceList > label {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .invoiceAmount {
+    grid-column: 2;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .stepActions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .stepActions > span {
+    display: none;
+  }
+
+  .stepActions .primaryButton,
+  .stepActions .secondaryButton {
+    width: 100%;
+  }
+
+  .reviewList > div,
+  .successSummary > div {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-xs);
+  }
+
+  .reviewList dd,
+  .successSummary dd {
+    text-align: left;
+  }
+
+  .contextCard {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 420px) {
+  .progress li strong {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .header h1,
+  .success h1,
+  .blocked h1 {
+    font-size: 30px;
+  }
+
+  .methodList > label {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .methodList .choiceMarker {
+    position: absolute;
+    top: var(--spacing-md);
+    right: var(--spacing-md);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .invoiceList > label,
+  .methodList > label {
+    transition: none;
+  }
+
+  .spin {
+    animation: none;
+  }
+}

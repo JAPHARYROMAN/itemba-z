@@ -7,6 +7,7 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/audit"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/catalog"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/devices"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
@@ -28,12 +29,24 @@ type Transaction interface {
 	CompleteIdempotency(ctx context.Context, scope tenancy.Scope, operation, key, resultID string) error
 
 	Customer(ctx context.Context, scope tenancy.Scope, customerID string) (customers.Account, error)
+	OfflineCatalogCustomer(ctx context.Context, scope tenancy.Scope, catalogSnapshotToken, customerID string) (customers.Account, error)
+	LockCustomerCredit(ctx context.Context, scope tenancy.Scope, customerID string) error
+	CustomerCreditPolicy(ctx context.Context, scope tenancy.Scope, customerID string, at time.Time) (customers.CreditPolicy, error)
+	CustomerReceivableAging(ctx context.Context, scope tenancy.Scope, customerID string, at time.Time) (customers.ReceivableAging, error)
 	Product(ctx context.Context, scope tenancy.Scope, productID string) (catalog.Product, error)
+	OfflineCatalogProduct(ctx context.Context, scope tenancy.Scope, catalogSnapshotToken, productID string, at time.Time) (catalog.Product, int64, error)
 	TaxRateBasisPoints(ctx context.Context, scope tenancy.Scope, taxCode string, at time.Time) (int64, error)
 	AvailableStock(ctx context.Context, scope tenancy.Scope, productID string) (int64, error)
 	CreditExposure(ctx context.Context, scope tenancy.Scope, customerID string) (int64, error)
 	FiscalPeriodOpen(ctx context.Context, scope tenancy.Scope, at time.Time) (bool, error)
+	FiscalPeriod(ctx context.Context, scope tenancy.Scope, at time.Time) (FiscalPeriod, error)
+	OfflinePostingPolicy(ctx context.Context, scope tenancy.Scope, at time.Time) (OfflinePostingPolicy, error)
 	SalesPostingConfig(ctx context.Context, scope tenancy.Scope) (finance.SalesPostingConfig, error)
+	MobileDevice(ctx context.Context, scope tenancy.Scope, actorID, deviceID string) (devices.Device, error)
+	OfflineLeaseValid(ctx context.Context, lease devices.OfflineLease, clientTimestamp time.Time) (bool, error)
+	OfflineAllocation(ctx context.Context, scope tenancy.Scope, deviceID, productID string) (int64, error)
+	OfflineSalesTotal(ctx context.Context, scope tenancy.Scope, deviceID string, startsAt, endsAt time.Time) (int64, error)
+	FulfillSalesOrder(ctx context.Context, scope tenancy.Scope, orderID, customerID, saleID string, lines []CommandLine, releaseIDs []string, transitionID, actorID, correlationID string, at time.Time) error
 
 	Sale(ctx context.Context, scope tenancy.Scope, saleID string) (Sale, error)
 	CreateSale(ctx context.Context, sale Sale) error
@@ -42,6 +55,9 @@ type Transaction interface {
 	StockMovementsBySource(ctx context.Context, scope tenancy.Scope, sourceType, sourceID string) ([]inventory.Movement, error)
 	AppendCustomerLedgerEntry(ctx context.Context, entry customers.LedgerEntry) error
 	CustomerLedgerBySource(ctx context.Context, scope tenancy.Scope, sourceType, sourceID string) ([]customers.LedgerEntry, error)
+	AppendReceivableItem(ctx context.Context, item customers.ReceivableItem) error
+	ReceivableItemBySource(ctx context.Context, scope tenancy.Scope, sourceType, sourceID string) (customers.ReceivableItem, error)
+	AppendReceivableAllocation(ctx context.Context, allocation customers.ReceivableAllocation) error
 	CreatePayment(ctx context.Context, payment Payment) error
 	PaymentsBySale(ctx context.Context, scope tenancy.Scope, saleID string) ([]Payment, error)
 	CreateJournal(ctx context.Context, journal finance.Journal) error

@@ -5,6 +5,13 @@ receivers:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: itemba-z-core-api
+          scrape_interval: 15s
+          static_configs:
+            - targets: [core-api:9090]
 
 processors:
   memory_limiter:
@@ -37,7 +44,7 @@ service:
       processors: [memory_limiter, attributes/redact, batch]
       exporters: [debug]
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, prometheus]
       processors: [memory_limiter, batch]
       exporters: [debug]
     logs:

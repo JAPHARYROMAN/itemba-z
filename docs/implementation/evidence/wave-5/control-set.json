@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "updated": "2026-08-06",
+  "repository_status": "COMPLETE",
+  "release_exit_status": "BLOCKED_EXTERNAL",
+  "repository_controls": [
+    {
+      "id": "W5-01",
+      "status": "IMPLEMENTED",
+      "name": "Checksum-bound strict migration manifest and canonical NDJSON validation",
+      "evidence": ["services/core-api/internal/platform/migrationassurance/manifest.go", "services/core-api/internal/platform/migrationassurance/manifest_test.go"]
+    },
+    {
+      "id": "W5-02",
+      "status": "IMPLEMENTED",
+      "name": "Privileged serializable staging with source re-verification",
+      "evidence": ["services/core-api/internal/platform/migrationassurance/stage.go", "services/core-api/cmd/migrationctl/main.go"]
+    },
+    {
+      "id": "W5-03",
+      "status": "IMPLEMENTED",
+      "name": "Append-only migration facts and fail-closed lifecycle transitions",
+      "evidence": ["services/core-api/migrations/000037_migration_assurance.up.sql", "services/core-api/migrations/000038_migration_assurance_search_path.up.sql", "services/core-api/migrations/000039_migration_source_key_scope.up.sql"]
+    },
+    {
+      "id": "W5-04",
+      "status": "IMPLEMENTED",
+      "name": "Exact-decimal ten-domain reconciliation and evidence retention",
+      "evidence": ["services/core-api/internal/platform/migrationassurance/lifecycle.go", "services/core-api/internal/platform/migrationassurance/lifecycle_test.go", "services/core-api/migrations/000040_migration_reconciliation_runs.up.sql"]
+    },
+    {
+      "id": "W5-05",
+      "status": "IMPLEMENTED",
+      "name": "Two synthetic control rehearsals that cannot satisfy production gates",
+      "evidence": ["testdata/migration/wave-5/trial-1/manifest.json", "testdata/migration/wave-5/trial-2/manifest.json", ".github/workflows/wave5-qualification.yml"]
+    },
+    {
+      "id": "W5-06",
+      "status": "IMPLEMENTED",
+      "name": "Machine-readable full qualification matrix",
+      "evidence": ["docs/implementation/evidence/wave-5/qualification-matrix.json"]
+    },
+    {
+      "id": "W5-07",
+      "status": "IMPLEMENTED",
+      "name": "Executable Wave 5 evidence validation in continuous integration",
+      "evidence": ["scripts/validate-wave5-controls.mjs", ".github/workflows/ci.yml"]
+    },
+    {
+      "id": "W5-08",
+      "status": "IMPLEMENTED",
+      "name": "Restricted release migration tool with attested release bundle coverage",
+      "evidence": ["services/core-api/cmd/migrationctl/main.go", ".github/workflows/release-supply-chain.yml"]
+    },
+    {
+      "id": "W5-09",
+      "status": "IMPLEMENTED",
+      "name": "Operator runbook and accountable acceptance checklist",
+      "evidence": ["docs/operations/wave-5-qualification-runbook.md", "docs/operations/wave-5-acceptance-checklist.md"]
+    }
+  ],
+  "external_gates": [
+    {"id": "W5-EXT-01", "status": "BLOCKED_EXTERNAL", "required": true, "owner": "Migration lead", "evidence_required": "Restricted production source register, approved mappings and cleansed source files"},
+    {"id": "W5-EXT-02", "status": "BLOCKED_EXTERNAL", "required": true, "owner": "Migration lead and data owners", "evidence_required": "Signed and fully reconciled production Trial Migration 1"},
+    {"id": "W5-EXT-03", "status": "BLOCKED_EXTERNAL", "required": true, "owner": "Migration lead and Finance", "evidence_required": "Signed, timed and fully reconciled production Trial Migration 2"},
+    {"id": "W5-EXT-04", "status": "BLOCKED_EXTERNAL", "required": true, "owner": "Payroll owner", "evidence_required": "Approved payroll parallel runs and statutory/accounting reconciliation"},
+    {"id": "W5-EXT-05", "status": "BLOCKED_EXTERNAL", "required": true, "owner": "Product and Operations", "evidence_required": "Independent maker-checker UAT by named business users"},
+    {"id": "W5-EXT-06", "status": "BLOCKED_EXTERNAL", "required": true, "owner": "Security lead", "evidence_required": "Independent penetration test with no unresolved critical or high finding"},
+    {"id": "W5-EXT-07", "status": "BLOCKED_EXTERNAL", "required": true, "owner": "QA and Platform", "evidence_required": "Production-like load, soak, restore, DR, accessibility, printing and Android device-matrix results"},
+    {"id": "W5-EXT-08", "status": "BLOCKED_EXTERNAL", "required": true, "owner": "QA lead", "evidence_required": "Defect register showing no critical/high defect and approved disposition for every lower defect"},
+    {"id": "W5-EXT-09", "status": "BLOCKED_EXTERNAL", "required": true, "owner": "Executive sponsor", "evidence_required": "Named Finance, Tax, Payroll, Operations, Migration, Security and Executive pilot approvals"}
+  ]
+}

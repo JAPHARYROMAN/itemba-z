@@ -19,6 +19,15 @@ type Scope struct {
 	WarehouseID string `json:"warehouse_id"`
 }
 
+func (s Scope) Normalize() Scope {
+	return Scope{
+		TenantID:    strings.ToLower(strings.TrimSpace(s.TenantID)),
+		CompanyID:   strings.ToLower(strings.TrimSpace(s.CompanyID)),
+		BranchID:    strings.ToLower(strings.TrimSpace(s.BranchID)),
+		WarehouseID: strings.ToLower(strings.TrimSpace(s.WarehouseID)),
+	}
+}
+
 func (s Scope) Validate() error {
 	if strings.TrimSpace(s.TenantID) == "" || strings.TrimSpace(s.CompanyID) == "" ||
 		strings.TrimSpace(s.BranchID) == "" || strings.TrimSpace(s.WarehouseID) == "" {

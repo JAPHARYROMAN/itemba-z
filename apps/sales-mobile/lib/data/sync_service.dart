@@ -5,6 +5,26 @@ abstract interface class AuthoritativeSyncGateway {
   Future<SyncResult> submit(SyncCommand command);
 }
 
+enum SyncFailureKind {
+  retryable,
+  ambiguous,
+  terminal,
+  reconciliation,
+  authentication,
+  suspended,
+}
+
+class SyncFailure implements Exception {
+  const SyncFailure({required this.kind, required this.message, this.code});
+
+  final SyncFailureKind kind;
+  final String message;
+  final String? code;
+
+  @override
+  String toString() => message;
+}
+
 /// Development gateway that models the server's mandatory unique constraint:
 /// `(device_id, client_transaction_id)`. A retry returns the original server
 /// result and can never create a second business transaction.
@@ -20,14 +40,22 @@ class InMemoryAuthoritativeSyncGateway implements AuthoritativeSyncGateway {
     if (previous != null) {
       return SyncResult(
         serverSaleId: previous.serverSaleId,
-        receiptNumber: previous.receiptNumber,
+        receiptReference: previous.receiptReference,
+        fiscalStatus: previous.fiscalStatus,
+        serverTotalMinor: previous.serverTotalMinor,
+        serverSubtotalMinor: previous.serverSubtotalMinor,
+        serverTaxMinor: previous.serverTaxMinor,
+        serverCogsMinor: previous.serverCogsMinor,
+        serverLines: previous.serverLines,
         wasDuplicate: true,
       );
     }
     _sequence += 1;
     final result = SyncResult(
       serverSaleId: 'sale-$_sequence',
-      receiptNumber: 'ITZ-DAR-${_sequence.toString().padLeft(6, '0')}',
+      receiptReference: 'sale-$_sequence',
+      fiscalStatus: FiscalStatus.notConfigured,
+      serverTotalMinor: command.sale.total,
       wasDuplicate: false,
     );
     _posted[command.idempotencyKey] = result;
@@ -41,16 +69,26 @@ class SalesSyncService {
   final EncryptedLocalStore store;
   final AuthoritativeSyncGateway gateway;
 
-  Future<SyncResult> synchronize(SyncCommand command) async {
+  Future<SyncResult> resolve(SyncCommand command) async {
     final localResult = await store.readSyncResult(command.idempotencyKey);
     if (localResult != null) {
       return SyncResult(
         serverSaleId: localResult.serverSaleId,
-        receiptNumber: localResult.receiptNumber,
+        receiptReference: localResult.receiptReference,
+        fiscalStatus: localResult.fiscalStatus,
+        serverTotalMinor: localResult.serverTotalMinor,
+        serverSubtotalMinor: localResult.serverSubtotalMinor,
+        serverTaxMinor: localResult.serverTaxMinor,
+        serverCogsMinor: localResult.serverCogsMinor,
+        serverLines: localResult.serverLines,
         wasDuplicate: true,
       );
     }
-    final result = await gateway.submit(command);
+    return gateway.submit(command);
+  }
+
+  Future<SyncResult> synchronize(SyncCommand command) async {
+    final result = await resolve(command);
     await store.saveSyncResult(command.idempotencyKey, result);
     return result;
   }

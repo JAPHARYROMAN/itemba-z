@@ -19,12 +19,15 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production \
+    ITEMBA_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=0.0.0.0 \
     PORT=3000
 
 RUN addgroup --system --gid 1001 nodejs \
-    && adduser --system --uid 1001 --ingroup nodejs nextjs
+    && adduser --system --uid 1001 --ingroup nodejs nextjs \
+    && rm -rf /usr/local/lib/node_modules/npm \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx
 
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static

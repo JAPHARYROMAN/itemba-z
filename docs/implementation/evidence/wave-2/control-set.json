@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "updated": "2026-08-06",
+  "controls": [
+    {"id":"W2-ID-01","family":"IDENTITY","status":"REPOSITORY_IMPLEMENTED_EXTERNAL_OPEN","evidence":["apps/control-center/src/auth/oidc.ts","services/core-api/internal/httpapi/auth.go","docs/implementation/wave-2-execution.md"],"external_owner":"UNASSIGNED"},
+    {"id":"W2-AC-01","family":"ACCESS","status":"REPOSITORY_IMPLEMENTED_EXTERNAL_OPEN","evidence":["services/core-api/migrations/000031_access_governance.up.sql","services/core-api/cmd/accessctl/main.go","docs/security/access-governance.md"],"external_owner":"UNASSIGNED"},
+    {"id":"W2-SC-01","family":"SECRET_CUSTODY","status":"REPOSITORY_IMPLEMENTED_EXTERNAL_OPEN","evidence":["infra/terraform/variables.tf","infra/terraform/security.auto.tfvars.example","docs/security/secrets-and-key-custody.md"],"external_owner":"UNASSIGNED"},
+    {"id":"W2-SD-01","family":"SECURE_SDLC","status":"REPOSITORY_IMPLEMENTED_EXTERNAL_OPEN","evidence":[".github/workflows/security.yml",".github/workflows/release-supply-chain.yml",".github/dependabot.yml"],"external_owner":"UNASSIGNED"},
+    {"id":"W2-PR-01","family":"PRIVACY","status":"REPOSITORY_IMPLEMENTED_EXTERNAL_OPEN","evidence":["services/core-api/migrations/000032_privacy_governance.up.sql","docs/security/privacy-and-data-governance.md","docs/implementation/tanzania-compliance-register.md"],"external_owner":"UNASSIGNED"},
+    {"id":"W2-IR-01","family":"INCIDENT","status":"REPOSITORY_IMPLEMENTED_EXTERNAL_OPEN","evidence":["docs/security/incident-response.md","docs/security/threat-model.md"],"external_owner":"UNASSIGNED"},
+    {"id":"W2-PT-01","family":"PENETRATION_TEST","status":"EXTERNAL_BLOCKED","evidence":["docs/security/penetration-test-plan.md"],"external_owner":"INDEPENDENT_ASSESSOR_UNASSIGNED"}
+  ]
+}

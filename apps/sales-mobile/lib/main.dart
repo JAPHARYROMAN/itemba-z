@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 
-import 'app.dart';
-import 'application/sales_controller.dart';
+import 'application/mobile_runtime.dart';
+import 'data/mobile_credential_store.dart';
 import 'data/sqlcipher_local_store.dart';
+import 'live_mobile_app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
     final store = await SqlCipherLocalStore.production();
-    final controller = SalesController(store: store);
-    await controller.initializeLocalData();
-    runApp(ItembaSalesApp(controller: controller));
+    await store.initialize();
+    final runtime = MobileRuntimeController(
+      store: store,
+      credentials: AndroidKeystoreCredentialStore(),
+    );
+    runApp(LiveMobileApp(runtime: runtime));
   } catch (_) {
     // Fail closed: never fall back to plaintext or memory persistence when the
     // encrypted database/Keystore is unavailable. Do not log storage errors,

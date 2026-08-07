@@ -1,0 +1,123 @@
+name: Platform exercises
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "13 3 * * 4"
+  pull_request:
+    paths:
+      - ".github/workflows/platform-exercises.yml"
+      - "scripts/platform-load-probe.mjs"
+      - "services/core-api/cmd/api/**"
+      - "services/core-api/internal/httpapi/**"
+      - "services/core-api/internal/platform/telemetry/**"
+      - "infra/observability/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-exercises-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-load-and-telemetry:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: itemba_z_platform
+          POSTGRES_USER: itemba_z_platform
+          POSTGRES_PASSWORD: ci-only-platform-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U itemba_z_platform -d itemba_z_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://itemba_z_platform:ci-only-platform-password@127.0.0.1:5432/itemba_z_platform?sslmode=disable
+      RUNTIME_DATABASE_URL: postgres://itemba_z_platform_api:ci-only-runtime-password@127.0.0.1:5432/itemba_z_platform?sslmode=disable
+      ITEMBA_ENV: development
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/core-api/go.mod
+          cache-dependency-path: services/core-api/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate load probe policy
+        run: node scripts/platform-load-probe.mjs --self-test
+      - name: Prepare isolated runtime
+        working-directory: services/core-api
+        run: |
+          go run ./cmd/migrate
+          ITEMBA_RUNTIME_USER=itemba_z_platform_api ITEMBA_RUNTIME_PASSWORD=ci-only-runtime-password ITEMBA_RUNTIME_CAPABILITY=api go run ./cmd/devdbrole
+          go run ./cmd/devseed
+          go build -trimpath -o "$RUNNER_TEMP/itemba-api" ./cmd/api
+      - name: Start API and private metrics listener
+        working-directory: services/core-api
+        env:
+          DATABASE_URL: ${{ env.RUNTIME_DATABASE_URL }}
+          ITEMBA_HTTP_ADDRESS: 127.0.0.1:8080
+          ITEMBA_METRICS_ADDRESS: 127.0.0.1:9090
+        run: |
+          "$RUNNER_TEMP/itemba-api" > "$RUNNER_TEMP/platform-api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/platform-api.pid"
+          for _ in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/readyz > /dev/null && curl --fail --silent http://127.0.0.1:9090/metrics > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/platform-api.log"
+          exit 1
+      - name: Exercise bounded concurrent reads
+        env:
+          ITEMBA_LOAD_BASE_URL: http://127.0.0.1:8080
+          ITEMBA_LOAD_ENDPOINTS: /healthz,/readyz,/v1/context
+          ITEMBA_LOAD_DURATION_SECONDS: 20
+          ITEMBA_LOAD_CONCURRENCY: 20
+          ITEMBA_LOAD_MAX_P95_MS: 2000
+          ITEMBA_LOAD_MAX_ERROR_RATE: 0
+          ITEMBA_LOAD_MIN_REQUESTS: 500
+          ITEMBA_LOAD_EVIDENCE_PATH: ${{ runner.temp }}/load-evidence.json
+          ITEMBA_LOAD_TENANT_ID: 00000000-0000-4000-8000-000000000001
+          ITEMBA_LOAD_COMPANY_ID: 00000000-0000-4000-8000-000000000002
+          ITEMBA_LOAD_BRANCH_ID: 00000000-0000-4000-8000-000000000003
+          ITEMBA_LOAD_WAREHOUSE_ID: 00000000-0000-4000-8000-000000000004
+          ITEMBA_LOAD_ACTOR_ID: 00000000-0000-4000-8000-000000000005
+        run: node scripts/platform-load-probe.mjs
+      - name: Verify metric cardinality and log redaction boundary
+        run: |
+          curl --fail --silent http://127.0.0.1:9090/metrics > "$RUNNER_TEMP/metrics.txt"
+          grep -q 'itemba_http_requests_total' "$RUNNER_TEMP/metrics.txt"
+          grep -q 'route="GET /v1/context"' "$RUNNER_TEMP/metrics.txt"
+          if grep -q '00000000-0000-4000-8000-000000000001' "$RUNNER_TEMP/metrics.txt"; then
+            echo "Metrics leaked a tenant identifier"
+            exit 1
+          fi
+          if grep -Eq 'authorization|cookie|password|Bearer [A-Za-z0-9]' "$RUNNER_TEMP/platform-api.log"; then
+            echo "Runtime log contains a prohibited credential marker"
+            exit 1
+          fi
+      - name: Retain platform exercise evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-exercise-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/load-evidence.json
+            ${{ runner.temp }}/metrics.txt
+            ${{ runner.temp }}/platform-api.log
+          if-no-files-found: error
+          retention-days: 90
+      - name: Stop isolated API
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/platform-api.pid"; then
+            kill "$(cat "$RUNNER_TEMP/platform-api.pid")" || true
+          fi

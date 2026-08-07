@@ -2,106 +2,265 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
-  Bell, Building2, CalendarDays, ChartNoAxesCombined, ChevronDown, CircleHelp, ClipboardList,
-  Landmark, LayoutDashboard, LogOut, MapPin, Menu, PackageOpen, Search, Settings2, ShieldCheck,
-  ShoppingCart, Truck, UserRoundCog, UsersRound, Wifi, X,
+  Bell,
+  Cable,
+  ChartNoAxesCombined,
+  ClipboardCheck,
+  ClipboardList,
+  Landmark,
+  LayoutDashboard,
+  ListChecks,
+  Menu,
+  PackageOpen,
+  Search,
+  Settings2,
+  ShoppingCart,
+  Smartphone,
+  Truck,
+  UserRoundCog,
+  UsersRound,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
 import { useLanguage } from "@/components/language-provider";
-import { navigationGroups, type NavigationIcon } from "@/lib/navigation";
+import { LiveContextStrip } from "@/components/live-sales/live-context-strip";
+import { SessionControl } from "@/components/session-control";
+import { ShellContextProvider, useShellContext } from "@/components/shell/shell-context";
+import {
+  isNavigationItemActive,
+  visibleNavigationGroups,
+  type NavigationIcon,
+} from "@/lib/navigation";
 
 const iconMap: Record<NavigationIcon, LucideIcon> = {
-  dashboard: LayoutDashboard, customers: UsersRound, suppliers: Truck, sales: ShoppingCart,
-  purchases: ClipboardList, inventory: PackageOpen, finance: Landmark, people: UserRoundCog,
-  reports: ChartNoAxesCombined, settings: Settings2,
+  dashboard: LayoutDashboard,
+  customers: UsersRound,
+  suppliers: Truck,
+  sales: ShoppingCart,
+  purchases: ClipboardList,
+  inventory: PackageOpen,
+  finance: Landmark,
+  people: UserRoundCog,
+  reports: ChartNoAxesCombined,
+  settings: Settings2,
+  reconciliation: ListChecks,
+  devices: Smartphone,
+  integrations: Cable,
 };
+
+const focusableSelector = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
 
 export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
   const pathname = usePathname();
+  if (pathname === "/login") return <>{children}</>;
+  return <ShellContextProvider><AuthenticatedShell>{children}</AuthenticatedShell></ShellContextProvider>;
+}
+
+function AuthenticatedShell({ children }: Readonly<{ children: React.ReactNode }>) {
+  const pathname = usePathname();
   const { locale, setLocale, t, l } = useLanguage();
+  const { context, dashboard } = useShellContext();
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const mainContentRef = useRef<HTMLElement>(null);
+  const announcedPathRef = useRef(pathname);
+
+  const navigation = useMemo(
+    () => context.state === "ready" ? visibleNavigationGroups(context.data.permissions) : [],
+    [context],
+  );
+  const activeItem = navigation.flatMap((group) => group.items).find((item) => isNavigationItemActive(pathname, item.href));
+
+  const closeNavigation = useCallback((restoreFocus = true) => {
+    setNavigationOpen(false);
+    if (restoreFocus) window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    const desktopViewport = window.matchMedia("(min-width: 1025px)");
+    const closeDrawerOnDesktop = (event: MediaQueryListEvent) => {
+      if (event.matches) closeNavigation(false);
+    };
+    desktopViewport.addEventListener("change", closeDrawerOnDesktop);
+    return () => desktopViewport.removeEventListener("change", closeDrawerOnDesktop);
+  }, [closeNavigation]);
+
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (event.key === "Escape" && navigationOpen) closeNavigation();
+    };
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, [closeNavigation, navigationOpen]);
+
+  useEffect(() => {
+    if (!navigationOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [navigationOpen]);
+
+  useEffect(() => {
+    if (announcedPathRef.current === pathname) return;
+    announcedPathRef.current = pathname;
+    const frame = window.requestAnimationFrame(() => mainContentRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [pathname]);
+
+  function trapDrawerFocus(event: ReactKeyboardEvent<HTMLElement>) {
+    if (!navigationOpen || event.key !== "Tab") return;
+    const elements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(focusableSelector));
+    const first = elements.at(0);
+    const last = elements.at(-1);
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  const pendingApprovals = dashboard.state === "ready" ? dashboard.data.pending_approvals : null;
 
   return (
-    <div className="app-shell">
+    <div className="calm-shell">
       <a className="skip-link" href="#main-content">{t("skipToContent")}</a>
-      <aside className={`sidebar${navigationOpen ? " sidebar-open" : ""}`} aria-label={t("primaryNavigation")}>
-        <div className="sidebar-brand">
-          <Link href="/" className="brand-link" onClick={() => setNavigationOpen(false)} aria-label="ITEMBA-Z dashboard">
+      <aside
+        id="primary-navigation"
+        className={`calm-sidebar${navigationOpen ? " calm-sidebar-open" : ""}`}
+        onKeyDown={trapDrawerFocus}
+      >
+        <div className="calm-sidebar-brand">
+          <Link href="/" className="brand-link calm-brand-link" onClick={() => closeNavigation(false)} aria-label="ITEMBA-Z home">
             <BrandMark />
             <span><strong>ITEMBA-Z</strong><small>Control Center</small></span>
           </Link>
-          <button className="icon-button sidebar-close" type="button" onClick={() => setNavigationOpen(false)} aria-label={t("closeNavigation")}><X size={20} /></button>
+          <button ref={closeButtonRef} className="calm-icon-button calm-sidebar-close" type="button" onClick={() => closeNavigation()} aria-label={t("closeNavigation")}>
+            <X size={21} aria-hidden="true" />
+          </button>
         </div>
 
-        <nav className="sidebar-nav">
-          {navigationGroups.map((group) => (
-            <div className="nav-group" key={group.label}>
+        <nav className="calm-sidebar-nav" aria-label={t("primaryNavigation")}>
+          {context.state === "loading" ? (
+            <div className="calm-nav-loading" role="status" aria-live="polite" aria-label={t("navigationLoading")}>
+              {Array.from({ length: 7 }, (_, index) => <span key={index} />)}
+            </div>
+          ) : context.state === "ready" ? navigation.map((group) => (
+            <div className="calm-nav-group" key={group.label}>
               <p>{t(group.label)}</p>
               {group.items.map((item) => {
                 const Icon = iconMap[item.icon];
-                const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+                const active = isNavigationItemActive(pathname, item.href);
                 return (
-                  <Link key={item.href} href={item.href} className={`nav-item${active ? " nav-item-active" : ""}`} aria-current={active ? "page" : undefined} onClick={() => setNavigationOpen(false)}>
-                    <Icon size={19} strokeWidth={1.8} /><span>{l(item.label)}</span>{item.badge ? <span className="nav-badge">{item.badge}</span> : null}
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`calm-nav-item${active ? " calm-nav-item-active" : ""}`}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => closeNavigation(false)}
+                  >
+                    <Icon size={19} strokeWidth={1.8} aria-hidden="true" />
+                    <span>{l(item.label)}</span>
                   </Link>
                 );
               })}
             </div>
-          ))}
+          )) : (
+            <p className="calm-nav-unavailable" role="status">{t("navigationUnavailable")}</p>
+          )}
         </nav>
 
-        <div className="sidebar-system">
-          <div className="system-icon"><Wifi size={17} /></div>
-          <div><strong>{t("connected")}</strong><span>{t("configuration")}</span></div>
+        <div className="calm-sidebar-scope">
+          <span aria-hidden="true" />
+          <div>
+            <strong>{context.state === "ready" ? context.data.company_name : "ITEMBA-Z"}</strong>
+            <small>{context.state === "ready" ? context.data.branch_name : t("contextUnavailable")}</small>
+          </div>
         </div>
       </aside>
 
-      {navigationOpen ? <button className="sidebar-backdrop" onClick={() => setNavigationOpen(false)} aria-label={t("closeNavigation")} /> : null}
+      {navigationOpen ? <button className="calm-sidebar-backdrop" type="button" onClick={() => closeNavigation()} aria-label={t("closeNavigation")} /> : null}
 
-      <div className="shell-content" inert={navigationOpen ? true : undefined}>
-        <header className="topbar">
-          <div className="topbar-main">
-            <button className="icon-button mobile-menu" type="button" onClick={() => setNavigationOpen(true)} aria-label={t("openNavigation")}><Menu size={21} /></button>
-            <form className="global-search" action="/search" role="search">
+      <div className="calm-shell-content" inert={navigationOpen ? true : undefined}>
+        <header className="calm-topbar">
+          <div className="calm-topbar-main">
+            <button
+              ref={menuButtonRef}
+              className="calm-icon-button calm-mobile-menu"
+              type="button"
+              aria-label={t("openNavigation")}
+              aria-controls="primary-navigation"
+              aria-expanded={navigationOpen}
+              onClick={() => setNavigationOpen(true)}
+            >
+              <Menu size={21} aria-hidden="true" />
+            </button>
+
+            <form className="calm-global-search" action="/search" role="search">
               <Search size={18} aria-hidden="true" />
-              <input type="search" name="q" placeholder={t("searchPlaceholder")} aria-label={t("searchPlaceholder")} />
-              <kbd>⌘ K</kbd>
+              <input ref={searchRef} type="search" name="q" minLength={2} maxLength={120} placeholder={t("searchPlaceholder")} aria-label={t("searchPlaceholder")} />
+              <kbd>Ctrl K</kbd>
             </form>
-            <div className="topbar-actions">
-              <div className="language-toggle" role="group" aria-label={t("language")}>
+
+            <div className="calm-topbar-actions">
+              {pendingApprovals !== null ? (
+                <Link className="calm-approval-link" href="/#approvals" aria-label={`${t("viewApprovals")}: ${pendingApprovals}`}>
+                  <ClipboardCheck size={18} aria-hidden="true" />
+                  <span>{t("approvals")}</span>
+                  <strong>{pendingApprovals}</strong>
+                </Link>
+              ) : null}
+
+              <details className="header-popover calm-notifications">
+                <summary className="calm-icon-button" aria-label={t("notifications")}>
+                  <Bell size={19} aria-hidden="true" />
+                  {pendingApprovals && pendingApprovals > 0 ? <span className="notification-dot" /> : null}
+                </summary>
+                <div className="popover-panel notification-panel">
+                  <div className="popover-heading"><strong>{t("notifications")}</strong>{pendingApprovals !== null ? <span>{pendingApprovals}</span> : null}</div>
+                  <div className="notification-state" role="status">
+                    <strong>
+                      {dashboard.state === "ready"
+                        ? pendingApprovals && pendingApprovals > 0 ? t("viewApprovals") : t("noPendingApprovals")
+                        : dashboard.state === "loading" ? t("approvalsLoading") : t("approvalsUnavailable")}
+                    </strong>
+                    {dashboard.state === "unavailable" ? <small>{t("contextUnavailableHint")}</small> : null}
+                  </div>
+                </div>
+              </details>
+
+              <div className="language-toggle calm-language-toggle" role="group" aria-label={t("language")}>
                 <button type="button" className={locale === "en" ? "active" : ""} aria-pressed={locale === "en"} onClick={() => setLocale("en")}>EN</button>
                 <button type="button" className={locale === "sw" ? "active" : ""} aria-pressed={locale === "sw"} onClick={() => setLocale("sw")}>SW</button>
               </div>
-              <details className="header-popover">
-                <summary className="icon-button" aria-label={t("notifications")}><Bell size={19} /><span className="notification-dot" /></summary>
-                <div className="popover-panel notification-panel">
-                  <div className="popover-heading"><strong>{t("notifications")}</strong><span>3</span></div>
-                  <Link href="/purchases/PO-2026-00412"><span className="notice-dot warning" /><span><strong>{t("purchaseApproval")}</strong><small>PO-2026-00412 · TZS 14.8m</small></span></Link>
-                  <Link href="/inventory/SKU-HOM-0091"><span className="notice-dot danger" /><span><strong>{t("criticalStock")}</strong><small>{t("unitsAvailable")}</small></span></Link>
-                  <Link href="/finance"><span className="notice-dot info" /><span><strong>{t("bankReconciliation")}</strong><small>{t("unmatchedItems")}</small></span></Link>
-                </div>
-              </details>
-              <details className="header-popover profile-popover">
-                <summary className="profile-summary"><span className="avatar">AM</span><span className="profile-copy"><strong>Amina Msuya</strong><small>Finance Manager</small></span><ChevronDown size={15} /></summary>
-                <div className="popover-panel profile-panel">
-                  <p><span>{t("signedInAs")}</span><strong>amina.msuya@itemba.co.tz</strong></p>
-                  <button type="button"><CircleHelp size={17} />{t("help")}</button>
-                  <button type="button"><ShieldCheck size={17} />{t("securityAccess")}</button>
-                  <button type="button"><LogOut size={17} />{t("signOut")}</button>
-                </div>
-              </details>
+              <SessionControl />
             </div>
           </div>
-          <div className="context-bar" aria-label={t("activeContext")}>
-            <div><Building2 size={15} /><span><small>{t("company")}</small><strong>Itemba Trading Co. Ltd</strong></span></div>
-            <div><MapPin size={15} /><span><small>{t("branch")}</small><strong>Dar es Salaam HQ</strong></span></div>
-            <div><CalendarDays size={15} /><span><small>{t("period")}</small><strong>Aug 2026 <em>{t("open")}</em></strong></span></div>
-          </div>
+          <LiveContextStrip />
         </header>
-        <main id="main-content" className="main-content">{children}</main>
+
+        <p className="sr-only" role="status" aria-live="polite">{activeItem ? l(activeItem.label) : "ITEMBA-Z"}</p>
+        <main ref={mainContentRef} id="main-content" className="calm-main-content" tabIndex={-1}>{children}</main>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
+  allowedDevOrigins: ["localhost", "127.0.0.1"],
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },

@@ -1,0 +1,6 @@
+import type { CreateIntegrationRouteCommand, IntegrationRouteTransitionCommand } from "@/live-api/types";
+import { assertSameOrigin, liveResponse, problemResponse, requireIdempotencyKey, requireJsonBody } from "@/live-api/bff";
+import { createServerRepository } from "@/live-api/server-repository";
+export const dynamic = "force-dynamic";
+type Command = { action: "create_route"; command: CreateIntegrationRouteCommand } | { action: "transition_route"; id: string; command: IntegrationRouteTransitionCommand } | { action: "reset_circuit"; id: string; reason: string } | { action: "replay_delivery"; id: string; reason: string };
+export async function POST(request: Request) { try { assertSameOrigin(request); const key=requireIdempotencyKey(request); const body=await requireJsonBody<Command>(request); const repository=await createServerRepository(); switch(body.action){case "create_route":return liveResponse(await repository.createIntegrationRoute(body.command,key),201);case "transition_route":return liveResponse(await repository.transitionIntegrationRoute(body.id,body.command,key));case "reset_circuit":return liveResponse(await repository.resetIntegrationCircuit(body.id,body.reason,key));case "replay_delivery":return liveResponse(await repository.replayIntegrationDelivery(body.id,body.reason,key),202);} } catch(error){return problemResponse(error);} }

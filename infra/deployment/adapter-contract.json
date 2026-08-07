@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "status": "READY_FOR_PROVIDER_IMPLEMENTATION",
+  "actions": ["plan", "promote", "rollback"],
+  "required_inputs": ["target_environment", "release_commit", "release_bundle_sha256", "migration_bundle_sha256", "predecessor_evidence", "change_ticket", "rollback_plan"],
+  "security": {
+    "authentication": "workload_identity_only",
+    "long_lived_credentials": false,
+    "unmanaged_production_shell": false,
+    "separate_runtime_identities": ["api", "outbox_worker", "integration_worker", "migration", "recovery"],
+    "secret_values_in_outputs": false
+  },
+  "promotion": {
+    "immutable_artifacts_only": true,
+    "ordered_environments": ["configuration", "test", "staging", "pilot", "production"],
+    "database_migrations_before_workload": true,
+    "health_and_slo_gate_required": true,
+    "automatic_rollback_on_failed_health": true
+  },
+  "required_evidence": ["provider_plan_hash", "deployment_id", "migration_exit_status", "health_check_results", "slo_gate_results", "artifact_digests", "actor_identity", "approval_identity", "started_at", "completed_at", "rollback_result"]
+}

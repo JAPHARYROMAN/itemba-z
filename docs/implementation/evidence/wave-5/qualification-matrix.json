@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "updated": "2026-08-06",
+  "policy": "Repository automation proves control implementation; only retained production-like execution and accountable approval can close external gates.",
+  "suites": [
+    {
+      "id": "W5-Q01",
+      "name": "End-to-end workflow and maker-checker UAT",
+      "repository_status": "AUTOMATED_BASELINE",
+      "repository_evidence": [".github/workflows/ci.yml", "services/core-api/internal"],
+      "release_status": "EXTERNAL_EXECUTION_REQUIRED",
+      "required_external_evidence": "Named business-user scripts, results, exceptions and signatures"
+    },
+    {
+      "id": "W5-Q02",
+      "name": "Journal balance, stock conservation, subledger controls and reversals",
+      "repository_status": "AUTOMATED_BASELINE",
+      "repository_evidence": ["services/core-api/internal/finance", "services/core-api/internal/inventory", "scripts/verify-live-golden-sale.mjs"],
+      "release_status": "EXTERNAL_EXECUTION_REQUIRED",
+      "required_external_evidence": "Production-like migration and UAT reconciliation signed by Finance and Inventory"
+    },
+    {
+      "id": "W5-Q03",
+      "name": "Tenant, company, branch, warehouse, payroll and sensitive-finance isolation",
+      "repository_status": "AUTOMATED_BASELINE",
+      "repository_evidence": [".github/workflows/security.yml", "services/core-api/internal/platform/store/postgres/integration_test.go"],
+      "release_status": "EXTERNAL_EXECUTION_REQUIRED",
+      "required_external_evidence": "Production identity and authorization test results plus independent penetration test"
+    },
+    {
+      "id": "W5-Q04",
+      "name": "Idempotency, duplicate sync, concurrency, ambiguous response and retry",
+      "repository_status": "AUTOMATED_BASELINE",
+      "repository_evidence": ["services/core-api/internal/mobile", "services/core-api/internal/integrations"],
+      "release_status": "EXTERNAL_EXECUTION_REQUIRED",
+      "required_external_evidence": "Production-like concurrency and connector fault-injection results"
+    },
+    {
+      "id": "W5-Q05",
+      "name": "Closed periods, effective dates, currency and timezone boundaries",
+      "repository_status": "AUTOMATED_BASELINE",
+      "repository_evidence": ["services/core-api/internal/configuration", "services/core-api/internal/finance", "services/core-api/internal/reporting"],
+      "release_status": "EXTERNAL_EXECUTION_REQUIRED",
+      "required_external_evidence": "Finance-approved boundary cases using approved statutory configuration"
+    },
+    {
+      "id": "W5-Q06",
+      "name": "Integration outage, replay, dead-letter and reconciliation",
+      "repository_status": "AUTOMATED_BASELINE",
+      "repository_evidence": [".github/workflows/ci.yml", "services/core-api/internal/integrations"],
+      "release_status": "EXTERNAL_EXECUTION_REQUIRED",
+      "required_external_evidence": "Certified provider sandbox and production-like outage/replay results"
+    },
+    {
+      "id": "W5-Q07",
+      "name": "Accessibility, bilingual, printing and Android device matrix",
+      "repository_status": "AUTOMATED_BASELINE",
+      "repository_evidence": ["apps/control-center", "apps/sales-mobile", ".github/workflows/ci.yml"],
+      "release_status": "EXTERNAL_EXECUTION_REQUIRED",
+      "required_external_evidence": "Human accessibility review, English/Swahili review, physical printers and approved Android device matrix"
+    },
+    {
+      "id": "W5-Q08",
+      "name": "Load, soak, dependency, restore and disaster recovery",
+      "repository_status": "AUTOMATED_BASELINE",
+      "repository_evidence": [".github/workflows/platform-exercises.yml", ".github/workflows/recovery-assurance.yml", ".github/workflows/security.yml"],
+      "release_status": "EXTERNAL_EXECUTION_REQUIRED",
+      "required_external_evidence": "Production-like retained results against approved SLO, RPO and RTO"
+    },
+    {
+      "id": "W5-Q09",
+      "name": "Payroll parallel and statutory/accounting reconciliation",
+      "repository_status": "AUTOMATED_BASELINE",
+      "repository_evidence": ["services/core-api/internal/workforce", "services/core-api/internal/people"],
+      "release_status": "EXTERNAL_EXECUTION_REQUIRED",
+      "required_external_evidence": "Two approved payroll parallel runs and Tanzanian professional sign-off"
+    },
+    {
+      "id": "W5-Q10",
+      "name": "Two complete migration rehearsals and opening reconciliation",
+      "repository_status": "CONTROL_PIPELINE_AUTOMATED",
+      "repository_evidence": [".github/workflows/wave5-qualification.yml", "services/core-api/internal/platform/migrationassurance"],
+      "release_status": "EXTERNAL_EXECUTION_REQUIRED",
+      "required_external_evidence": "Two distinct PRODUCTION_TRIAL batches, ten passing reconciliation domains and accountable signatures"
+    }
+  ]
+}

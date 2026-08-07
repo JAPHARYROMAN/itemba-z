@@ -4,9 +4,10 @@ info:
   version: 1.0.0
   description: >-
     Versioned contract for the ITEMBA-Z Control Center, Sales POS, and approved
-    integrations. Posted-sale money uses integer minor units and the current
-    transactional slice accepts whole-unit quantities. Planned read models use
-    decimal strings where fractional quantities or display money are required.
+    integrations. Posted-sale money uses integer minor units: exactly 100 stored
+    minor units equal TZS 1. The current transactional slice and live bootstrap
+    read models use whole-unit quantities. Every JSON integer is constrained to
+    the JavaScript safe-integer range even though PostgreSQL retains bigint.
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
@@ -30,7 +31,218 @@ tags:
     description: Atomic sales, receipts, and linked reversals.
   - name: Mobile Sync
     description: Idempotent mobile transaction synchronization.
+  - name: Banking
+    description: Cash and bank account statement reconciliation.
+  - name: Finance
+    description: Governed journals, transfers, adjustments, reversals, and fiscal-period control.
+  - name: People
+    description: Employee, attendance, leave, loan, payroll, and payslip control.
+  - name: Settings
+    description: Effective-dated policy, integration, template, and numbering configuration.
+  - name: Commercial
+    description: Governed supplier/product masters, RFQs, quotations, comparisons, and awards.
+  - name: Inventory Control
+    description: Replenishment policies, lot and expiry traceability, and costing evidence.
+  - name: Audit
+    description: Immutable, actor-attributed timelines for governed records.
+  - name: Integrations
+    description: Governed external-provider routes, delivery evidence, reconciliation, replay, and circuit recovery.
 paths:
+  /v1/integrations:
+    get:
+      summary: Get the integration operations workspace
+      operationId: getIntegrationWorkspace
+      tags: [Integrations]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Integration workspace, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationWorkspace' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/integrations/routes:
+    post:
+      summary: Create an immutable integration route version
+      operationId: createIntegrationRoute
+      tags: [Integrations]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateIntegrationRouteCommand' } } } }
+      responses:
+        '201': { description: Route draft created, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationRoute' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/integrations/routes/{routeID}/transitions:
+    parameters: [ { name: routeID, in: path, required: true, schema: { type: string, format: uuid } } ]
+    post:
+      summary: Independently activate, suspend, or retire a route
+      operationId: transitionIntegrationRoute
+      tags: [Integrations]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationRouteTransitionCommand' } } } }
+      responses:
+        '200': { description: Route transitioned, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationRoute' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/integrations/routes/{routeID}/circuit-reset:
+    parameters: [ { name: routeID, in: path, required: true, schema: { type: string, format: uuid } } ]
+    post:
+      summary: Reset an integration circuit with immutable evidence
+      operationId: resetIntegrationCircuit
+      tags: [Integrations]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReasonCommand' } } } }
+      responses:
+        '200': { description: Circuit reset, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationRoute' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/integrations/deliveries/{deliveryID}/replay:
+    parameters: [ { name: deliveryID, in: path, required: true, schema: { type: string, format: uuid } } ]
+    post:
+      summary: Replay a dead-letter delivery under a fresh bounded attempt budget
+      operationId: replayIntegrationDelivery
+      tags: [Integrations]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReasonCommand' } } } }
+      responses:
+        '202': { description: Delivery queued for replay, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationDelivery' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/inventory/control:
+    get:
+      summary: Get the governed inventory-control workspace
+      operationId: getInventoryControlWorkspace
+      tags: [Inventory Control]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Inventory-control workspace, content: { application/json: { schema: { $ref: '#/components/schemas/InventoryControlWorkspace' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/inventory/policies:
+    post:
+      summary: Create an inventory policy revision
+      operationId: createInventoryPolicy
+      tags: [Inventory Control]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateInventoryPolicyCommand' } } } }
+      responses:
+        '201': { description: Policy created, content: { application/json: { schema: { $ref: '#/components/schemas/InventoryPolicy' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/inventory/policies/{policyID}/transitions:
+    post:
+      summary: Submit, activate, or reject an inventory policy
+      operationId: transitionInventoryPolicy
+      tags: [Inventory Control]
+      x-implementation-status: implemented
+      parameters: [ { name: policyID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InventoryPolicyTransitionCommand' } } } }
+      responses:
+        '200': { description: Policy transitioned, content: { application/json: { schema: { $ref: '#/components/schemas/InventoryPolicy' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/inventory/goods-receipts/{receiptID}/lots:
+    post:
+      summary: Register exact lot allocations for an approved goods receipt
+      operationId: registerReceiptLots
+      tags: [Inventory Control]
+      x-implementation-status: implemented
+      parameters: [ { name: receiptID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RegisterReceiptLotsCommand' } } } }
+      responses:
+        '201': { description: Lot allocation registered, content: { application/json: { schema: { $ref: '#/components/schemas/LotRegistration' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/commercial:
+    get:
+      summary: Get the governed commercial sourcing workspace
+      operationId: getCommercialWorkspace
+      tags: [Commercial]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Commercial workspace, content: { application/json: { schema: { $ref: '#/components/schemas/CommercialWorkspace' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/master-data/revisions:
+    post:
+      summary: Create a supplier or product master-data revision
+      operationId: createMasterDataRevision
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateMasterRevisionCommand' } } } }
+      responses:
+        '201': { description: Revision created, content: { application/json: { schema: { $ref: '#/components/schemas/MasterRevision' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/master-data/revisions/{revisionID}/transitions:
+    post:
+      summary: Transition a master-data revision
+      operationId: transitionMasterDataRevision
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { name: revisionID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MasterRevisionTransitionCommand' } } } }
+      responses:
+        '200': { description: Revision transitioned, content: { application/json: { schema: { $ref: '#/components/schemas/MasterRevision' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/purchases/rfqs:
+    post:
+      summary: Create a request for quotation
+      operationId: createRFQ
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateRFQCommand' } } } }
+      responses:
+        '201': { description: RFQ created, content: { application/json: { schema: { $ref: '#/components/schemas/RFQ' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /v1/purchases/rfqs/{rfqID}/transitions:
+    post:
+      summary: Submit, approve, or cancel an RFQ
+      operationId: transitionRFQ
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { name: rfqID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RFQTransitionCommand' } } } }
+      responses:
+        '200': { description: RFQ transitioned, content: { application/json: { schema: { $ref: '#/components/schemas/RFQ' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/purchases/supplier-quotes:
+    post:
+      summary: Record a supplier quotation against an approved RFQ
+      operationId: createSupplierQuote
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateSupplierQuoteCommand' } } } }
+      responses:
+        '201': { description: Supplier quotation recorded, content: { application/json: { schema: { $ref: '#/components/schemas/SupplierQuote' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/purchases/supplier-quotes/{quoteID}/submission:
+    post:
+      summary: Submit a supplier quotation for comparison
+      operationId: submitSupplierQuote
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { name: quoteID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReasonCommand' } } } }
+      responses:
+        '200': { description: Supplier quotation submitted, content: { application/json: { schema: { $ref: '#/components/schemas/SupplierQuote' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/purchases/rfqs/{rfqID}/comparison:
+    get:
+      summary: Compare compliant supplier quotations
+      operationId: compareSupplierQuotes
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { name: rfqID, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses:
+        '200': { description: Supplier comparison, content: { application/json: { schema: { $ref: '#/components/schemas/RFQComparison' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/purchases/rfqs/{rfqID}/award:
+    post:
+      summary: Award an RFQ and atomically create a purchase order
+      operationId: awardRFQ
+      tags: [Commercial]
+      x-implementation-status: implemented
+      parameters: [ { name: rfqID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AwardRFQCommand' } } } }
+      responses:
+        '201': { description: Award and purchase order created, content: { application/json: { schema: { $ref: '#/components/schemas/SourcingAward' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
   /healthz:
     get:
       summary: Check process health
@@ -68,7 +280,7 @@ paths:
       summary: Get the caller's working context
       operationId: getWorkingContext
       tags: [Context]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       responses:
         '200':
           description: Current authorized working context.
@@ -78,12 +290,14 @@ paths:
                 $ref: '#/components/schemas/WorkingContext'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /v1/dashboard:
     get:
       summary: Get governed executive metrics
       operationId: getExecutiveDashboard
       tags: [Dashboard]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/LegalCompanyId'
         - $ref: '#/components/parameters/BranchId'
@@ -100,6 +314,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Dashboard'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /v1/customers:
@@ -107,9 +325,8 @@ paths:
       summary: List scoped customers
       operationId: listCustomers
       tags: [Customers]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
-        - $ref: '#/components/parameters/LegalCompanyId'
         - name: query
           in: query
           schema: { type: string, maxLength: 120 }
@@ -118,6 +335,7 @@ paths:
           schema: { type: boolean }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/CatalogSnapshotToken'
       responses:
         '200':
           description: Customers visible in the caller's scope.
@@ -127,24 +345,74 @@ paths:
                 $ref: '#/components/schemas/CustomerPage'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/customers/{customer_id}/account:
+    get:
+      summary: Get a customer account, effective credit policy, and receivables ageing
+      operationId: getCustomerAccount
+      tags: [Customers]
+      x-implementation-status: implemented
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Authoritative customer account explanation as of the request time.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerAccountDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/customers/{customer_id}/credit-policies:
+    post:
+      summary: Schedule an append-only customer credit policy
+      operationId: scheduleCustomerCreditPolicy
+      tags: [Customers]
+      x-implementation-status: implemented
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScheduleCreditPolicyCommand' }
+      responses:
+        '201':
+          description: Policy scheduled, or the original idempotent result returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreditPolicy' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /v1/products:
     get:
       summary: List scoped products and availability
       operationId: listProducts
       tags: [Products]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
-        - $ref: '#/components/parameters/LegalCompanyId'
-        - $ref: '#/components/parameters/BranchId'
-        - name: warehouse_id
-          in: query
-          required: true
-          schema: { type: string, format: uuid }
         - name: query
           in: query
           schema: { type: string, maxLength: 120 }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/CatalogSnapshotToken'
       responses:
         '200':
           description: Authorized products, prices, and available quantities.
@@ -154,6 +422,716 @@ paths:
                 $ref: '#/components/schemas/ProductPage'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/customers/{customer_id}/collections:
+    post:
+      summary: Receive and allocate a customer collection
+      operationId: receiveCustomerCollection
+      tags: [Customers, Finance]
+      x-implementation-status: implemented
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReceiveCustomerCollectionCommand' } } } }
+      responses:
+        '201': { description: Collection allocated and posted exactly once., content: { application/json: { schema: { $ref: '#/components/schemas/CustomerCollection' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/suppliers:
+    get:
+      summary: List active and inactive suppliers in company scope
+      operationId: listSuppliers
+      tags: [Purchases]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200': { description: Scoped supplier master data., content: { application/json: { schema: { $ref: '#/components/schemas/SupplierPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/operations/documents:
+    get:
+      summary: List scoped commercial and inventory documents
+      operationId: listOperationDocuments
+      tags: [Operations]
+      x-implementation-status: implemented
+      parameters:
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/OperationDocumentType' } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200': { description: Scoped immutable workflow documents., content: { application/json: { schema: { $ref: '#/components/schemas/OperationPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a controlled workflow document draft
+      operationId: createOperationDocument
+      tags: [Operations]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateOperationCommand' } } } }
+      responses:
+        '201': { description: Draft created exactly once., content: { application/json: { schema: { $ref: '#/components/schemas/OperationDocument' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/operations/documents/{document_id}:
+    get:
+      summary: Get a scoped workflow document
+      operationId: getOperationDocument
+      tags: [Operations]
+      x-implementation-status: implemented
+      parameters:
+        - { name: document_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Immutable workflow document., content: { application/json: { schema: { $ref: '#/components/schemas/OperationDocument' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/operations/documents/{document_id}/transitions:
+    post:
+      summary: Apply an authorized workflow transition and its atomic effects
+      operationId: transitionOperationDocument
+      tags: [Operations]
+      x-implementation-status: implemented
+      parameters:
+        - { name: document_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TransitionOperationCommand' } } } }
+      responses:
+        '200': { description: Transition committed exactly once., content: { application/json: { schema: { $ref: '#/components/schemas/OperationDocument' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/banking/accounts:
+    get:
+      summary: List scoped cash and bank accounts
+      operationId: listBankAccounts
+      tags: [Banking]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Active and inactive accounts visible in the exact working scope., content: { application/json: { schema: { $ref: '#/components/schemas/BankAccountPage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/banking/statements:
+    get:
+      summary: List scoped imported bank statements
+      operationId: listBankStatements
+      tags: [Banking]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/PageSize' }]
+      responses:
+        '200': { description: Imported and reconciled statements., content: { application/json: { schema: { $ref: '#/components/schemas/BankStatementPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Import an immutable balanced bank statement
+      operationId: importBankStatement
+      tags: [Banking]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/CorrelationId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ImportBankStatementCommand' } } } }
+      responses:
+        '201': { description: Balanced statement imported exactly once., content: { application/json: { schema: { $ref: '#/components/schemas/BankStatement' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /v1/banking/statements/{statement_id}:
+    get:
+      summary: Get statement evidence and exact ledger candidates
+      operationId: getBankStatement
+      tags: [Banking]
+      x-implementation-status: implemented
+      parameters: [{ name: statement_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: 'Statement lines, matches, and unused exact-value candidates.', content: { application/json: { schema: { $ref: '#/components/schemas/BankStatement' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/banking/statements/{statement_id}/lines/{line_id}/matches:
+    post:
+      summary: Match a statement line to one exact general-ledger cash entry
+      operationId: matchBankStatementLine
+      tags: [Banking]
+      x-implementation-status: implemented
+      parameters:
+        - { name: statement_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: line_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MatchBankStatementLineCommand' } } } }
+      responses:
+        '201': { description: Append-only one-to-one match recorded., content: { application/json: { schema: { $ref: '#/components/schemas/BankStatement' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/banking/statements/{statement_id}/reconciliation:
+    post:
+      summary: Independently approve a fully matched reconciliation
+      operationId: reconcileBankStatement
+      tags: [Banking]
+      x-implementation-status: implemented
+      parameters:
+        - { name: statement_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReconcileBankStatementCommand' } } } }
+      responses:
+        '201': { description: Reconciliation approval recorded without mutating source evidence., content: { application/json: { schema: { $ref: '#/components/schemas/BankStatement' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/documents:
+    get:
+      summary: List governed financial documents
+      operationId: listFinancialDocuments
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/PageSize' }]
+      responses:
+        '200': { description: Scoped financial-document register., content: { application/json: { schema: { $ref: '#/components/schemas/FinancialDocumentPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a governed financial document
+      operationId: createFinancialDocument
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/CorrelationId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateFinancialDocumentCommand' } } } }
+      responses:
+        '201': { description: Draft created exactly once., content: { application/json: { schema: { $ref: '#/components/schemas/FinancialDocument' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/documents/{document_id}:
+    get:
+      summary: Get a governed financial document
+      operationId: getFinancialDocument
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: document_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Financial document and immutable posting lines., content: { application/json: { schema: { $ref: '#/components/schemas/FinancialDocument' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/finance/documents/{document_id}/transitions:
+    post:
+      summary: Submit, reject, or independently post a financial document
+      operationId: transitionFinancialDocument
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: document_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/CorrelationId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TransitionFinancialDocumentCommand' } } } }
+      responses:
+        '201': { description: Transition and any balanced posting committed exactly once., content: { application/json: { schema: { $ref: '#/components/schemas/FinancialDocument' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/fiscal-periods:
+    get:
+      summary: List fiscal periods
+      operationId: listFiscalPeriods
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Legal-company fiscal periods., content: { application/json: { schema: { $ref: '#/components/schemas/FiscalPeriodPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/finance/fiscal-periods/{period_id}/actions:
+    post:
+      summary: Request fiscal-period close or reopen
+      operationId: requestFiscalPeriodAction
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: period_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/FiscalPeriodActionCommand' } } } }
+      responses:
+        '201': { description: Close or reopen request recorded., content: { application/json: { schema: { $ref: '#/components/schemas/FiscalPeriodActionRequest' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/fiscal-period-actions/{action_id}/approval:
+    post:
+      summary: Independently approve fiscal-period close or reopen
+      operationId: approveFiscalPeriodAction
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: action_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ApprovalReasonCommand' } } } }
+      responses:
+        '201': { description: Fiscal-period state changed after close gates and separation-of-duties checks., content: { application/json: { schema: { $ref: '#/components/schemas/FiscalPeriodActionRequest' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/fiscal-period-actions:
+    get:
+      summary: List fiscal-period close and reopen requests
+      operationId: listFiscalPeriodActions
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Company fiscal action register including pending maker-checker work., content: { application/json: { schema: { $ref: '#/components/schemas/FiscalPeriodActionPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/finance/accounts:
+    get:
+      summary: List the governed legal-company chart of accounts
+      operationId: listGLAccounts
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Chart of accounts including pending governance work., content: { application/json: { schema: { $ref: '#/components/schemas/GLAccountPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Submit a general-ledger account
+      operationId: createGLAccount
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateGLAccountCommand' } } } }
+      responses:
+        '201': { description: Account submitted for independent approval., content: { application/json: { schema: { $ref: '#/components/schemas/GLAccount' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/accounts/{account_id}/decisions:
+    post:
+      summary: Independently approve or reject a submitted account
+      operationId: decideGLAccount
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: account_id, in: path, required: true, schema: { type: string } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GovernanceDecisionCommand' } } } }
+      responses:
+        '200': { description: Governance decision recorded., content: { application/json: { schema: { $ref: '#/components/schemas/GLAccount' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/posting-mappings:
+    get:
+      summary: List effective-dated posting mappings
+      operationId: listPostingMappings
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses:
+        '200': { description: Posting mapping register., content: { application/json: { schema: { $ref: '#/components/schemas/PostingMappingPage' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Submit an effective-dated posting mapping
+      operationId: createPostingMapping
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreatePostingMappingCommand' } } } }
+      responses:
+        '201': { description: Mapping submitted for independent approval., content: { application/json: { schema: { $ref: '#/components/schemas/PostingMapping' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/finance/posting-mappings/{mapping_id}/decisions:
+    post:
+      summary: Independently approve or reject a posting mapping
+      operationId: decidePostingMapping
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: mapping_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GovernanceDecisionCommand' } } } }
+      responses:
+        '200': { description: Governance decision recorded., content: { application/json: { schema: { $ref: '#/components/schemas/PostingMapping' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/reports/financial/trial-balance:
+    get:
+      summary: Run the legal-company trial balance
+      operationId: runTrialBalance
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: as_of, in: query, required: true, schema: { type: string, format: date } }]
+      responses:
+        '200': { description: Balanced account-level trial balance., content: { application/json: { schema: { $ref: '#/components/schemas/TrialBalance' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/reports/financial/general-ledger:
+    get:
+      summary: Drill into one general-ledger account
+      operationId: runGeneralLedger
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: from, in: query, required: true, schema: { type: string, format: date } }, { name: to, in: query, required: true, schema: { type: string, format: date } }, { name: account_id, in: query, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Chronological ledger with running balance and source drill-down., content: { application/json: { schema: { $ref: '#/components/schemas/GeneralLedger' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/reports/financial/profit-and-loss:
+    get:
+      summary: Run the profit and loss statement
+      operationId: runProfitAndLoss
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: from, in: query, required: true, schema: { type: string, format: date } }, { name: to, in: query, required: true, schema: { type: string, format: date } }]
+      responses:
+        '200': { description: 'Revenue, expenses, and net profit from the immutable ledger.', content: { application/json: { schema: { $ref: '#/components/schemas/ProfitAndLoss' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/reports/financial/balance-sheet:
+    get:
+      summary: Run the balance sheet
+      operationId: runBalanceSheet
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: as_of, in: query, required: true, schema: { type: string, format: date } }]
+      responses:
+        '200': { description: 'Assets, liabilities, equity, current earnings, and reconciliation status.', content: { application/json: { schema: { $ref: '#/components/schemas/BalanceSheet' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/reports/financial/cash-flow:
+    get:
+      summary: Run the cash-flow statement
+      operationId: runCashFlow
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: from, in: query, required: true, schema: { type: string, format: date } }, { name: to, in: query, required: true, schema: { type: string, format: date } }]
+      responses:
+        '200': { description: Cash movement reconciled from opening to closing cash., content: { application/json: { schema: { $ref: '#/components/schemas/CashFlow' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/reports/financial/exports:
+    post:
+      summary: Generate and retain an audited financial report CSV export
+      operationId: exportFinancialReport
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ExportFinancialReportCommand' } } } }
+      responses:
+        '201': { description: Idempotent retained export artifact., content: { application/json: { schema: { $ref: '#/components/schemas/ReportExportArtifact' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/finance/budgets:
+    get:
+      summary: List governed legal-company budgets
+      operationId: listBudgets
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses: { '200': { description: Governed budgets., content: { application/json: { schema: { $ref: '#/components/schemas/BudgetPage' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+    post:
+      summary: Create an immutable draft budget
+      operationId: createBudget
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateBudgetCommand' } } } }
+      responses: { '201': { description: Draft budget., content: { application/json: { schema: { $ref: '#/components/schemas/Budget' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/budgets/{budget_id}/transitions:
+    post:
+      summary: Submit or independently decide a budget
+      operationId: transitionBudget
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: budget_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdvancedFinanceTransitionCommand' } } } }
+      responses: { '200': { description: Current budget., content: { application/json: { schema: { $ref: '#/components/schemas/Budget' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/budgets/{budget_id}/actual:
+    get:
+      summary: Run approved budget versus actual
+      operationId: runBudgetActual
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: budget_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Ledger-derived budget comparison., content: { application/json: { schema: { $ref: '#/components/schemas/BudgetActual' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/finance/assets:
+    get:
+      summary: List the scoped fixed-asset register
+      operationId: listFixedAssets
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses: { '200': { description: Fixed assets., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAssetPage' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+    post:
+      summary: Create an immutable draft fixed asset
+      operationId: createFixedAsset
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateFixedAssetCommand' } } } }
+      responses: { '201': { description: Draft fixed asset., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAsset' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/assets/{asset_id}/transitions:
+    post:
+      summary: Submit or independently decide fixed-asset capitalization
+      operationId: transitionFixedAsset
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdvancedFinanceTransitionCommand' } } } }
+      responses: { '200': { description: Current fixed asset., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAsset' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/assets/from-purchase:
+    post:
+      summary: Create a fixed-asset draft from a posted matched supplier-invoice line
+      operationId: createFixedAssetFromPurchase
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreatePurchasedFixedAssetCommand' } } } }
+      responses: { '201': { description: Purchase-linked fixed-asset draft with server-derived cost., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAsset' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/assets/{asset_id}/depreciation:
+    post:
+      summary: Post one idempotent straight-line depreciation period
+      operationId: depreciateFixedAsset
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DepreciateFixedAssetCommand' } } } }
+      responses: { '201': { description: Posted depreciation evidence., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAssetDepreciation' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/assets/{asset_id}/disposal:
+    post:
+      summary: Post a controlled fixed-asset disposal
+      operationId: disposeFixedAsset
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: asset_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DisposeFixedAssetCommand' } } } }
+      responses: { '200': { description: Disposed fixed asset., content: { application/json: { schema: { $ref: '#/components/schemas/FixedAsset' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/facilities:
+    get:
+      summary: List governed borrowing facilities and ledger-derived balances
+      operationId: listTreasuryFacilities
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses: { '200': { description: Treasury facilities., content: { application/json: { schema: { $ref: '#/components/schemas/TreasuryFacilityPage' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+    post:
+      summary: Create an immutable draft borrowing facility
+      operationId: createTreasuryFacility
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateTreasuryFacilityCommand' } } } }
+      responses: { '201': { description: Draft treasury facility., content: { application/json: { schema: { $ref: '#/components/schemas/TreasuryFacility' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/facilities/{facility_id}/transitions:
+    post:
+      summary: Submit, independently decide, or settle-close a treasury facility
+      operationId: transitionTreasuryFacility
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: facility_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TreasuryTransitionCommand' } } } }
+      responses: { '200': { description: Current treasury facility., content: { application/json: { schema: { $ref: '#/components/schemas/TreasuryFacility' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/facilities/{facility_id}/transactions:
+    post:
+      summary: Post a drawdown, interest accrual, principal repayment, or interest payment
+      operationId: postTreasuryTransaction
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: facility_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PostTreasuryTransactionCommand' } } } }
+      responses: { '201': { description: Facility with posted transaction and current balances., content: { application/json: { schema: { $ref: '#/components/schemas/TreasuryFacility' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/intercompany:
+    get:
+      summary: List intercompany transactions involving the assigned legal company
+      operationId: listIntercompanyTransactions
+      tags: [Finance]
+      x-implementation-status: implemented
+      responses: { '200': { description: Intercompany queue., content: { application/json: { schema: { $ref: '#/components/schemas/IntercompanyPage' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+    post:
+      summary: Create an immutable source-company intercompany transaction
+      operationId: createIntercompanyTransaction
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateIntercompanyCommand' } } } }
+      responses: { '201': { description: Draft intercompany transaction., content: { application/json: { schema: { $ref: '#/components/schemas/IntercompanyTransaction' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/finance/intercompany/{transaction_id}/transitions:
+    post:
+      summary: Submit, dual-company approve, post, or reject an intercompany transaction
+      operationId: transitionIntercompanyTransaction
+      tags: [Finance]
+      x-implementation-status: implemented
+      parameters: [{ name: transaction_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IntercompanyTransitionCommand' } } } }
+      responses: { '200': { description: Current intercompany transaction., content: { application/json: { schema: { $ref: '#/components/schemas/IntercompanyTransaction' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/reports/financial/consolidation:
+    get:
+      summary: Run tenant-group consolidation with intercompany eliminations
+      operationId: runGroupConsolidation
+      tags: [Reports]
+      x-implementation-status: implemented
+      parameters: [{ name: as_of, in: query, required: true, schema: { type: string, format: date-time } }]
+      responses: { '200': { description: Ledger-derived group consolidation., content: { application/json: { schema: { $ref: '#/components/schemas/GroupConsolidation' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/hr/workforce:
+    get:
+      summary: Get governed workforce scheduling, document, and payroll output evidence
+      operationId: getWorkforceSnapshot
+      tags: [People]
+      x-implementation-status: implemented
+      responses: { '200': { description: Workforce snapshot., content: { application/json: { schema: { $ref: '#/components/schemas/WorkforceSnapshot' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/hr/shift-templates:
+    post:
+      summary: Create a shift-template revision
+      operationId: createShiftTemplate
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateShiftTemplateCommand' } } } }
+      responses: { '201': { description: Shift template., content: { application/json: { schema: { $ref: '#/components/schemas/ShiftTemplate' } } } }, '400': { $ref: '#/components/responses/BadRequest' } }
+  /v1/hr/shift-templates/{templateID}/transitions:
+    post:
+      summary: Submit, activate, or reject a shift template
+      operationId: transitionShiftTemplate
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [ { name: templateID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WorkforceTransitionCommand' } } } }
+      responses: { '200': { description: Shift template., content: { application/json: { schema: { $ref: '#/components/schemas/ShiftTemplate' } } } }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/hr/shift-assignments:
+    post:
+      summary: Create an employee shift assignment
+      operationId: createShiftAssignment
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateShiftAssignmentCommand' } } } }
+      responses: { '201': { description: Shift assignment., content: { application/json: { schema: { $ref: '#/components/schemas/ShiftAssignment' } } } }, '400': { $ref: '#/components/responses/BadRequest' } }
+  /v1/hr/shift-assignments/{assignmentID}/transitions:
+    post:
+      summary: Submit, approve, or reject a shift assignment
+      operationId: transitionShiftAssignment
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [ { name: assignmentID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WorkforceTransitionCommand' } } } }
+      responses: { '200': { description: Shift assignment., content: { application/json: { schema: { $ref: '#/components/schemas/ShiftAssignment' } } } }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/hr/employee-documents:
+    post:
+      summary: Register immutable employee document metadata
+      operationId: registerEmployeeDocument
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RegisterEmployeeDocumentCommand' } } } }
+      responses: { '201': { description: Employee document., content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeDocument' } } } }, '400': { $ref: '#/components/responses/BadRequest' } }
+  /v1/hr/payroll-runs/{payrollID}/exports:
+    post:
+      summary: Generate a reproducible configured payroll output artifact
+      operationId: generatePayrollArtifact
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [ { name: payrollID, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GeneratePayrollArtifactCommand' } } } }
+      responses: { '201': { description: Payroll artifact including generated content., content: { application/json: { schema: { $ref: '#/components/schemas/PayrollArtifact' } } } }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/hr:
+    get:
+      summary: Load the authorized people and payroll workspace
+      operationId: getPeopleSnapshot
+      tags: [People]
+      x-implementation-status: implemented
+      responses: { '200': { description: People workspace., content: { application/json: { schema: { $ref: '#/components/schemas/PeopleSnapshot' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/hr/employees:
+    post:
+      summary: Create an employee master record
+      operationId: createEmployee
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateEmployeeCommand' } } } }
+      responses: { '201': { description: Employee., content: { application/json: { schema: { $ref: '#/components/schemas/Employee' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/hr/attendance:
+    post:
+      summary: Record or reverse an append-only attendance entry
+      operationId: recordAttendance
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AttendanceCommand' } } } }
+      responses: { '201': { description: Attendance entry., content: { application/json: { schema: { $ref: '#/components/schemas/Attendance' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/hr/leave-types:
+    post:
+      summary: Create effective-dated bilingual leave configuration
+      operationId: createLeaveType
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LeaveTypeCommand' } } } }
+      responses: { '201': { description: Leave type., content: { application/json: { schema: { $ref: '#/components/schemas/LeaveType' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/hr/leave-requests:
+    post:
+      summary: Create a leave request
+      operationId: createLeaveRequest
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LeaveCommand' } } } }
+      responses: { '201': { description: Leave request., content: { application/json: { schema: { $ref: '#/components/schemas/LeaveRequest' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/hr/leave-requests/{leave_id}/transitions:
+    post:
+      summary: Submit, independently approve, or reject leave
+      operationId: transitionLeaveRequest
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [{ name: leave_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PeopleTransitionCommand' } } } }
+      responses: { '200': { description: Leave request., content: { application/json: { schema: { $ref: '#/components/schemas/LeaveRequest' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/hr/loans:
+    post:
+      summary: Create an employee loan
+      operationId: createEmployeeLoan
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LoanCommand' } } } }
+      responses: { '201': { description: Employee loan., content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeLoan' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/hr/loans/{loan_id}/transitions:
+    post:
+      summary: Submit, independently approve, post, or reject a loan
+      operationId: transitionEmployeeLoan
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [{ name: loan_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PeopleTransitionCommand' } } } }
+      responses: { '200': { description: Employee loan., content: { application/json: { schema: { $ref: '#/components/schemas/EmployeeLoan' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/hr/payroll-runs:
+    post:
+      summary: Create a payroll run with employee payslip lines
+      operationId: createPayrollRun
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PayrollCommand' } } } }
+      responses: { '201': { description: Payroll run., content: { application/json: { schema: { $ref: '#/components/schemas/PayrollRun' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/hr/payroll-runs/{payroll_id}/transitions:
+    post:
+      summary: Submit, independently approve, post, or reject payroll
+      operationId: transitionPayrollRun
+      tags: [People]
+      x-implementation-status: implemented
+      parameters: [{ name: payroll_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PeopleTransitionCommand' } } } }
+      responses: { '200': { description: Posted payroll and payslips., content: { application/json: { schema: { $ref: '#/components/schemas/PayrollRun' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/settings:
+    get:
+      summary: Load governed configuration and numbering
+      operationId: getConfigurationSnapshot
+      tags: [Settings]
+      x-implementation-status: implemented
+      responses: { '200': { description: Settings workspace., content: { application/json: { schema: { $ref: '#/components/schemas/ConfigurationSnapshot' } } } }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/settings/configurations:
+    post:
+      summary: Create an immutable effective-dated configuration version
+      operationId: createConfigurationVersion
+      tags: [Settings]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateConfigurationCommand' } } } }
+      responses: { '201': { description: Draft configuration., content: { application/json: { schema: { $ref: '#/components/schemas/ConfigurationVersion' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/settings/configurations/{configuration_id}/transitions:
+    post:
+      summary: Submit, independently activate, reject, or retire configuration
+      operationId: transitionConfigurationVersion
+      tags: [Settings]
+      x-implementation-status: implemented
+      parameters: [{ name: configuration_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConfigurationTransitionCommand' } } } }
+      responses: { '200': { description: Configuration version., content: { application/json: { schema: { $ref: '#/components/schemas/ConfigurationVersion' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/settings/number-sequences:
+    post:
+      summary: Create a company document number sequence
+      operationId: createNumberSequence
+      tags: [Settings]
+      x-implementation-status: implemented
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateNumberSequenceCommand' } } } }
+      responses: { '201': { description: Number sequence., content: { application/json: { schema: { $ref: '#/components/schemas/NumberSequence' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /v1/settings/number-sequences/{sequence_id}/allocations:
+    post:
+      summary: Atomically and idempotently allocate a document number
+      operationId: allocateDocumentNumber
+      tags: [Settings]
+      x-implementation-status: implemented
+      parameters: [{ name: sequence_id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      responses: { '201': { description: Number allocation., content: { application/json: { schema: { $ref: '#/components/schemas/NumberAllocation' } } } }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/audit/{entity_type}/{entity_id}:
+    get:
+      summary: List the immutable audit timeline for one governed record
+      operationId: getAuditTrail
+      tags: [Audit]
+      x-implementation-status: implemented
+      parameters:
+        - { name: entity_type, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 80, pattern: '^[a-z0-9_.-]+$' } }
+        - { name: entity_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Scope-bound immutable audit timeline., content: { application/json: { schema: { $ref: '#/components/schemas/AuditTrail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /v1/sales:
     post:
       summary: Complete and atomically post a sale
@@ -193,10 +1171,8 @@ paths:
       summary: List scoped sales
       operationId: listSales
       tags: [Sales]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
-        - $ref: '#/components/parameters/LegalCompanyId'
-        - $ref: '#/components/parameters/BranchId'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/PageSize'
       responses:
@@ -208,6 +1184,10 @@ paths:
                 $ref: '#/components/schemas/SalePage'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/sales/{sale_id}:
     get:
       summary: Get an immutable posted sale
@@ -267,9 +1247,13 @@ paths:
   /v1/mobile/sync/sales:
     post:
       summary: Synchronize a mobile sale idempotently
+      description: >-
+        Synchronizes cash sales from an enrolled device. CREDIT commands are
+        rejected with 422 even while online until the mobile workflow carries
+        an authoritative AR-aging and approval decision.
       operationId: syncMobileSale
       tags: [Mobile Sync]
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -285,8 +1269,197 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MobileSyncResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /v1/mobile/devices/enroll:
+    post:
+      summary: Enroll or refresh a POS device binding
+      description: >-
+        Binds the device to the authenticated actor and exact tenant, company,
+        branch, and warehouse scope. Re-enrollment is idempotent only for that
+        same binding and returns authoritative offline policy and allocations.
+        The acknowledged app and installed version fields are advanced only
+        when both optional installed-version acknowledgements equal the current
+        available versions. A successful acknowledgement also issues a bounded,
+        server-persisted offline-sales lease for that exact app and cache pair.
+        A client must atomically install its cache before acknowledging it; a
+        repeated acknowledgement is safe after a lost response.
+      operationId: enrollMobileDevice
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileDeviceEnrollmentCommand'
+      responses:
+        '200':
+          description: Current authoritative device binding and policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileDeviceEnrollment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /v1/mobile/devices:
+    get:
+      summary: List governed POS devices in the exact working scope
+      operationId: listManagedMobileDevices
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Scoped device page with authoritative policy and remaining allocations.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileDevicePage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/mobile/devices/{device_id}/status-changes:
+    post:
+      summary: Suspend or reactivate a governed POS device
+      description: Suspension immediately ends the device's current offline authorization. Reactivation requires a fresh device acknowledgement before offline sales can resume.
+      operationId: changeManagedMobileDeviceStatus
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeMobileDeviceStatusCommand' }
+      responses:
+        '200':
+          description: Current authoritative device state after the recorded change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileDeviceEnrollment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /v1/mobile/devices/{device_id}/allocation-changes:
+    post:
+      summary: Change one governed offline stock allocation
+      description: The absolute allocation cannot fall below synchronized consumption or cause remaining device reservations to exceed live warehouse stock.
+      operationId: changeManagedMobileDeviceAllocation
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeMobileDeviceAllocationCommand' }
+      responses:
+        '200':
+          description: Current authoritative device state and allocations.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileDeviceEnrollment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /v1/mobile/reconciliation-cases:
+    get:
+      summary: List governed offline-sale reconciliation cases
+      description: Returns only cases in the caller's exact tenant, legal-company, branch, and warehouse scope.
+      operationId: listMobileReconciliationCases
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/MobileReconciliationStatus' }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Scoped reconciliation-case page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileReconciliationPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/mobile/reconciliation-cases/{case_id}:
+    get:
+      summary: Read one governed offline-sale reconciliation case
+      operationId: getMobileReconciliationCase
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ReconciliationCaseId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Reconciliation case and immutable evidence.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileReconciliationCase' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/mobile/reconciliation-cases/{case_id}/resolutions:
+    post:
+      summary: Append a controlled reconciliation resolution
+      description: Records an immutable operator disposition only; it never posts accounting or stock implicitly.
+      operationId: resolveMobileReconciliationCase
+      tags: [Mobile Sync]
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ReconciliationCaseId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolveMobileReconciliationCommand' }
+      responses:
+        '201':
+          description: Immutable resolution appended.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileReconciliationCase' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 components:
   securitySchemes:
     oidc:
@@ -300,12 +1473,14 @@ components:
     LegalCompanyId:
       name: legal_company_id
       in: query
-      required: true
+      required: false
+      description: Optional assertion that must match the authenticated legal-company scope.
       schema: { type: string, format: uuid }
     BranchId:
       name: branch_id
       in: query
       required: false
+      description: Optional assertion that must match the authenticated branch scope.
       schema: { type: string, format: uuid }
     Cursor:
       name: cursor
@@ -315,6 +1490,15 @@ components:
       name: page_size
       in: query
       schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    CatalogSnapshotToken:
+      name: snapshot_token
+      in: query
+      required: false
+      description: >-
+        Immutable token returned by the first catalog page. Supplying it on
+        every subsequent customer and product page makes governed-data drift
+        fail closed instead of mixing two publications.
+      schema: { type: string, format: uuid }
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -327,6 +1511,16 @@ components:
       schema: { type: string, format: uuid }
     SaleId:
       name: sale_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ReconciliationCaseId:
+      name: case_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DeviceId:
+      name: device_id
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -362,6 +1556,254 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    IntegrationCapability: { type: string, enum: [TRA_FISCALIZATION, PAYMENT_CALLBACK, BANK_STATEMENT_IMPORT, PAYROLL_EXPORT, EMAIL, WHATSAPP, RECEIPT_PRINT] }
+    IntegrationRouteStatus: { type: string, enum: [DRAFT, ACTIVE, SUSPENDED, RETIRED] }
+    IntegrationDeliveryStatus: { type: string, enum: [PENDING, IN_FLIGHT, RETRY_SCHEDULED, SUCCEEDED, DEAD_LETTER, CANCELLED] }
+    IntegrationRouteHealth: { type: object, additionalProperties: false, required: [consecutive_failures], properties: { consecutive_failures: { type: integer, minimum: 0 }, opened_until: { type: string, format: date-time }, last_success_at: { type: string, format: date-time }, last_failure_at: { type: string, format: date-time }, updated_at: { type: string, format: date-time } } }
+    IntegrationRoute: { type: object, additionalProperties: false, required: [id, tenant_id, company_id, capability, provider_code, contract_version, endpoint_url, secret_reference, timeout_milliseconds, max_attempts, base_backoff_seconds, max_backoff_seconds, circuit_failure_threshold, circuit_open_seconds, status, valid_from, reason, created_by, created_at, health], properties: { id: { type: string, format: uuid }, tenant_id: { type: string, format: uuid }, company_id: { type: string, format: uuid }, capability: { $ref: '#/components/schemas/IntegrationCapability' }, provider_code: { type: string }, contract_version: { type: string }, endpoint_url: { type: string, format: uri }, secret_reference: { type: string, format: uri }, timeout_milliseconds: { type: integer }, max_attempts: { type: integer }, base_backoff_seconds: { type: integer }, max_backoff_seconds: { type: integer }, circuit_failure_threshold: { type: integer }, circuit_open_seconds: { type: integer }, status: { $ref: '#/components/schemas/IntegrationRouteStatus' }, valid_from: { type: string, format: date-time }, valid_until: { type: string, format: date-time }, reason: { type: string }, created_by: { type: string, format: uuid }, created_at: { type: string, format: date-time }, approved_by: { type: string, format: uuid }, approved_at: { type: string, format: date-time }, health: { $ref: '#/components/schemas/IntegrationRouteHealth' } } }
+    IntegrationDelivery: { type: object, additionalProperties: true, required: [id, tenant_id, company_id, route, capability, operation, source_event_id, aggregate_type, aggregate_id, correlation_id, idempotency_key, request_hash, status, attempt_count, max_attempts, available_at, created_at], properties: { id: { type: string, format: uuid }, tenant_id: { type: string, format: uuid }, company_id: { type: string, format: uuid }, route: { $ref: '#/components/schemas/IntegrationRoute' }, capability: { $ref: '#/components/schemas/IntegrationCapability' }, operation: { type: string }, source_event_id: { type: string, format: uuid }, aggregate_type: { type: string }, aggregate_id: { type: string, format: uuid }, correlation_id: { type: string, format: uuid }, idempotency_key: { type: string }, request_hash: { type: string }, status: { $ref: '#/components/schemas/IntegrationDeliveryStatus' }, attempt_count: { type: integer }, max_attempts: { type: integer }, available_at: { type: string, format: date-time }, locked_by: { type: string }, provider_reference: { type: string }, last_error_code: { type: string }, last_error_message: { type: string }, created_at: { type: string, format: date-time }, completed_at: { type: string, format: date-time } } }
+    IntegrationAttempt: { type: object, additionalProperties: false, required: [id, delivery_id, attempt_number, worker_id, outcome, started_at, completed_at], properties: { id: { type: string, format: uuid }, delivery_id: { type: string, format: uuid }, attempt_number: { type: integer }, worker_id: { type: string }, outcome: { $ref: '#/components/schemas/IntegrationDeliveryStatus' }, error_code: { type: string }, error_message: { type: string }, provider_reference: { type: string }, started_at: { type: string, format: date-time }, completed_at: { type: string, format: date-time } } }
+    IntegrationReconciliation: { type: object, additionalProperties: false, required: [total, pending, in_flight, retrying, succeeded, dead_letter, unreconciled], properties: { total: { type: integer }, pending: { type: integer }, in_flight: { type: integer }, retrying: { type: integer }, succeeded: { type: integer }, dead_letter: { type: integer }, unreconciled: { type: integer } } }
+    IntegrationWorkspace: { type: object, additionalProperties: false, required: [scope, routes, deliveries, attempts, reconciliation], properties: { scope: { $ref: '#/components/schemas/Scope' }, routes: { type: array, items: { $ref: '#/components/schemas/IntegrationRoute' } }, deliveries: { type: array, items: { $ref: '#/components/schemas/IntegrationDelivery' } }, attempts: { type: array, items: { $ref: '#/components/schemas/IntegrationAttempt' } }, reconciliation: { $ref: '#/components/schemas/IntegrationReconciliation' } } }
+    CreateIntegrationRouteCommand: { type: object, additionalProperties: false, required: [capability, provider_code, contract_version, endpoint_url, secret_reference, timeout_milliseconds, max_attempts, base_backoff_seconds, max_backoff_seconds, circuit_failure_threshold, circuit_open_seconds, valid_from, reason], properties: { capability: { $ref: '#/components/schemas/IntegrationCapability' }, provider_code: { type: string, pattern: '^[A-Z0-9][A-Z0-9_-]{1,63}$' }, contract_version: { type: string }, endpoint_url: { type: string, format: uri, pattern: '^https://' }, secret_reference: { type: string, format: uri }, timeout_milliseconds: { type: integer, minimum: 1000, maximum: 120000 }, max_attempts: { type: integer, minimum: 1, maximum: 20 }, base_backoff_seconds: { type: integer, minimum: 1, maximum: 3600 }, max_backoff_seconds: { type: integer, minimum: 1, maximum: 86400 }, circuit_failure_threshold: { type: integer, minimum: 1, maximum: 100 }, circuit_open_seconds: { type: integer, minimum: 1, maximum: 86400 }, valid_from: { type: string, format: date-time }, valid_until: { type: string, format: date-time }, reason: { type: string, minLength: 8, maxLength: 500 } } }
+    IntegrationRouteTransitionCommand: { type: object, additionalProperties: false, required: [status, reason], properties: { status: { type: string, enum: [ACTIVE, SUSPENDED, RETIRED] }, reason: { type: string, minLength: 8, maxLength: 500 } } }
+    AuditRecord:
+      type: object
+      additionalProperties: false
+      required: [id, actor_id, action, entity_type, entity_id, correlation_id, causation_id, data, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        actor_id: { type: string, format: uuid }
+        action: { type: string }
+        entity_type: { type: string }
+        entity_id: { type: string, format: uuid }
+        correlation_id: { type: string, format: uuid }
+        causation_id: { type: string }
+        data: { type: object, additionalProperties: true }
+        occurred_at: { type: string, format: date-time }
+    AuditTrail:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/AuditRecord' } } }
+    AdvancedFinanceStatus: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, REJECTED, ACTIVE, DISPOSED] }
+    BudgetLine:
+      type: object
+      additionalProperties: false
+      required: [account_id, month, amount_minor]
+      properties: { account_id: { type: string }, month: { type: string, format: date }, amount_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' } }
+    Budget:
+      type: object
+      additionalProperties: false
+      required: [id, scope, name, fiscal_year, currency, status, reason, lines, created_by, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        name: { type: string }
+        fiscal_year: { type: integer, minimum: 2000, maximum: 2200 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        status: { $ref: '#/components/schemas/AdvancedFinanceStatus' }
+        reason: { type: string }
+        lines: { type: array, items: { $ref: '#/components/schemas/BudgetLine' } }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+    BudgetPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/Budget' } } }
+    CreateBudgetCommand:
+      type: object
+      additionalProperties: false
+      required: [name, fiscal_year, currency, reason, lines]
+      properties: { name: { type: string, minLength: 3, maxLength: 120 }, fiscal_year: { type: integer, minimum: 2000, maximum: 2200 }, currency: { type: string, pattern: '^[A-Z]{3}$' }, reason: { type: string, minLength: 8, maxLength: 500 }, lines: { type: array, minItems: 1, maxItems: 5000, items: { $ref: '#/components/schemas/BudgetLine' } } }
+    AdvancedFinanceTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties: { status: { $ref: '#/components/schemas/AdvancedFinanceStatus' }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    BudgetActualLine:
+      type: object
+      additionalProperties: false
+      required: [account_id, code, name, month, budget_minor, actual_minor, variance_minor]
+      properties: { account_id: { type: string }, code: { type: string }, name: { type: string }, month: { type: string, format: date-time }, budget_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, actual_minor: { $ref: '#/components/schemas/SafeInteger' }, variance_minor: { $ref: '#/components/schemas/SafeInteger' } }
+    BudgetActual:
+      type: object
+      additionalProperties: false
+      required: [budget_id, currency, lines, total_budget_minor, total_actual_minor, total_variance_minor, generated_at]
+      properties: { budget_id: { type: string, format: uuid }, currency: { type: string }, lines: { type: array, items: { $ref: '#/components/schemas/BudgetActualLine' } }, total_budget_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, total_actual_minor: { $ref: '#/components/schemas/SafeInteger' }, total_variance_minor: { $ref: '#/components/schemas/SafeInteger' }, generated_at: { type: string, format: date-time } }
+    FixedAsset:
+      type: object
+      additionalProperties: false
+      required: [id, scope, code, name, category, status, currency, acquired_at, cost_minor, residual_minor, useful_life_months, accumulated_depreciation_minor, net_book_value_minor, asset_account_id, accumulated_depreciation_account_id, depreciation_expense_account_id, capitalization_offset_account_id, disposal_gain_account_id, disposal_loss_account_id, reason, created_by, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        code: { type: string }
+        name: { type: string }
+        category: { type: string }
+        status: { $ref: '#/components/schemas/AdvancedFinanceStatus' }
+        currency: { type: string }
+        acquired_at: { type: string, format: date-time }
+        cost_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        residual_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        useful_life_months: { type: integer, minimum: 1, maximum: 1200 }
+        accumulated_depreciation_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        net_book_value_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        asset_account_id: { type: string }
+        accumulated_depreciation_account_id: { type: string }
+        depreciation_expense_account_id: { type: string }
+        capitalization_offset_account_id: { type: string }
+        disposal_gain_account_id: { type: string }
+        disposal_loss_account_id: { type: string }
+        reason: { type: string }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+        disposed_at: { type: string, format: date-time }
+        source_document_id: { type: string, format: uuid }
+        source_product_id: { type: string, format: uuid }
+    FixedAssetPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/FixedAsset' } } }
+    CreateFixedAssetCommand:
+      type: object
+      additionalProperties: false
+      required: [code, name, category, currency, acquired_at, cost_minor, residual_minor, useful_life_months, asset_account_id, accumulated_depreciation_account_id, depreciation_expense_account_id, capitalization_offset_account_id, disposal_gain_account_id, disposal_loss_account_id, reason]
+      properties: { code: { type: string }, name: { type: string }, category: { type: string }, currency: { type: string }, acquired_at: { type: string, format: date }, cost_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, residual_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, useful_life_months: { type: integer, minimum: 1, maximum: 1200 }, asset_account_id: { type: string }, accumulated_depreciation_account_id: { type: string }, depreciation_expense_account_id: { type: string }, capitalization_offset_account_id: { type: string }, disposal_gain_account_id: { type: string }, disposal_loss_account_id: { type: string }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    CreatePurchasedFixedAssetCommand:
+      type: object
+      additionalProperties: false
+      required: [source_document_id, source_product_id, code, name, category, currency, residual_minor, useful_life_months, asset_account_id, accumulated_depreciation_account_id, depreciation_expense_account_id, capitalization_offset_account_id, disposal_gain_account_id, disposal_loss_account_id, reason]
+      properties: { source_document_id: { type: string, format: uuid }, source_product_id: { type: string, format: uuid }, code: { type: string }, name: { type: string }, category: { type: string }, currency: { type: string }, residual_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, useful_life_months: { type: integer, minimum: 1, maximum: 1200 }, asset_account_id: { type: string }, accumulated_depreciation_account_id: { type: string }, depreciation_expense_account_id: { type: string }, capitalization_offset_account_id: { type: string }, disposal_gain_account_id: { type: string }, disposal_loss_account_id: { type: string }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    DepreciateFixedAssetCommand:
+      type: object
+      additionalProperties: false
+      required: [period, reason]
+      properties: { period: { type: string, format: date }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    DisposeFixedAssetCommand:
+      type: object
+      additionalProperties: false
+      required: [proceeds_minor, proceeds_account_id, reason]
+      properties: { proceeds_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, proceeds_account_id: { type: string }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    FixedAssetDepreciation:
+      type: object
+      additionalProperties: false
+      required: [id, asset_id, period, amount_minor, journal_id, posted_by, posted_at]
+      properties: { id: { type: string, format: uuid }, asset_id: { type: string, format: uuid }, period: { type: string, format: date-time }, amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, journal_id: { type: string, format: uuid }, posted_by: { type: string, format: uuid }, posted_at: { type: string, format: date-time } }
+    TreasuryStatus: { type: string, enum: [DRAFT, SUBMITTED, ACTIVE, REJECTED, CLOSED] }
+    TreasuryFacilityType: { type: string, enum: [TERM_LOAN, OVERDRAFT] }
+    TreasuryTransactionType: { type: string, enum: [DRAWDOWN, PRINCIPAL_REPAYMENT, INTEREST_ACCRUAL, INTEREST_PAYMENT] }
+    TreasuryTransaction:
+      type: object
+      additionalProperties: false
+      required: [id, facility_id, type, amount_minor, occurred_at, reason, journal_id, posted_by, posted_at]
+      properties: { id: { type: string, format: uuid }, facility_id: { type: string, format: uuid }, type: { $ref: '#/components/schemas/TreasuryTransactionType' }, amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, occurred_at: { type: string, format: date-time }, reason: { type: string }, journal_id: { type: string, format: uuid }, posted_by: { type: string, format: uuid }, posted_at: { type: string, format: date-time } }
+    TreasuryFacility:
+      type: object
+      additionalProperties: false
+      required: [id, scope, reference, lender, type, status, currency, limit_minor, annual_interest_basis_points, start_date, maturity_date, bank_account_id, principal_account_id, interest_expense_account_id, accrued_interest_account_id, outstanding_principal_minor, accrued_interest_minor, available_minor, reason, created_by, created_at, transactions]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        reference: { type: string }
+        lender: { type: string }
+        type: { $ref: '#/components/schemas/TreasuryFacilityType' }
+        status: { $ref: '#/components/schemas/TreasuryStatus' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        limit_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        annual_interest_basis_points: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        start_date: { type: string, format: date-time }
+        maturity_date: { type: string, format: date-time }
+        bank_account_id: { type: string }
+        principal_account_id: { type: string }
+        interest_expense_account_id: { type: string }
+        accrued_interest_account_id: { type: string }
+        outstanding_principal_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        accrued_interest_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        available_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        reason: { type: string }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+        closed_at: { type: string, format: date-time }
+        transactions: { type: array, items: { $ref: '#/components/schemas/TreasuryTransaction' } }
+    TreasuryFacilityPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/TreasuryFacility' } } }
+    CreateTreasuryFacilityCommand:
+      type: object
+      additionalProperties: false
+      required: [reference, lender, type, currency, limit_minor, annual_interest_basis_points, start_date, maturity_date, bank_account_id, principal_account_id, interest_expense_account_id, accrued_interest_account_id, reason]
+      properties: { reference: { type: string, minLength: 2, maxLength: 60 }, lender: { type: string, minLength: 3, maxLength: 160 }, type: { $ref: '#/components/schemas/TreasuryFacilityType' }, currency: { type: string, pattern: '^[A-Z]{3}$' }, limit_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, annual_interest_basis_points: { type: integer, minimum: 0, maximum: 100000 }, start_date: { type: string, format: date }, maturity_date: { type: string, format: date }, bank_account_id: { type: string }, principal_account_id: { type: string }, interest_expense_account_id: { type: string }, accrued_interest_account_id: { type: string }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    TreasuryTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties: { status: { $ref: '#/components/schemas/TreasuryStatus' }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    PostTreasuryTransactionCommand:
+      type: object
+      additionalProperties: false
+      required: [type, amount_minor, occurred_at, reason]
+      properties: { type: { $ref: '#/components/schemas/TreasuryTransactionType' }, amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, occurred_at: { type: string, format: date-time }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    IntercompanyType: { type: string, enum: [CASH_TRANSFER, COST_ALLOCATION] }
+    IntercompanyStatus: { type: string, enum: [DRAFT, SUBMITTED, SOURCE_APPROVED, POSTED, REJECTED] }
+    IntercompanyTransaction:
+      type: object
+      additionalProperties: false
+      required: [id, scope, counterparty_company_id, reference, type, status, currency, amount_minor, occurred_at, source_debit_account_id, source_credit_account_id, counterparty_debit_account_id, counterparty_credit_account_id, reason, created_by, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        counterparty_company_id: { type: string, format: uuid }
+        counterparty_company_name: { type: string }
+        reference: { type: string }
+        type: { $ref: '#/components/schemas/IntercompanyType' }
+        status: { $ref: '#/components/schemas/IntercompanyStatus' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        occurred_at: { type: string, format: date-time }
+        source_debit_account_id: { type: string }
+        source_credit_account_id: { type: string }
+        counterparty_debit_account_id: { type: string }
+        counterparty_credit_account_id: { type: string }
+        reason: { type: string }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        source_approved_by: { type: string, format: uuid }
+        posted_by: { type: string, format: uuid }
+        source_journal_id: { type: string, format: uuid }
+        counterparty_journal_id: { type: string, format: uuid }
+    IntercompanyPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/IntercompanyTransaction' } } }
+    CreateIntercompanyCommand:
+      type: object
+      additionalProperties: false
+      required: [counterparty_company_id, reference, type, currency, amount_minor, occurred_at, source_debit_account_id, source_credit_account_id, counterparty_debit_account_id, counterparty_credit_account_id, reason]
+      properties: { counterparty_company_id: { type: string, format: uuid }, reference: { type: string, minLength: 2, maxLength: 60 }, type: { $ref: '#/components/schemas/IntercompanyType' }, currency: { type: string, pattern: '^[A-Z]{3}$' }, amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, occurred_at: { type: string, format: date-time }, source_debit_account_id: { type: string }, source_credit_account_id: { type: string }, counterparty_debit_account_id: { type: string }, counterparty_credit_account_id: { type: string }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    IntercompanyTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties: { status: { $ref: '#/components/schemas/IntercompanyStatus' }, reason: { type: string, minLength: 8, maxLength: 500 } }
+    GroupCompanySummary:
+      type: object
+      additionalProperties: false
+      required: [company_id, company_name, assets_minor, liabilities_minor, equity_minor, revenue_minor, expense_minor]
+      properties: { company_id: { type: string, format: uuid }, company_name: { type: string }, assets_minor: { $ref: '#/components/schemas/SafeInteger' }, liabilities_minor: { $ref: '#/components/schemas/SafeInteger' }, equity_minor: { $ref: '#/components/schemas/SafeInteger' }, revenue_minor: { $ref: '#/components/schemas/SafeInteger' }, expense_minor: { $ref: '#/components/schemas/SafeInteger' } }
+    GroupConsolidation:
+      type: object
+      additionalProperties: false
+      required: [currency, as_of, companies, assets_before_minor, liabilities_before_minor, equity_minor, revenue_before_minor, expense_before_minor, intercompany_balance_elimination_minor, intercompany_activity_elimination_minor, assets_minor, liabilities_minor, revenue_minor, expense_minor, net_profit_minor, balanced]
+      properties: { currency: { type: string }, as_of: { type: string, format: date-time }, companies: { type: array, items: { $ref: '#/components/schemas/GroupCompanySummary' } }, assets_before_minor: { $ref: '#/components/schemas/SafeInteger' }, liabilities_before_minor: { $ref: '#/components/schemas/SafeInteger' }, equity_minor: { $ref: '#/components/schemas/SafeInteger' }, revenue_before_minor: { $ref: '#/components/schemas/SafeInteger' }, expense_before_minor: { $ref: '#/components/schemas/SafeInteger' }, intercompany_balance_elimination_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, intercompany_activity_elimination_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, assets_minor: { $ref: '#/components/schemas/SafeInteger' }, liabilities_minor: { $ref: '#/components/schemas/SafeInteger' }, revenue_minor: { $ref: '#/components/schemas/SafeInteger' }, expense_minor: { $ref: '#/components/schemas/SafeInteger' }, net_profit_minor: { $ref: '#/components/schemas/SafeInteger' }, balanced: { type: boolean } }
     Health:
       type: object
       additionalProperties: false
@@ -372,19 +1814,25 @@ components:
     WorkingContext:
       type: object
       additionalProperties: false
-      required: [tenant_id, legal_company_id, legal_company_name, branch_id, branch_name, currency, locale, permissions]
+      required: [actor_id, tenant_id, company_id, company_name, branch_id, branch_name, warehouse_id, warehouse_name, currency, locale, timezone, permissions, master_data_version, price_version, catalog_snapshot_token]
       properties:
+        actor_id: { type: string, format: uuid }
         tenant_id: { type: string, format: uuid }
-        legal_company_id: { type: string, format: uuid }
-        legal_company_name: { type: string }
+        company_id: { type: string, format: uuid }
+        company_name: { type: string }
         branch_id: { type: string, format: uuid }
         branch_name: { type: string }
-        warehouse_id: { type: [string, 'null'], format: uuid }
+        warehouse_id: { type: string, format: uuid }
+        warehouse_name: { type: string }
         currency: { type: string, const: TZS }
         locale: { type: string, enum: [en-TZ, sw-TZ] }
+        timezone: { type: string, example: Africa/Dar_es_Salaam }
         permissions:
           type: array
           items: { type: string }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        catalog_snapshot_token: { type: string, format: uuid }
     Money:
       type: object
       additionalProperties: false
@@ -395,42 +1843,155 @@ components:
     CustomerSummary:
       type: object
       additionalProperties: false
-      required: [id, code, name, status, is_general_customer, credit_enabled]
+      required: [id, code, name, status, is_general_customer, credit_enabled, credit_limit_minor, current_exposure_minor, available_credit_minor]
       properties:
         id: { type: string, format: uuid }
         code: { type: string }
         name: { type: string }
-        phone: { type: [string, 'null'] }
-        status: { type: string, enum: [active, blocked, inactive] }
+        status: { type: string, enum: [active, inactive] }
         is_general_customer: { type: boolean }
         credit_enabled: { type: boolean }
-        available_credit: { $ref: '#/components/schemas/Money' }
-        overdue_amount: { $ref: '#/components/schemas/Money' }
+        credit_limit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        current_exposure_minor: { $ref: '#/components/schemas/SafeInteger' }
+        available_credit_minor: { $ref: '#/components/schemas/SafeInteger' }
     CustomerPage:
       type: object
-      required: [items]
+      additionalProperties: false
+      required: [items, next_cursor, catalog_snapshot_token, master_data_version, price_version]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/CustomerSummary' } }
         next_cursor: { type: [string, 'null'] }
+        catalog_snapshot_token: { type: string, format: uuid }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+    CustomerAccount:
+      type: object
+      additionalProperties: false
+      required: [id, code, tenant_id, company_id, name, active, is_general_customer, legacy_credit_enabled, legacy_credit_limit_minor]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        tenant_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        name: { type: string }
+        active: { type: boolean }
+        is_general_customer: { type: boolean }
+        legacy_credit_enabled: { type: boolean, deprecated: true }
+        legacy_credit_limit_minor: { allOf: [{ $ref: '#/components/schemas/SafeNonNegativeInteger' }], deprecated: true }
+    CreditRiskStatus:
+      type: string
+      enum: [STANDARD, WATCH, HOLD]
+    CreditPolicy:
+      type: object
+      additionalProperties: false
+      required: [id, scope, customer_id, credit_enabled, credit_limit_minor, payment_terms_days, max_overdue_days, risk_status, reason, effective_from, approved_by, created_at, correlation_id]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        customer_id: { type: string, format: uuid }
+        credit_enabled: { type: boolean }
+        credit_limit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        payment_terms_days: { type: integer, minimum: 0, maximum: 365 }
+        max_overdue_days: { type: integer, minimum: 0, maximum: 3650 }
+        risk_status: { $ref: '#/components/schemas/CreditRiskStatus' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        effective_from: { type: string, format: date-time }
+        approved_by: { type: string, description: "UUID of the approving actor, or SYSTEM for migration and account-creation defaults." }
+        created_at: { type: string, format: date-time }
+        correlation_id: { type: string, format: uuid }
+    ScheduleCreditPolicyCommand:
+      type: object
+      additionalProperties: false
+      required: [credit_enabled, credit_limit_minor, payment_terms_days, max_overdue_days, risk_status, reason, effective_from]
+      properties:
+        credit_enabled: { type: boolean }
+        credit_limit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        payment_terms_days: { type: integer, minimum: 0, maximum: 365 }
+        max_overdue_days: { type: integer, minimum: 0, maximum: 3650 }
+        risk_status: { $ref: '#/components/schemas/CreditRiskStatus' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        effective_from: { type: string, format: date-time }
+    AgingBuckets:
+      type: object
+      additionalProperties: false
+      required: [current_minor, days_1_30_minor, days_31_60_minor, days_61_90_minor, days_over_90_minor]
+      properties:
+        current_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        days_1_30_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        days_31_60_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        days_61_90_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        days_over_90_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+    ReceivableAging:
+      type: object
+      additionalProperties: false
+      required: [ledger_balance_minor, open_invoice_minor, unapplied_credit_minor, calculated_exposure_minor, overdue_minor, oldest_overdue_days, reconciled, buckets]
+      properties:
+        ledger_balance_minor: { $ref: '#/components/schemas/SafeInteger' }
+        open_invoice_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        unapplied_credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        calculated_exposure_minor: { $ref: '#/components/schemas/SafeInteger' }
+        overdue_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        oldest_overdue_days: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        reconciled: { type: boolean }
+        buckets: { $ref: '#/components/schemas/AgingBuckets' }
+    ReceivableItem:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, company_id, customer_id, kind, source_type, source_id, amount_minor, outstanding_minor, currency, document_at, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        kind: { type: string, enum: [INVOICE, CREDIT_NOTE, RECEIPT] }
+        source_type: { type: string }
+        source_id: { type: string, format: uuid }
+        amount_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        outstanding_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        document_at: { type: string, format: date-time }
+        due_at: { type: [string, 'null'], format: date-time }
+        occurred_at: { type: string, format: date-time }
+    CustomerAccountDetail:
+      type: object
+      additionalProperties: false
+      required: [customer, active_policy, scheduled_policies, aging, open_items]
+      properties:
+        customer: { $ref: '#/components/schemas/CustomerAccount' }
+        active_policy: { $ref: '#/components/schemas/CreditPolicy' }
+        scheduled_policies: { type: array, items: { $ref: '#/components/schemas/CreditPolicy' } }
+        aging: { $ref: '#/components/schemas/ReceivableAging' }
+        open_items: { type: array, items: { $ref: '#/components/schemas/ReceivableItem' } }
     ProductSummary:
       type: object
       additionalProperties: false
-      required: [id, code, name, unit, price, available_quantity]
+      required: [id, code, name, unit, currency, unit_price_minor, available_quantity, price_version, master_data_version, tax_basis_points]
       properties:
         id: { type: string, format: uuid }
         code: { type: string }
         name: { type: string }
         unit: { type: string }
-        price: { $ref: '#/components/schemas/Money' }
-        available_quantity: { type: string, pattern: '^-?[0-9]+(\\.[0-9]{1,6})?$' }
-        price_version: { type: integer, minimum: 1 }
-        master_data_version: { type: integer, minimum: 1 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        unit_price_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        available_quantity: { $ref: '#/components/schemas/SafeInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        tax_basis_points:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 10000
+          description: Effective tax rate; tax_minor is round-half-up(subtotal_minor * tax_basis_points / 10000).
     ProductPage:
       type: object
-      required: [items]
+      additionalProperties: false
+      required: [items, next_cursor, catalog_snapshot_token, master_data_version, price_version]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/ProductSummary' } }
         next_cursor: { type: [string, 'null'] }
+        catalog_snapshot_token: { type: string, format: uuid }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
     Scope:
       type: object
       additionalProperties: false
@@ -443,27 +2004,35 @@ components:
     SaleKind:
       type: string
       enum: [CASH, CREDIT]
+    PaymentMethod:
+      type: string
+      description: Canonical settlement channel for cash-kind sales. Offline sales permit physical CASH only.
+      enum: [CASH, MOBILE_MONEY, BANK_CARD, BANK_TRANSFER]
     SaleRecordType:
       type: string
       enum: [SALE, REVERSAL]
     SaleStatus:
       type: string
       enum: [POSTED, REVERSED]
+    FiscalStatus:
+      type: string
+      enum: [NOT_CONFIGURED, PENDING, FISCALIZED, FAILED]
     SaleLineCommand:
       type: object
       additionalProperties: false
       required: [product_id, quantity]
       properties:
         product_id: { type: string, format: uuid }
-        quantity: { type: integer, format: int64, minimum: 1 }
+        quantity: { $ref: '#/components/schemas/SafePositiveInteger' }
     CompleteSaleCommand:
       type: object
       additionalProperties: false
       required: [customer_id, kind, lines]
       properties:
         customer_id: { type: string, format: uuid }
+        source_document_id: { type: string, format: uuid, description: Approved online sales order fulfilled atomically by this sale. }
         kind: { $ref: '#/components/schemas/SaleKind' }
-        payment_method: { type: string, minLength: 1, maxLength: 64 }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
         lines:
           type: array
           minItems: 1
@@ -471,21 +2040,19 @@ components:
     SaleLine:
       type: object
       additionalProperties: false
-      required: [id, product_id, quantity, unit_price_minor, subtotal_minor, tax_minor, total_minor, unit_cost_minor, cogs_minor]
+      required: [id, product_id, quantity, unit_price_minor, subtotal_minor, tax_minor, total_minor]
       properties:
         id: { type: string, format: uuid }
         product_id: { type: string, format: uuid }
-        quantity: { type: integer, format: int64, minimum: 1 }
-        unit_price_minor: { type: integer, format: int64 }
-        subtotal_minor: { type: integer, format: int64 }
-        tax_minor: { type: integer, format: int64 }
-        total_minor: { type: integer, format: int64 }
-        unit_cost_minor: { type: integer, format: int64 }
-        cogs_minor: { type: integer, format: int64 }
+        quantity: { $ref: '#/components/schemas/SafePositiveInteger' }
+        unit_price_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        subtotal_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        tax_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        total_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
     Sale:
       type: object
       additionalProperties: false
-      required: [id, scope, record_type, kind, status, customer_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor, created_by, correlation_id, created_at, lines]
+      required: [id, scope, record_type, kind, status, customer_id, currency, subtotal_minor, tax_minor, total_minor, receipt_reference, fiscal_status, created_by, correlation_id, document_at, received_at, accounting_at, accounting_time_basis, created_at, lines]
       properties:
         id: { type: string, format: uuid }
         scope: { $ref: '#/components/schemas/Scope' }
@@ -493,39 +2060,702 @@ components:
         kind: { $ref: '#/components/schemas/SaleKind' }
         status: { $ref: '#/components/schemas/SaleStatus' }
         customer_id: { type: string, format: uuid }
+        source_document_id: { type: string, format: uuid }
         currency: { type: string, pattern: '^[A-Z]{3}$' }
-        subtotal_minor: { type: integer, format: int64 }
-        tax_minor: { type: integer, format: int64 }
-        total_minor: { type: integer, format: int64 }
-        cogs_minor: { type: integer, format: int64 }
-        payment_method: { type: string }
+        subtotal_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        tax_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        total_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
+        device_id: { type: string, format: uuid }
+        client_transaction_id: { type: string, format: uuid }
+        client_timestamp: { type: string, format: date-time }
+        app_version: { type: string, minLength: 1, maxLength: 64 }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        catalog_snapshot_token:
+          type: string
+          format: uuid
+          description: Immutable governed catalog publication used by a mobile sale.
+        offline:
+          type: boolean
+          description: True only for controlled physical-CASH, zero-rated mobile sales in this milestone.
+        receipt_reference:
+          type: string
+          description: Authoritative non-fiscal receipt reference; never a TRA fiscal receipt number.
+        fiscal_status: { $ref: '#/components/schemas/FiscalStatus' }
         reversal_of: { type: string, format: uuid }
         reversal_reason: { type: string }
         created_by: { type: string, format: uuid }
         correlation_id: { type: string, format: uuid }
+        document_at:
+          type: string
+          format: date-time
+          description: Device document time for controlled offline sales; otherwise the server receipt time.
+        received_at:
+          type: string
+          format: date-time
+          description: Authoritative server receipt time.
+        accounting_at:
+          type: string
+          format: date-time
+          description: Governed posting time used by stock and financial ledgers.
+        accounting_time_basis:
+          type: string
+          enum: [SERVER_RECEIPT]
         created_at: { type: string, format: date-time }
         reversed_at: { type: string, format: date-time }
         lines: { type: array, items: { $ref: '#/components/schemas/SaleLine' } }
     SalePage:
       type: object
-      required: [items]
+      additionalProperties: false
+      required: [items, next_cursor]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Sale' } }
         next_cursor: { type: [string, 'null'] }
+    OperationDocumentType:
+      type: string
+      enum: [QUOTATION, SALES_ORDER, PURCHASE_REQUEST, PURCHASE_ORDER, GOODS_RECEIPT, SUPPLIER_INVOICE, SUPPLIER_PAYMENT, PURCHASE_RETURN, STOCK_TRANSFER, STOCK_COUNT, STOCK_ADJUSTMENT]
+    OperationStatus:
+      type: string
+      enum: [DRAFT, SUBMITTED, APPROVED, REJECTED, POSTED, DISPATCHED, RECEIVED, CLOSED, REVERSED]
+    OperationLineCommand:
+      type: object
+      additionalProperties: false
+      required: [product_id, quantity, unit_price_minor]
+      properties:
+        product_id: { type: string, format: uuid }
+        quantity: { type: integer, format: int64, minimum: -9007199254740991, maximum: 9007199254740991 }
+        unit_price_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+    CreateOperationCommand:
+      type: object
+      additionalProperties: false
+      required: [type, party_type, currency, reason, lines]
+      properties:
+        type: { $ref: '#/components/schemas/OperationDocumentType' }
+        party_type: { type: string, enum: [CUSTOMER, SUPPLIER, NONE] }
+        party_id: { type: string, format: uuid }
+        source_document_id: { type: string, format: uuid }
+        destination_warehouse_id: { type: string, format: uuid }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        lines: { type: array, minItems: 1, maxItems: 60, items: { $ref: '#/components/schemas/OperationLineCommand' } }
+    TransitionOperationCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties:
+        status: { $ref: '#/components/schemas/OperationStatus' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
+    OperationLine:
+      allOf:
+        - $ref: '#/components/schemas/OperationLineCommand'
+        - type: object
+          required: [id, amount_minor]
+          properties:
+            id: { type: string, format: uuid }
+            amount_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+    OperationDocument:
+      type: object
+      additionalProperties: true
+      required: [id, number, type, status, party_type, currency, total_minor, reason, created_at, lines]
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        type: { $ref: '#/components/schemas/OperationDocumentType' }
+        status: { $ref: '#/components/schemas/OperationStatus' }
+        party_type: { type: string, enum: [CUSTOMER, SUPPLIER, NONE] }
+        party_id: { type: string, format: uuid }
+        source_document_id: { type: string, format: uuid }
+        destination_warehouse_id: { type: string, format: uuid }
+        currency: { type: string }
+        total_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
+        lines: { type: array, items: { $ref: '#/components/schemas/OperationLine' } }
+    OperationPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/OperationDocument' } }
+        next_cursor: { type: [string, 'null'] }
+    Supplier:
+      type: object
+      additionalProperties: true
+      required: [id, code, name, active, payment_terms_days]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        active: { type: boolean }
+        payment_terms_days: { type: integer, minimum: 0, maximum: 365 }
+    SupplierPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Supplier' } }
+        next_cursor: { type: [string, 'null'] }
+    GLAccount:
+      type: object
+      additionalProperties: false
+      required: [record_id, id, tenant_id, company_id, code, name, type, control_account, allow_manual_posting, status, created_at]
+      properties:
+        record_id: { type: string, format: uuid }
+        id: { type: string }
+        tenant_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        code: { type: string, pattern: '^[a-z0-9][a-z0-9._-]{1,63}$' }
+        name: { type: string, minLength: 2, maxLength: 160 }
+        type: { type: string, enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, UNCLASSIFIED] }
+        parent_account_id: { type: string }
+        control_account: { type: boolean }
+        allow_manual_posting: { type: boolean }
+        status: { type: string, enum: [SUBMITTED, ACTIVE, REJECTED, INACTIVE] }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+        approved_at: { type: string, format: date-time }
+    GLAccountPage:
+      type: object
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/GLAccount' } } }
+    CreateGLAccountCommand:
+      type: object
+      additionalProperties: false
+      required: [code, name, type, control_account, allow_manual_posting]
+      properties:
+        code: { type: string, pattern: '^[a-z0-9][a-z0-9._-]{1,63}$' }
+        name: { type: string, minLength: 2, maxLength: 160 }
+        type: { type: string, enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE] }
+        parent_account_id: { type: string }
+        control_account: { type: boolean }
+        allow_manual_posting: { type: boolean }
+    GovernanceDecisionCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties:
+        status: { type: string, enum: [ACTIVE, REJECTED] }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    PostingMapping:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, company_id, key, account_id, effective_from, status, reason, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        key: { $ref: '#/components/schemas/PostingMappingKey' }
+        account_id: { type: string }
+        effective_from: { type: string, format: date-time }
+        status: { type: string, enum: [SUBMITTED, ACTIVE, REJECTED] }
+        reason: { type: string }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+        approved_at: { type: string, format: date-time }
+    PostingMappingPage:
+      type: object
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/PostingMapping' } } }
+    PostingMappingKey:
+      type: string
+      enum: [SALES_RECEIVABLE, SALES_TAX_PAYABLE, PAYMENT_CASH, PAYMENT_MOBILE_MONEY, PAYMENT_BANK_CARD, PAYMENT_BANK_TRANSFER, PROCUREMENT_GRNI, PROCUREMENT_PAYABLE, INVENTORY_ADJUSTMENT, STOCK_IN_TRANSIT]
+    CreatePostingMappingCommand:
+      type: object
+      additionalProperties: false
+      required: [key, account_id, effective_from, reason]
+      properties:
+        key: { $ref: '#/components/schemas/PostingMappingKey' }
+        account_id: { type: string }
+        effective_from: { type: string, format: date-time }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    FinancialStatementLine:
+      type: object
+      additionalProperties: false
+      required: [account_id, code, name, type, amount_minor]
+      properties:
+        account_id: { type: string }
+        code: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, UNCLASSIFIED] }
+        amount_minor: { $ref: '#/components/schemas/SafeInteger' }
+        debit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+    TrialBalance:
+      type: object
+      required: [as_of, currency, lines, total_debit_minor, total_credit_minor, balanced, generated_at]
+      properties:
+        as_of: { type: string, format: date-time }
+        currency: { type: string }
+        lines: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        total_debit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        total_credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        balanced: { type: boolean }
+        generated_at: { type: string, format: date-time }
+    GeneralLedgerEntry:
+      type: object
+      required: [journal_line_id, journal_id, occurred_at, source_type, source_id, memo, debit_minor, credit_minor, running_balance_minor]
+      properties:
+        journal_line_id: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        journal_id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        source_type: { type: string }
+        source_id: { type: string, format: uuid }
+        memo: { type: string }
+        debit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        running_balance_minor: { $ref: '#/components/schemas/SafeInteger' }
+    GeneralLedger:
+      type: object
+      required: [from, to, currency, account_id, account_code, account_name, opening_balance_minor, closing_balance_minor, total_debit_minor, total_credit_minor, entries, generated_at]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        currency: { type: string }
+        account_id: { type: string }
+        account_code: { type: string }
+        account_name: { type: string }
+        opening_balance_minor: { $ref: '#/components/schemas/SafeInteger' }
+        closing_balance_minor: { $ref: '#/components/schemas/SafeInteger' }
+        total_debit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        total_credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        entries: { type: array, items: { $ref: '#/components/schemas/GeneralLedgerEntry' } }
+        generated_at: { type: string, format: date-time }
+    ProfitAndLoss:
+      type: object
+      required: [from, to, currency, revenue, expenses, total_revenue_minor, total_expense_minor, net_profit_minor, unclassified_minor, generated_at]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        currency: { type: string }
+        revenue: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        expenses: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        total_revenue_minor: { $ref: '#/components/schemas/SafeInteger' }
+        total_expense_minor: { $ref: '#/components/schemas/SafeInteger' }
+        net_profit_minor: { $ref: '#/components/schemas/SafeInteger' }
+        unclassified_minor: { $ref: '#/components/schemas/SafeInteger' }
+        generated_at: { type: string, format: date-time }
+    BalanceSheet:
+      type: object
+      required: [as_of, currency, assets, liabilities, equity, total_assets_minor, total_liabilities_minor, total_equity_minor, current_earnings_minor, unclassified_minor, balanced, generated_at]
+      properties:
+        as_of: { type: string, format: date-time }
+        currency: { type: string }
+        assets: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        liabilities: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        equity: { type: array, items: { $ref: '#/components/schemas/FinancialStatementLine' } }
+        total_assets_minor: { $ref: '#/components/schemas/SafeInteger' }
+        total_liabilities_minor: { $ref: '#/components/schemas/SafeInteger' }
+        total_equity_minor: { $ref: '#/components/schemas/SafeInteger' }
+        current_earnings_minor: { $ref: '#/components/schemas/SafeInteger' }
+        unclassified_minor: { $ref: '#/components/schemas/SafeInteger' }
+        balanced: { type: boolean }
+        generated_at: { type: string, format: date-time }
+    CashMovement:
+      type: object
+      required: [journal_id, occurred_at, source_type, source_id, memo, amount_minor]
+      properties:
+        journal_id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        source_type: { type: string }
+        source_id: { type: string, format: uuid }
+        memo: { type: string }
+        amount_minor: { $ref: '#/components/schemas/SafeInteger' }
+    CashFlowSection:
+      type: object
+      required: [activity, lines, net_minor]
+      properties:
+        activity: { type: string, enum: [OPERATING, INVESTING, FINANCING, UNCLASSIFIED] }
+        lines: { type: array, items: { $ref: '#/components/schemas/CashMovement' } }
+        net_minor: { $ref: '#/components/schemas/SafeInteger' }
+    CashFlow:
+      type: object
+      required: [from, to, currency, opening_cash_minor, operating, investing, financing, unclassified, net_change_minor, closing_cash_minor, reconciled, classified, generated_at]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        currency: { type: string }
+        opening_cash_minor: { $ref: '#/components/schemas/SafeInteger' }
+        operating: { $ref: '#/components/schemas/CashFlowSection' }
+        investing: { $ref: '#/components/schemas/CashFlowSection' }
+        financing: { $ref: '#/components/schemas/CashFlowSection' }
+        unclassified: { $ref: '#/components/schemas/CashFlowSection' }
+        net_change_minor: { $ref: '#/components/schemas/SafeInteger' }
+        closing_cash_minor: { $ref: '#/components/schemas/SafeInteger' }
+        reconciled: { type: boolean }
+        classified: { type: boolean }
+        generated_at: { type: string, format: date-time }
+    ExportFinancialReportCommand:
+      type: object
+      additionalProperties: false
+      required: [report_type]
+      properties:
+        report_type: { type: string, enum: [TRIAL_BALANCE, GENERAL_LEDGER, PROFIT_AND_LOSS, BALANCE_SHEET, CASH_FLOW] }
+        format: { type: string, enum: [CSV, PDF, XLSX], default: CSV }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        as_of: { type: string, format: date }
+        comparison_from: { type: string, format: date, description: Optional comparison-period start for profit and loss or cash flow. }
+        comparison_to: { type: string, format: date, description: Optional comparison-period end for profit and loss or cash flow. }
+        comparison_as_of: { type: string, format: date, description: Optional comparison date for balance sheet. }
+        account_id: { type: string }
+    ReportExportArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, report_type, format, filename, media_type, sha256, content_base64, generated_at]
+      properties:
+        id: { type: string, format: uuid }
+        report_type: { type: string, enum: [TRIAL_BALANCE, GENERAL_LEDGER, PROFIT_AND_LOSS, BALANCE_SHEET, CASH_FLOW] }
+        format: { type: string, enum: [CSV, PDF, XLSX] }
+        filename: { type: string }
+        media_type: { type: string, enum: [text/csv, application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet] }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        content_base64: { type: string, format: byte }
+        generated_at: { type: string, format: date-time }
+    JournalEntry:
+      type: object
+      additionalProperties: false
+      required: [account_id, debit_minor, credit_minor, memo]
+      properties:
+        account_id: { type: string }
+        debit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        credit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        memo: { type: string, maxLength: 500 }
+    FinancialDocument:
+      type: object
+      additionalProperties: true
+      required: [id, number, type, status, currency, accounting_at, reason, created_by, created_at, lines]
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        type: { type: string, enum: [MANUAL_JOURNAL, CASH_TRANSFER, BANK_ADJUSTMENT, REVERSAL] }
+        status: { type: string, enum: [DRAFT, SUBMITTED, POSTED, REJECTED] }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        accounting_at: { type: string, format: date-time }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        from_account_id: { type: string, format: uuid }
+        to_account_id: { type: string, format: uuid }
+        reverses_document_id: { type: string, format: uuid }
+        journal_id: { type: string, format: uuid }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        submitted_by: { type: string, format: uuid }
+        posted_by: { type: string, format: uuid }
+        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/JournalEntry' } }
+    FinancialDocumentPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/FinancialDocument' } }
+        next_cursor: { type: [string, 'null'] }
+    CreateFinancialDocumentCommand:
+      type: object
+      additionalProperties: false
+      required: [type, currency, accounting_at, reason, lines]
+      properties:
+        type: { type: string, enum: [MANUAL_JOURNAL, CASH_TRANSFER, BANK_ADJUSTMENT, REVERSAL] }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        accounting_at: { type: string, format: date-time }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        from_account_id: { type: string, format: uuid }
+        to_account_id: { type: string, format: uuid }
+        reverses_document_id: { type: string, format: uuid }
+        lines: { type: array, items: { $ref: '#/components/schemas/JournalEntry' } }
+    TransitionFinancialDocumentCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties:
+        status: { type: string, enum: [SUBMITTED, POSTED, REJECTED] }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    FiscalPeriod:
+      type: object
+      required: [id, tenant_id, company_id, starts_at, ends_at, open]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        open: { type: boolean }
+    FiscalPeriodPage:
+      type: object
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/FiscalPeriod' } } }
+    FiscalPeriodActionCommand:
+      type: object
+      additionalProperties: false
+      required: [action, reason]
+      properties:
+        action: { type: string, enum: [CLOSE, REOPEN] }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    ApprovalReasonCommand:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties: { reason: { type: string, minLength: 8, maxLength: 500 } }
+    FiscalPeriodActionRequest:
+      type: object
+      required: [id, period_id, action, reason, requested_by, requested_at]
+      properties:
+        id: { type: string, format: uuid }
+        period_id: { type: string, format: uuid }
+        action: { type: string, enum: [CLOSE, REOPEN] }
+        reason: { type: string }
+        requested_by: { type: string, format: uuid }
+        requested_at: { type: string, format: date-time }
+        approved_by: { type: string, format: uuid }
+        approved_at: { type: string, format: date-time }
+    FiscalPeriodActionPage:
+      type: object
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/FiscalPeriodActionRequest' } } }
+    BankAccount:
+      type: object
+      additionalProperties: true
+      required: [id, code, name, type, currency, gl_account_id, active]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [BANK, CASH, MOBILE_MONEY] }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        gl_account_id: { type: string }
+        active: { type: boolean }
+    BankAccountPage:
+      type: object
+      required: [items]
+      properties: { items: { type: array, items: { $ref: '#/components/schemas/BankAccount' } } }
+    ImportBankStatementLine:
+      type: object
+      additionalProperties: false
+      required: [transaction_at, external_reference, description, amount_minor]
+      properties:
+        transaction_at: { type: string, format: date-time }
+        external_reference: { type: string, maxLength: 120 }
+        description: { type: string, minLength: 3, maxLength: 300 }
+        amount_minor: { $ref: '#/components/schemas/SafeInteger' }
+    ImportBankStatementCommand:
+      type: object
+      additionalProperties: false
+      required: [account_id, external_reference, currency, period_start, period_end, opening_minor, closing_minor, lines]
+      properties:
+        account_id: { type: string, format: uuid }
+        external_reference: { type: string, minLength: 3, maxLength: 120 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        opening_minor: { $ref: '#/components/schemas/SafeInteger' }
+        closing_minor: { $ref: '#/components/schemas/SafeInteger' }
+        lines: { type: array, minItems: 1, maxItems: 500, items: { $ref: '#/components/schemas/ImportBankStatementLine' } }
+    BankLedgerCandidate:
+      type: object
+      required: [journal_line_id, journal_id, source_type, source_id, amount_minor, occurred_at, memo]
+      properties:
+        journal_line_id: { type: string }
+        journal_id: { type: string, format: uuid }
+        source_type: { type: string }
+        source_id: { type: string, format: uuid }
+        amount_minor: { $ref: '#/components/schemas/SafeInteger' }
+        occurred_at: { type: string, format: date-time }
+        memo: { type: string }
+    BankStatementMatch:
+      type: object
+      required: [id, journal_line_id, actor_id, reason, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        journal_line_id: { type: string }
+        actor_id: { type: string, format: uuid }
+        reason: { type: string }
+        occurred_at: { type: string, format: date-time }
+    BankStatementLine:
+      allOf:
+        - $ref: '#/components/schemas/ImportBankStatementLine'
+        - type: object
+          required: [id, candidates]
+          properties:
+            id: { type: string, format: uuid }
+            match: { $ref: '#/components/schemas/BankStatementMatch' }
+            candidates: { type: array, items: { $ref: '#/components/schemas/BankLedgerCandidate' } }
+    BankStatement:
+      type: object
+      additionalProperties: true
+      required: [id, account_id, external_reference, currency, period_start, period_end, opening_minor, closing_minor, status, imported_by, imported_at, correlation_id, lines]
+      properties:
+        id: { type: string, format: uuid }
+        account_id: { type: string, format: uuid }
+        external_reference: { type: string }
+        currency: { type: string }
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        opening_minor: { $ref: '#/components/schemas/SafeInteger' }
+        closing_minor: { $ref: '#/components/schemas/SafeInteger' }
+        status: { type: string, enum: [IMPORTED, RECONCILED] }
+        imported_by: { type: string, format: uuid }
+        imported_at: { type: string, format: date-time }
+        reconciled_by: { type: string, format: uuid }
+        reconciled_at: { type: string, format: date-time }
+        correlation_id: { type: string, format: uuid }
+        lines: { type: array, items: { $ref: '#/components/schemas/BankStatementLine' } }
+    BankStatementPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/BankStatement' } }
+        next_cursor: { type: [string, 'null'] }
+    MatchBankStatementLineCommand:
+      type: object
+      additionalProperties: false
+      required: [journal_line_id, reason]
+      properties:
+        journal_line_id: { type: string, minLength: 1 }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    ReconcileBankStatementCommand:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties: { reason: { type: string, minLength: 8, maxLength: 500 } }
+    ReceiveCustomerCollectionCommand:
+      type: object
+      additionalProperties: false
+      required: [invoice_sale_id, method, amount_minor, currency]
+      properties:
+        invoice_sale_id: { type: string, format: uuid }
+        method: { $ref: '#/components/schemas/PaymentMethod' }
+        amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+    CustomerCollection:
+      type: object
+      additionalProperties: true
+      required: [id, customer_id, invoice_sale_id, method, account_id, amount_minor, currency, occurred_at, correlation_id]
+      properties:
+        id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        invoice_sale_id: { type: string, format: uuid }
+        method: { $ref: '#/components/schemas/PaymentMethod' }
+        account_id: { type: string }
+        amount_minor: { $ref: '#/components/schemas/SafePositiveInteger' }
+        currency: { type: string }
+        occurred_at: { type: string, format: date-time }
+        correlation_id: { type: string, format: uuid }
     ReverseSaleCommand:
       type: object
       additionalProperties: false
       required: [reason]
       properties:
         reason: { type: string, minLength: 1, maxLength: 500 }
+    MobileDeviceEnrollmentCommand:
+      type: object
+      additionalProperties: false
+      required: [device_id, device_name, app_version]
+      properties:
+        device_id: { type: string, format: uuid }
+        device_name: { type: string, minLength: 1, maxLength: 200 }
+        app_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Application build requesting enrollment. For an existing device, this becomes the acknowledged app version only with a successful cache-version acknowledgement.
+        installed_master_data_version:
+          allOf: [{ $ref: '#/components/schemas/SafePositiveInteger' }]
+          description: Optional durable-cache acknowledgement; must be supplied with installed_price_version and equal the current available version to advance server state.
+        installed_price_version:
+          allOf: [{ $ref: '#/components/schemas/SafePositiveInteger' }]
+          description: Optional durable-cache acknowledgement; must be supplied with installed_master_data_version and equal the current available version to advance server state.
+        installed_catalog_snapshot_token:
+          type: string
+          format: uuid
+          description: Optional immutable publication acknowledgement; required with both installed versions and must equal the current available token.
+    MobileStockAllocation:
+      type: object
+      additionalProperties: false
+      required: [product_id, allocated_quantity, remaining_quantity]
+      properties:
+        product_id: { type: string, format: uuid }
+        allocated_quantity: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        remaining_quantity: { $ref: '#/components/schemas/SafeInteger' }
+    MobileDeviceEnrollment:
+      type: object
+      additionalProperties: false
+      required: [device_id, status, actor_id, scope, device_name, app_version, master_data_version, price_version, catalog_snapshot_token, available_master_data_version, available_price_version, available_catalog_snapshot_token, timezone, offline_enabled, transaction_value_limit_minor, daily_value_limit_minor, remaining_daily_value_minor, offline_sales_valid_until, enrolled_at, last_seen_at, stock_allocations]
+      properties:
+        device_id: { type: string, format: uuid }
+        status: { type: string, enum: [ACTIVE, SUSPENDED, REVOKED] }
+        actor_id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        device_name: { type: string }
+        app_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Application build bound to the acknowledged installed cache. It does not advance on an unacknowledged refresh.
+        master_data_version:
+          allOf: [{ $ref: '#/components/schemas/SafeNonNegativeInteger' }]
+          description: Version durably installed and explicitly acknowledged by this device; zero means unacknowledged.
+        price_version:
+          allOf: [{ $ref: '#/components/schemas/SafeNonNegativeInteger' }]
+          description: Price version durably installed and explicitly acknowledged by this device; zero means unacknowledged.
+        catalog_snapshot_token:
+          type: string
+          format: uuid
+          description: Snapshot durably installed by this device; the all-zero UUID means unacknowledged.
+        available_master_data_version:
+          allOf: [{ $ref: '#/components/schemas/SafePositiveInteger' }]
+          description: Current legal-company master-data version available for download.
+        available_price_version:
+          allOf: [{ $ref: '#/components/schemas/SafePositiveInteger' }]
+          description: Current legal-company price version available for download.
+        available_catalog_snapshot_token:
+          type: string
+          format: uuid
+          description: Current immutable legal-company catalog publication available for download.
+        timezone: { type: string, example: Africa/Dar_es_Salaam }
+        offline_enabled: { type: boolean }
+        transaction_value_limit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        daily_value_limit_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        remaining_daily_value_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        offline_sales_valid_until:
+          type: string
+          format: date-time
+          description: Exclusive UTC deadline for creating offline sales with the acknowledged app and cache pair. It is immediately expired until a successful acknowledgement, lasts at most four hours, and never crosses the next configured tax-rule transition.
+        enrolled_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        stock_allocations:
+          type: array
+          items: { $ref: '#/components/schemas/MobileStockAllocation' }
+    MobileDevicePage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MobileDeviceEnrollment' }
+        next_cursor: { type: [string, 'null'] }
+    ChangeMobileDeviceStatusCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties:
+        status: { type: string, enum: [ACTIVE, SUSPENDED] }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    ChangeMobileDeviceAllocationCommand:
+      type: object
+      additionalProperties: false
+      required: [product_id, allocated_quantity, reason]
+      properties:
+        product_id: { type: string, format: uuid }
+        allocated_quantity: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
     MobileSaleSyncCommand:
       type: object
       additionalProperties: false
-      required: [customer_id, kind, lines, device_id, client_transaction_id, client_timestamp, app_version, master_data_version, price_version, sync_attempt]
+      required: [customer_id, kind, lines, device_id, client_transaction_id, client_timestamp, app_version, master_data_version, price_version, catalog_snapshot_token, sync_attempt]
       properties:
         customer_id: { type: string, format: uuid }
         kind: { $ref: '#/components/schemas/SaleKind' }
-        payment_method: { type: string, minLength: 1, maxLength: 64 }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
         lines:
           type: array
           minItems: 1
@@ -533,29 +2763,101 @@ components:
         device_id: { type: string, format: uuid }
         client_transaction_id: { type: string, format: uuid }
         client_timestamp: { type: string, format: date-time }
-        app_version: { type: string }
-        master_data_version: { type: integer, minimum: 1 }
-        price_version: { type: integer, minimum: 1 }
-        sync_attempt: { type: integer, minimum: 1 }
-        offline: { type: boolean, default: false }
+        app_version: { type: string, minLength: 1, maxLength: 64 }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        catalog_snapshot_token: { type: string, format: uuid }
+        sync_attempt: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        offline:
+          type: boolean
+          default: false
+          description: Controlled offline mode accepts only physical CASH and zero-rated product lines. The client timestamp must fall inside a persisted server-issued lease bound to this exact device, app, master-data version, price version, and catalog snapshot token; nonzero effective tax or a changed governed product publication is rejected with 422.
     MobileSyncResult:
       type: object
       additionalProperties: false
-      required: [client_transaction_id, state]
+      required: [client_transaction_id, state, receipt_reference, fiscal_status, idempotent_replay, sale]
       properties:
         client_transaction_id: { type: string, format: uuid }
-        state: { type: string, enum: [synced, rejected, requires_review] }
+        state: { type: string, enum: [synced] }
+        receipt_reference:
+          type: string
+          description: Authoritative non-fiscal reference for the persisted sale.
+        fiscal_status: { $ref: '#/components/schemas/FiscalStatus' }
+        idempotent_replay:
+          type: boolean
+          description: True only when the server restored a previously committed result for this device and client transaction pair.
         sale: { $ref: '#/components/schemas/Sale' }
-        rejection_code: { type: [string, 'null'] }
-        rejection_message: { type: [string, 'null'] }
+    MobileReconciliationStatus:
+      type: string
+      enum: [OPEN, RESOLVED]
+    MobileReconciliationAction:
+      type: string
+      enum: [CASH_REFUNDED, POSTED_EXTERNALLY, DUPLICATE_CONFIRMED]
+    MobileReconciliationResolution:
+      type: object
+      additionalProperties: false
+      required: [id, case_id, action, reason, resolved_by, correlation_id, resolved_at]
+      properties:
+        id: { type: string, format: uuid }
+        case_id: { type: string, format: uuid }
+        action: { $ref: '#/components/schemas/MobileReconciliationAction' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        external_reference: { type: string, maxLength: 200 }
+        resolved_by: { type: string, format: uuid }
+        correlation_id: { type: string, format: uuid }
+        resolved_at: { type: string, format: date-time }
+    MobileReconciliationCase:
+      type: object
+      additionalProperties: false
+      required: [id, scope, status, device_id, client_transaction_id, client_timestamp, app_version, master_data_version, price_version, catalog_snapshot_token, failure_code, command, created_by, correlation_id, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: '#/components/schemas/Scope' }
+        status: { $ref: '#/components/schemas/MobileReconciliationStatus' }
+        device_id: { type: string, format: uuid }
+        client_transaction_id: { type: string, format: uuid }
+        client_timestamp: { type: string, format: date-time }
+        app_version: { type: string, minLength: 1, maxLength: 64 }
+        master_data_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        price_version: { $ref: '#/components/schemas/SafePositiveInteger' }
+        catalog_snapshot_token: { type: string, format: uuid }
+        failure_code: { type: string, enum: [offline_reconciliation_required] }
+        command:
+          type: object
+          additionalProperties: true
+          description: Exact canonical mobile command retained as reconciliation evidence.
+        created_by: { type: string, format: uuid }
+        correlation_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        resolution: { $ref: '#/components/schemas/MobileReconciliationResolution' }
+    MobileReconciliationPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MobileReconciliationCase' }
+        next_cursor: { type: [string, 'null'] }
+    ResolveMobileReconciliationCommand:
+      type: object
+      additionalProperties: false
+      required: [action, reason]
+      properties:
+        action: { $ref: '#/components/schemas/MobileReconciliationAction' }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        external_reference: { type: string, maxLength: 200 }
     Metric:
       type: object
+      additionalProperties: false
       required: [key, label, value]
       properties:
         key: { type: string }
         label: { type: string }
         value: { $ref: '#/components/schemas/Money' }
-        trend_percent: { type: [string, 'null'] }
+        trend_percent:
+          type: [string, 'null']
+          description: Null until a governed comparable-period projection is available.
     DashboardAlert:
       type: object
       required: [id, severity, title, source_type, source_id]
@@ -567,12 +2869,190 @@ components:
         source_id: { type: string, format: uuid }
     Dashboard:
       type: object
+      additionalProperties: false
+      description: >-
+        Governed executive snapshot. Monetary values are derived from posted
+        legal-company ledger entries. Pending approvals cover submitted
+        transactional operation and finance documents in the authenticated
+        branch and warehouse scope.
       required: [as_of, metrics, alerts, pending_approvals]
       properties:
         as_of: { type: string, format: date-time }
         metrics: { type: array, items: { $ref: '#/components/schemas/Metric' } }
         alerts: { type: array, items: { $ref: '#/components/schemas/DashboardAlert' } }
-        pending_approvals: { type: integer, minimum: 0 }
+        pending_approvals: { $ref: '#/components/schemas/SafeNonNegativeInteger' }
+    SafeInteger:
+      type: integer
+      format: int64
+      minimum: -9007199254740991
+      maximum: 9007199254740991
+      description: JSON integer constrained to the JavaScript Number safe-integer range.
+    SafeNonNegativeInteger:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 9007199254740991
+      description: Non-negative JSON integer constrained to the JavaScript Number safe-integer range.
+    SafePositiveInteger:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 9007199254740991
+      description: Positive JSON integer constrained to the JavaScript Number safe-integer range.
+    Employee:
+      type: object
+      additionalProperties: true
+      required: [id, scope, number, full_name, currency, hire_date, status, base_salary_minor, created_by, created_at]
+      properties: { id: { type: string, format: uuid }, scope: { $ref: '#/components/schemas/Scope' }, number: { type: string }, full_name: { type: string }, job_title: { type: string }, department: { type: string }, currency: { type: string, pattern: '^[A-Z]{3}$' }, hire_date: { type: string, format: date-time }, status: { type: string, enum: [ACTIVE, INACTIVE] }, base_salary_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, created_by: { type: string, format: uuid }, created_at: { type: string, format: date-time } }
+    Attendance:
+      type: object
+      additionalProperties: true
+      required: [id, employee_id, work_date, regular_minutes, overtime_minutes, reason, recorded_by, recorded_at]
+      properties: { id: { type: string, format: uuid }, employee_id: { type: string, format: uuid }, work_date: { type: string, format: date-time }, regular_minutes: { type: integer, minimum: -1440, maximum: 1440 }, overtime_minutes: { type: integer, minimum: -720, maximum: 720 }, reason: { type: string }, reversal_of: { type: string, format: uuid }, recorded_by: { type: string, format: uuid }, recorded_at: { type: string, format: date-time } }
+    LeaveType:
+      type: object
+      additionalProperties: true
+      required: [id, code, name_en, name_sw, annual_entitlement_days, effective_from]
+      properties: { id: { type: string, format: uuid }, code: { type: string }, name_en: { type: string }, name_sw: { type: string }, annual_entitlement_days: { type: integer, minimum: 0, maximum: 366 }, effective_from: { type: string, format: date-time }, effective_to: { type: [string, 'null'], format: date-time } }
+    LeaveRequest:
+      type: object
+      additionalProperties: true
+      required: [id, employee_id, leave_type_id, starts_on, ends_on, days, reason, status, created_by, created_at]
+      properties: { id: { type: string, format: uuid }, employee_id: { type: string, format: uuid }, leave_type_id: { type: string, format: uuid }, starts_on: { type: string, format: date-time }, ends_on: { type: string, format: date-time }, days: { $ref: '#/components/schemas/SafePositiveInteger' }, reason: { type: string }, status: { $ref: '#/components/schemas/PeopleWorkflowStatus' }, created_by: { type: string, format: uuid }, approved_by: { type: string, format: uuid }, created_at: { type: string, format: date-time } }
+    EmployeeLoan:
+      type: object
+      additionalProperties: true
+      required: [id, employee_id, reference, currency, principal_minor, outstanding_minor, status]
+      properties: { id: { type: string, format: uuid }, employee_id: { type: string, format: uuid }, reference: { type: string }, currency: { type: string }, principal_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, outstanding_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, receivable_account_id: { type: string }, bank_account_id: { type: string }, status: { $ref: '#/components/schemas/PeopleWorkflowStatus' }, journal_id: { type: string, format: uuid } }
+    PayrollLine:
+      type: object
+      additionalProperties: false
+      required: [employee_id, gross_minor, other_deductions_minor, loan_deduction_minor, net_minor]
+      properties: { employee_id: { type: string, format: uuid }, gross_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, other_deductions_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, loan_deduction_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, net_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' } }
+    PayrollRun:
+      type: object
+      additionalProperties: true
+      required: [id, reference, currency, period_start, period_end, payment_date, status, lines, gross_minor, deductions_minor, net_minor]
+      properties: { id: { type: string, format: uuid }, reference: { type: string }, currency: { type: string }, period_start: { type: string, format: date-time }, period_end: { type: string, format: date-time }, payment_date: { type: string, format: date-time }, status: { $ref: '#/components/schemas/PeopleWorkflowStatus' }, lines: { type: array, items: { $ref: '#/components/schemas/PayrollLine' } }, gross_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, deductions_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, net_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, journal_id: { type: string, format: uuid } }
+    PeopleSnapshot:
+      type: object
+      additionalProperties: false
+      required: [employees, attendance, leave_types, leave_requests, loans, payroll_runs]
+      properties: { employees: { type: array, items: { $ref: '#/components/schemas/Employee' } }, attendance: { type: array, items: { $ref: '#/components/schemas/Attendance' } }, leave_types: { type: array, items: { $ref: '#/components/schemas/LeaveType' } }, leave_requests: { type: array, items: { $ref: '#/components/schemas/LeaveRequest' } }, loans: { type: array, items: { $ref: '#/components/schemas/EmployeeLoan' } }, payroll_runs: { type: array, items: { $ref: '#/components/schemas/PayrollRun' } } }
+    WorkforceStatus: { type: string, enum: [DRAFT, SUBMITTED, ACTIVE, APPROVED, REJECTED] }
+    ShiftTemplate: { type: object, additionalProperties: true, required: [id, code, name_en, name_sw, status, start_minute, end_minute, break_minutes, weekday_mask, effective_from, reason, created_by, created_at], properties: { id: { type: string, format: uuid }, code: { type: string }, name_en: { type: string }, name_sw: { type: string }, status: { $ref: '#/components/schemas/WorkforceStatus' }, start_minute: { type: integer, minimum: 0, maximum: 1439 }, end_minute: { type: integer, minimum: 0, maximum: 1439 }, break_minutes: { type: integer, minimum: 0, maximum: 720 }, weekday_mask: { type: integer, minimum: 1, maximum: 127 }, effective_from: { type: string, format: date-time }, effective_to: { type: string, format: date-time }, reason: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time }, approved_by: { type: string } } }
+    CreateShiftTemplateCommand: { type: object, additionalProperties: false, required: [code, name_en, name_sw, start_minute, end_minute, break_minutes, weekday_mask, effective_from, reason], properties: { code: { type: string }, name_en: { type: string }, name_sw: { type: string }, start_minute: { type: integer, minimum: 0, maximum: 1439 }, end_minute: { type: integer, minimum: 0, maximum: 1439 }, break_minutes: { type: integer, minimum: 0, maximum: 720 }, weekday_mask: { type: integer, minimum: 1, maximum: 127 }, effective_from: { type: string, format: date }, effective_to: { type: string, format: date }, reason: { type: string, minLength: 8, maxLength: 500 } } }
+    ShiftAssignment: { type: object, additionalProperties: true, required: [id, employee_id, shift_template_id, status, starts_on, ends_on, reason, created_by, created_at], properties: { id: { type: string, format: uuid }, employee_id: { type: string, format: uuid }, shift_template_id: { type: string, format: uuid }, status: { $ref: '#/components/schemas/WorkforceStatus' }, starts_on: { type: string, format: date-time }, ends_on: { type: string, format: date-time }, reason: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time }, approved_by: { type: string } } }
+    CreateShiftAssignmentCommand: { type: object, additionalProperties: false, required: [employee_id, shift_template_id, starts_on, ends_on, reason], properties: { employee_id: { type: string, format: uuid }, shift_template_id: { type: string, format: uuid }, starts_on: { type: string, format: date }, ends_on: { type: string, format: date }, reason: { type: string, minLength: 8, maxLength: 500 } } }
+    WorkforceTransitionCommand: { type: object, additionalProperties: false, required: [status, reason], properties: { status: { $ref: '#/components/schemas/WorkforceStatus' }, reason: { type: string, minLength: 8, maxLength: 500 } } }
+    EmployeeDocument: { type: object, additionalProperties: true, required: [id, employee_id, document_type, title, object_key, sha256, media_type, classification, reason, created_by, created_at], properties: { id: { type: string, format: uuid }, employee_id: { type: string, format: uuid }, document_type: { type: string }, title: { type: string }, object_key: { type: string }, sha256: { type: string, pattern: '^[0-9a-f]{64}$' }, media_type: { type: string }, classification: { type: string, enum: [INTERNAL, CONFIDENTIAL, RESTRICTED] }, issued_on: { type: string, format: date-time }, expires_on: { type: string, format: date-time }, reason: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time } } }
+    RegisterEmployeeDocumentCommand: { type: object, additionalProperties: false, required: [employee_id, document_type, title, object_key, sha256, media_type, classification, reason], properties: { employee_id: { type: string, format: uuid }, document_type: { type: string }, title: { type: string }, object_key: { type: string }, sha256: { type: string, pattern: '^[0-9a-fA-F]{64}$' }, media_type: { type: string }, classification: { type: string, enum: [INTERNAL, CONFIDENTIAL, RESTRICTED] }, issued_on: { type: string, format: date }, expires_on: { type: string, format: date }, reason: { type: string, minLength: 8, maxLength: 500 } } }
+    PayrollArtifact: { type: object, additionalProperties: true, required: [id, payroll_run_id, configuration_id, format, file_name, media_type, sha256, configuration_sha256, row_count, created_by, created_at], properties: { id: { type: string, format: uuid }, payroll_run_id: { type: string, format: uuid }, configuration_id: { type: string, format: uuid }, format: { type: string, enum: [BANK_CSV, STATUTORY_CSV] }, file_name: { type: string }, media_type: { type: string }, sha256: { type: string }, configuration_sha256: { type: string }, row_count: { $ref: '#/components/schemas/SafePositiveInteger' }, content: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time } } }
+    GeneratePayrollArtifactCommand: { type: object, additionalProperties: false, required: [configuration_id, format], properties: { configuration_id: { type: string, format: uuid }, format: { type: string, enum: [BANK_CSV, STATUTORY_CSV] } } }
+    WorkforceSnapshot: { type: object, additionalProperties: false, required: [templates, assignments, documents, payroll_artifacts], properties: { templates: { type: array, items: { $ref: '#/components/schemas/ShiftTemplate' } }, assignments: { type: array, items: { $ref: '#/components/schemas/ShiftAssignment' } }, documents: { type: array, items: { $ref: '#/components/schemas/EmployeeDocument' } }, payroll_artifacts: { type: array, items: { $ref: '#/components/schemas/PayrollArtifact' } } } }
+    PeopleWorkflowStatus: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, POSTED, REJECTED] }
+    CreateEmployeeCommand:
+      type: object
+      additionalProperties: false
+      required: [number, full_name, job_title, department, currency, hire_date, base_salary_minor]
+      properties: { number: { type: string }, full_name: { type: string }, job_title: { type: string }, department: { type: string }, currency: { type: string }, hire_date: { type: string, format: date }, base_salary_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' } }
+    AttendanceCommand:
+      type: object
+      additionalProperties: false
+      required: [employee_id, work_date, regular_minutes, overtime_minutes, reason]
+      properties: { employee_id: { type: string, format: uuid }, work_date: { type: string, format: date }, regular_minutes: { type: integer }, overtime_minutes: { type: integer }, reason: { type: string }, reversal_of: { type: string, format: uuid } }
+    LeaveTypeCommand:
+      type: object
+      additionalProperties: false
+      required: [code, name_en, name_sw, annual_entitlement_days, effective_from]
+      properties: { code: { type: string }, name_en: { type: string }, name_sw: { type: string }, annual_entitlement_days: { type: integer }, effective_from: { type: string, format: date } }
+    LeaveCommand:
+      type: object
+      additionalProperties: false
+      required: [employee_id, leave_type_id, starts_on, ends_on, reason]
+      properties: { employee_id: { type: string, format: uuid }, leave_type_id: { type: string, format: uuid }, starts_on: { type: string, format: date }, ends_on: { type: string, format: date }, reason: { type: string } }
+    PeopleTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties: { status: { $ref: '#/components/schemas/PeopleWorkflowStatus' }, reason: { type: string } }
+    LoanCommand:
+      type: object
+      additionalProperties: false
+      required: [employee_id, reference, currency, principal_minor, receivable_account_id, bank_account_id, reason]
+      properties: { employee_id: { type: string, format: uuid }, reference: { type: string }, currency: { type: string }, principal_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, receivable_account_id: { type: string }, bank_account_id: { type: string }, reason: { type: string } }
+    PayrollCommand:
+      type: object
+      additionalProperties: false
+      required: [reference, currency, period_start, period_end, payment_date, salary_expense_account_id, payroll_payable_account_id, deduction_liability_account_id, reason, lines]
+      properties: { reference: { type: string }, currency: { type: string }, period_start: { type: string, format: date }, period_end: { type: string, format: date }, payment_date: { type: string, format: date }, salary_expense_account_id: { type: string }, payroll_payable_account_id: { type: string }, deduction_liability_account_id: { type: string }, reason: { type: string }, lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/PayrollLine' } } }
+    ConfigurationStatus: { type: string, enum: [DRAFT, SUBMITTED, ACTIVE, REJECTED, RETIRED] }
+    ConfigurationCategory: { type: string, enum: [SALES, PURCHASING, INVENTORY, FINANCE, HR, NUMBERING, TEMPLATES, NOTIFICATIONS, IMPORTS, INTEGRATIONS] }
+    ConfigurationVersion:
+      type: object
+      additionalProperties: true
+      required: [id, category, key, name_en, name_sw, value, effective_from, status, reason, created_by, created_at]
+      properties: { id: { type: string, format: uuid }, category: { $ref: '#/components/schemas/ConfigurationCategory' }, key: { type: string }, name_en: { type: string }, name_sw: { type: string }, value: { type: object, additionalProperties: true }, secret_ref: { type: string }, effective_from: { type: string, format: date-time }, effective_to: { type: [string, 'null'], format: date-time }, status: { $ref: '#/components/schemas/ConfigurationStatus' }, reason: { type: string }, created_by: { type: string, format: uuid }, created_at: { type: string, format: date-time }, approved_by: { type: string, format: uuid } }
+    NumberSequence:
+      type: object
+      additionalProperties: true
+      required: [id, key, prefix, next_value, padding, created_by, created_at]
+      properties: { id: { type: string, format: uuid }, key: { type: string }, prefix: { type: string }, next_value: { $ref: '#/components/schemas/SafePositiveInteger' }, padding: { type: integer, minimum: 1, maximum: 18 }, created_by: { type: string, format: uuid }, created_at: { type: string, format: date-time } }
+    NumberAllocation:
+      type: object
+      additionalProperties: false
+      required: [sequence_id, number, value, allocated_at]
+      properties: { sequence_id: { type: string, format: uuid }, number: { type: string }, value: { $ref: '#/components/schemas/SafePositiveInteger' }, allocated_at: { type: string, format: date-time } }
+    ConfigurationSnapshot:
+      type: object
+      additionalProperties: false
+      required: [versions, sequences]
+      properties: { versions: { type: array, items: { $ref: '#/components/schemas/ConfigurationVersion' } }, sequences: { type: array, items: { $ref: '#/components/schemas/NumberSequence' } } }
+    CreateConfigurationCommand:
+      type: object
+      additionalProperties: false
+      required: [category, key, name_en, name_sw, value, effective_from, reason]
+      properties: { category: { $ref: '#/components/schemas/ConfigurationCategory' }, key: { type: string }, name_en: { type: string }, name_sw: { type: string }, value: { type: object, additionalProperties: true }, secret_ref: { type: string }, effective_from: { type: string, format: date }, effective_to: { type: string, format: date }, reason: { type: string } }
+    ConfigurationTransitionCommand:
+      type: object
+      additionalProperties: false
+      required: [status, reason]
+      properties: { status: { $ref: '#/components/schemas/ConfigurationStatus' }, reason: { type: string } }
+    CreateNumberSequenceCommand:
+      type: object
+      additionalProperties: false
+      required: [key, prefix, next_value, padding]
+      properties: { key: { type: string }, prefix: { type: string }, next_value: { $ref: '#/components/schemas/SafePositiveInteger' }, padding: { type: integer, minimum: 1, maximum: 18 } }
+    MasterRevisionStatus: { type: string, enum: [DRAFT, SUBMITTED, ACTIVE, REJECTED] }
+    SupplierMasterData: { type: object, additionalProperties: false, required: [code, name, tax_id, email, phone, payment_terms_days, active], properties: { code: { type: string }, name: { type: string }, tax_id: { type: string }, email: { type: string }, phone: { type: string }, payment_terms_days: { type: integer, minimum: 0, maximum: 365 }, active: { type: boolean } } }
+    ProductMasterData: { type: object, additionalProperties: false, required: [sku, name, base_unit_code, currency, list_price_minor, standard_cost_minor, tax_code, revenue_account_id, cogs_account_id, inventory_account_id, active], properties: { sku: { type: string }, name: { type: string }, base_unit_code: { type: string }, currency: { type: string }, list_price_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, standard_cost_minor: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, tax_code: { type: string }, revenue_account_id: { type: string }, cogs_account_id: { type: string }, inventory_account_id: { type: string }, active: { type: boolean } } }
+    MasterRevision: { type: object, additionalProperties: true, required: [id, entity_type, entity_id, status, reason, created_by, created_at], properties: { id: { type: string, format: uuid }, entity_type: { type: string, enum: [SUPPLIER, PRODUCT] }, entity_id: { type: string, format: uuid }, status: { $ref: '#/components/schemas/MasterRevisionStatus' }, supplier: { $ref: '#/components/schemas/SupplierMasterData' }, product: { $ref: '#/components/schemas/ProductMasterData' }, reason: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time }, approved_by: { type: string } } }
+    CreateMasterRevisionCommand: { type: object, additionalProperties: false, required: [entity_type, reason], properties: { entity_type: { type: string, enum: [SUPPLIER, PRODUCT] }, entity_id: { type: string, format: uuid }, supplier: { $ref: '#/components/schemas/SupplierMasterData' }, product: { $ref: '#/components/schemas/ProductMasterData' }, reason: { type: string } } }
+    MasterRevisionTransitionCommand: { type: object, additionalProperties: false, required: [status, reason], properties: { status: { $ref: '#/components/schemas/MasterRevisionStatus' }, reason: { type: string } } }
+    RFQStatus: { type: string, enum: [DRAFT, SUBMITTED, APPROVED, CLOSED, CANCELLED] }
+    RFQLine: { type: object, additionalProperties: false, required: [id, product_id, quantity], properties: { id: { type: string, format: uuid }, product_id: { type: string, format: uuid }, quantity: { $ref: '#/components/schemas/SafePositiveInteger' } } }
+    RFQ: { type: object, additionalProperties: true, required: [id, number, status, currency, response_due_at, reason, created_by, created_at, lines], properties: { id: { type: string, format: uuid }, number: { type: string }, status: { $ref: '#/components/schemas/RFQStatus' }, currency: { type: string }, response_due_at: { type: string, format: date-time }, reason: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time }, lines: { type: array, items: { $ref: '#/components/schemas/RFQLine' } } } }
+    CreateRFQCommand: { type: object, additionalProperties: false, required: [currency, response_due_at, reason, lines], properties: { currency: { type: string }, response_due_at: { type: string, format: date-time }, reason: { type: string }, lines: { type: array, minItems: 1, items: { type: object, required: [product_id, quantity], properties: { product_id: { type: string, format: uuid }, quantity: { $ref: '#/components/schemas/SafePositiveInteger' } } } } } }
+    RFQTransitionCommand: { type: object, additionalProperties: false, required: [status, reason], properties: { status: { $ref: '#/components/schemas/RFQStatus' }, reason: { type: string } } }
+    SupplierQuote: { type: object, additionalProperties: true, required: [id, rfq_id, supplier_id, reference, status, currency, delivery_days, payment_terms_days, valid_until, total_minor, reason, lines], properties: { id: { type: string, format: uuid }, rfq_id: { type: string, format: uuid }, supplier_id: { type: string, format: uuid }, reference: { type: string }, status: { type: string, enum: [DRAFT, SUBMITTED, SELECTED, REJECTED] }, currency: { type: string }, delivery_days: { type: integer }, payment_terms_days: { type: integer }, valid_until: { type: string, format: date-time }, total_minor: { $ref: '#/components/schemas/SafePositiveInteger' }, reason: { type: string }, lines: { type: array, items: { type: object, additionalProperties: true } } } }
+    CreateSupplierQuoteCommand: { type: object, additionalProperties: false, required: [rfq_id, supplier_id, reference, currency, delivery_days, payment_terms_days, valid_until, reason, lines], properties: { rfq_id: { type: string, format: uuid }, supplier_id: { type: string, format: uuid }, reference: { type: string }, currency: { type: string }, delivery_days: { type: integer }, payment_terms_days: { type: integer }, valid_until: { type: string, format: date-time }, reason: { type: string }, lines: { type: array, minItems: 1, items: { type: object, required: [product_id, quantity, unit_price_minor], properties: { product_id: { type: string, format: uuid }, quantity: { $ref: '#/components/schemas/SafePositiveInteger' }, unit_price_minor: { $ref: '#/components/schemas/SafePositiveInteger' } } } } } }
+    ReasonCommand: { type: object, additionalProperties: false, required: [reason], properties: { reason: { type: string } } }
+    RFQComparison: { type: object, additionalProperties: true, required: [rfq, quotes], properties: { rfq: { $ref: '#/components/schemas/RFQ' }, quotes: { type: array, items: { type: object, additionalProperties: true } } } }
+    AwardRFQCommand: { type: object, additionalProperties: false, required: [quote_id, reason], properties: { quote_id: { type: string, format: uuid }, reason: { type: string } } }
+    SourcingAward: { type: object, additionalProperties: true, required: [id, rfq_id, quote_id, supplier_id, purchase_order_id, reason, selected_by, selected_at], properties: { id: { type: string, format: uuid }, rfq_id: { type: string, format: uuid }, quote_id: { type: string, format: uuid }, supplier_id: { type: string, format: uuid }, purchase_order_id: { type: string, format: uuid }, reason: { type: string }, selected_by: { type: string }, selected_at: { type: string, format: date-time } } }
+    CommercialWorkspace: { type: object, additionalProperties: false, required: [revisions, rfqs, quotes, awards], properties: { revisions: { type: array, items: { $ref: '#/components/schemas/MasterRevision' } }, rfqs: { type: array, items: { $ref: '#/components/schemas/RFQ' } }, quotes: { type: array, items: { $ref: '#/components/schemas/SupplierQuote' } }, awards: { type: array, items: { $ref: '#/components/schemas/SourcingAward' } } } }
+    InventoryPolicyStatus: { type: string, enum: [DRAFT, SUBMITTED, ACTIVE, REJECTED] }
+    InventoryCostMethod: { type: string, enum: [STANDARD, MOVING_AVERAGE] }
+    InventoryPolicy: { type: object, additionalProperties: true, required: [id, product_id, status, cost_method, lot_controlled, reorder_point, reorder_quantity, maximum_stock, safety_stock, lead_time_days, reason, created_by, created_at], properties: { id: { type: string, format: uuid }, product_id: { type: string, format: uuid }, status: { $ref: '#/components/schemas/InventoryPolicyStatus' }, cost_method: { $ref: '#/components/schemas/InventoryCostMethod' }, lot_controlled: { type: boolean }, reorder_point: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, reorder_quantity: { $ref: '#/components/schemas/SafePositiveInteger' }, maximum_stock: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, safety_stock: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, lead_time_days: { type: integer, minimum: 0, maximum: 3650 }, preferred_supplier_id: { type: string, format: uuid }, reason: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time }, approved_by: { type: string } } }
+    CreateInventoryPolicyCommand: { type: object, additionalProperties: false, required: [product_id, cost_method, lot_controlled, reorder_point, reorder_quantity, maximum_stock, safety_stock, lead_time_days, reason], properties: { product_id: { type: string, format: uuid }, cost_method: { $ref: '#/components/schemas/InventoryCostMethod' }, lot_controlled: { type: boolean }, reorder_point: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, reorder_quantity: { $ref: '#/components/schemas/SafePositiveInteger' }, maximum_stock: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, safety_stock: { $ref: '#/components/schemas/SafeNonNegativeInteger' }, lead_time_days: { type: integer, minimum: 0, maximum: 3650 }, preferred_supplier_id: { type: string, format: uuid }, reason: { type: string, minLength: 8, maxLength: 500 } } }
+    InventoryPolicyTransitionCommand: { type: object, additionalProperties: false, required: [status, reason], properties: { status: { type: string, enum: [SUBMITTED, ACTIVE, REJECTED] }, reason: { type: string, minLength: 8, maxLength: 500 } } }
+    LotRegistrationLine: { type: object, additionalProperties: false, required: [id, product_id, lot_number, quantity], properties: { id: { type: string, format: uuid }, product_id: { type: string, format: uuid }, lot_number: { type: string }, quantity: { $ref: '#/components/schemas/SafePositiveInteger' }, manufactured_at: { type: string, format: date-time }, expires_at: { type: string, format: date-time } } }
+    LotRegistration: { type: object, additionalProperties: true, required: [id, goods_receipt_id, reason, created_by, created_at, lines], properties: { id: { type: string, format: uuid }, goods_receipt_id: { type: string, format: uuid }, reason: { type: string }, created_by: { type: string }, created_at: { type: string, format: date-time }, lines: { type: array, items: { $ref: '#/components/schemas/LotRegistrationLine' } } } }
+    RegisterReceiptLotsCommand: { type: object, additionalProperties: false, required: [reason, lines], properties: { reason: { type: string, minLength: 8, maxLength: 500 }, lines: { type: array, minItems: 1, maxItems: 200, items: { type: object, additionalProperties: false, required: [product_id, lot_number, quantity], properties: { product_id: { type: string, format: uuid }, lot_number: { type: string, minLength: 1, maxLength: 100 }, quantity: { $ref: '#/components/schemas/SafePositiveInteger' }, manufactured_at: { type: string, format: date-time }, expires_at: { type: string, format: date-time } } } } } }
+    InventoryLotBalance: { type: object, additionalProperties: false, required: [lot_id, product_id, lot_number, quantity], properties: { lot_id: { type: string, format: uuid }, product_id: { type: string, format: uuid }, lot_number: { type: string }, manufactured_at: { type: string, format: date-time }, expires_at: { type: string, format: date-time }, quantity: { type: integer, minimum: -9007199254740991, maximum: 9007199254740991 } } }
+    ReplenishmentRecommendation: { type: object, additionalProperties: false, required: [product_id, on_hand, reserved, available, incoming, projected, reorder_point, recommended_quantity, action_required], properties: { product_id: { type: string, format: uuid }, on_hand: { type: integer }, reserved: { type: integer }, available: { type: integer }, incoming: { type: integer }, projected: { type: integer }, reorder_point: { type: integer }, recommended_quantity: { type: integer }, preferred_supplier_id: { type: string, format: uuid }, action_required: { type: boolean } } }
+    InventoryCostHistory: { type: object, additionalProperties: false, required: [id, product_id, source_id, method, quantity_before, quantity_received, cost_before_minor, receipt_cost_minor, cost_after_minor, occurred_at], properties: { id: { type: string, format: uuid }, product_id: { type: string, format: uuid }, source_id: { type: string, format: uuid }, method: { $ref: '#/components/schemas/InventoryCostMethod' }, quantity_before: { type: integer }, quantity_received: { type: integer }, cost_before_minor: { type: integer }, receipt_cost_minor: { type: integer }, cost_after_minor: { type: integer }, occurred_at: { type: string, format: date-time } } }
+    InventoryControlWorkspace: { type: object, additionalProperties: false, required: [policies, registrations, lots, replenishments, cost_history], properties: { policies: { type: array, items: { $ref: '#/components/schemas/InventoryPolicy' } }, registrations: { type: array, items: { $ref: '#/components/schemas/LotRegistration' } }, lots: { type: array, items: { $ref: '#/components/schemas/InventoryLotBalance' } }, replenishments: { type: array, items: { $ref: '#/components/schemas/ReplenishmentRecommendation' } }, cost_history: { type: array, items: { $ref: '#/components/schemas/InventoryCostHistory' } } } }
     Problem:
       type: object
       additionalProperties: true

@@ -588,7 +588,7 @@ class _SaleTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    sale.receiptNumber,
+                    sale.receiptReference,
                     style: const TextStyle(
                       color: Colors.blueGrey,
                       fontSize: 10,
@@ -648,8 +648,20 @@ class SaleDetailsSheet extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            sale.receiptNumber,
+            sale.receiptReference,
             style: const TextStyle(color: Colors.blueGrey),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            strings.t('fiscal_${sale.fiscalStatus.name}'),
+            style: TextStyle(
+              color:
+                  sale.fiscalStatus == FiscalStatus.fiscalized
+                      ? AppTheme.teal
+                      : Colors.blueGrey,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const Divider(height: 30),
           ...sale.lines.map(
@@ -684,6 +696,17 @@ class SaleDetailsSheet extends StatelessWidget {
             ),
           ),
           const Divider(),
+          if (sale.subtotalMinor != null) ...[
+            _CompactFact(
+              label: strings.t('subtotal'),
+              value: money(sale.subtotalMinor!),
+            ),
+            _CompactFact(
+              label: strings.t('tax'),
+              value: money(sale.taxMinor ?? 0),
+            ),
+            const SizedBox(height: 6),
+          ],
           Row(
             children: [
               Text(
@@ -706,10 +729,9 @@ class SaleDetailsSheet extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed:
-                      sale.syncStatus == SyncStatus.synced ? () {} : null,
+                  onPressed: () => _showPrinterStatus(context),
                   icon: const Icon(Icons.print_outlined),
-                  label: Text(strings.t('reprint')),
+                  label: Text(strings.t('printerStatus')),
                 ),
               ),
               const SizedBox(width: 10),
@@ -727,6 +749,39 @@ class SaleDetailsSheet extends StatelessWidget {
     );
   }
 
+  void _showPrinterStatus(BuildContext context) {
+    final strings = AppStrings.of(context);
+    showDialog<void>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            icon: const Icon(Icons.print_disabled_outlined),
+            title: Text(strings.t('printerUnavailable')),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(strings.t('printerUnavailableHelp')),
+                const SizedBox(height: 12),
+                Text(
+                  '${strings.t('receiptNumber')}: ${sale.receiptReference}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  '${strings.t('fiscalStatus')}: ${strings.t('fiscal_${sale.fiscalStatus.name}')}',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(strings.t('close')),
+              ),
+            ],
+          ),
+    );
+  }
+
   void _showCorrection(BuildContext context) {
     final strings = AppStrings.of(context);
     showDialog<void>(
@@ -735,29 +790,23 @@ class SaleDetailsSheet extends StatelessWidget {
           (dialogContext) => AlertDialog(
             title: Text(strings.t('correctionTitle')),
             content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(strings.t('correctionHelp')),
                 const SizedBox(height: 14),
-                TextField(
-                  maxLines: 3,
-                  decoration: InputDecoration(labelText: strings.t('reason')),
+                Text(strings.t('correctionControlCenter')),
+                const SizedBox(height: 14),
+                SelectableText(
+                  '${strings.t('receiptNumber')}: ${sale.receiptReference}\nClient transaction: ${sale.clientTransactionId}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ],
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
-                child: Text(strings.t('cancel')),
-              ),
-              FilledButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(strings.t('requestSent'))),
-                  );
-                },
-                child: Text(strings.t('submitRequest')),
+                child: Text(strings.t('close')),
               ),
             ],
           ),
@@ -969,23 +1018,59 @@ class ProfilePage extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        value: controller.isOnline,
-                        onChanged: controller.setConnectivity,
-                        title: Text(
-                          strings.t('connectionDemo'),
-                          style: const TextStyle(fontWeight: FontWeight.w800),
+                      if (controller.allowConnectivitySimulation)
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: controller.isOnline,
+                          onChanged: controller.setConnectivity,
+                          title: Text(
+                            strings.t('connectionDemo'),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(strings.t('connectionDemoHelp')),
+                          secondary: Icon(
+                            controller.isOnline ? Icons.wifi : Icons.wifi_off,
+                            color:
+                                controller.isOnline
+                                    ? AppTheme.teal
+                                    : const Color(0xFFB54708),
+                          ),
+                        )
+                      else
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            controller.isOnline ? Icons.wifi : Icons.wifi_off,
+                            color:
+                                controller.isOnline
+                                    ? AppTheme.teal
+                                    : const Color(0xFFB54708),
+                          ),
+                          title: Text(
+                            strings.t('connectionStatus'),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(
+                            '${strings.t('connection_${controller.liveConnectionState.name}')}\n'
+                            '${controller.connection?.baseUrl ?? ''}',
+                          ),
+                          trailing: IconButton(
+                            tooltip: strings.t('refreshMasterData'),
+                            onPressed:
+                                controller.isRefreshingMasterData
+                                    ? null
+                                    : controller.refreshLiveMasterData,
+                            icon:
+                                controller.isRefreshingMasterData
+                                    ? const SizedBox.square(
+                                      dimension: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                    : const Icon(Icons.refresh),
+                          ),
                         ),
-                        subtitle: Text(strings.t('connectionDemoHelp')),
-                        secondary: Icon(
-                          controller.isOnline ? Icons.wifi : Icons.wifi_off,
-                          color:
-                              controller.isOnline
-                                  ? AppTheme.teal
-                                  : const Color(0xFFB54708),
-                        ),
-                      ),
                       const Divider(),
                       _CompactFact(
                         label: strings.t('offlineEnabled'),

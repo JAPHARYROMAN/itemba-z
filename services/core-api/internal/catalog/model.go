@@ -8,6 +8,7 @@ type Product struct {
 	CompanyID          string
 	SKU                string
 	Name               string
+	BaseUnitCode       string
 	Active             bool
 	Currency           string
 	ListPriceMinor     int64
@@ -16,4 +17,6 @@ type Product struct {
 	RevenueAccountID   string
 	COGSAccountID      string
 	InventoryAccountID string
+	PriceVersion       int64
+	MasterDataVersion  int64
 }

@@ -2,6 +2,11 @@
 
 ## Controlled pipeline
 
+The repository implementation is `itemba-migrationctl`, backed by the
+append-only tables introduced in migrations 000037–000040. Detailed operating,
+security, lifecycle and abort instructions are in
+[`docs/operations/wave-5-qualification-runbook.md`](../operations/wave-5-qualification-runbook.md).
+
 1. Register every source spreadsheet, manual ledger, owner, cutoff date, confidentiality class, and authoritative field.
 2. Copy sources into a restricted staging area and assign immutable source-file hashes and import batch IDs.
 3. Map, normalize, deduplicate, and validate organization, parties, products, units, prices, employees, chart of accounts, and opening balances.
@@ -20,3 +25,7 @@
 - Employee loans, advances, leave, and payroll opening values equal approved schedules.
 
 No import may create unbalanced journals, negative opening stock without approved exception, duplicate parties without review, or posted records without batch, actor, timestamp, and approval references.
+
+The two committed trial fixtures are synthetic control tests only. Database
+rules prevent them from becoming `VALIDATED`, `APPROVED`, `APPLIED` or
+`RECONCILED`, so they cannot be cited as production trial evidence.

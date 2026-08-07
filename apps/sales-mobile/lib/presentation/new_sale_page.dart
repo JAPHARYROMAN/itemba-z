@@ -347,7 +347,11 @@ class _NewSalePageState extends State<NewSalePage> {
                           ? FilledButton.tonal(
                             key: Key('add-${product.id}'),
                             onPressed:
-                                () => setState(() => draft.addProduct(product)),
+                                product.availableQuantity <= 0
+                                    ? null
+                                    : () => setState(
+                                      () => draft.addProduct(product),
+                                    ),
                             style: FilledButton.styleFrom(
                               minimumSize: const Size(64, 42),
                               padding: const EdgeInsets.symmetric(
@@ -626,12 +630,15 @@ class _NewSalePageState extends State<NewSalePage> {
 
   Widget _buildCashPayment(BuildContext context) {
     final strings = AppStrings.of(context);
-    final methods = <PaymentMethod, String>{
-      PaymentMethod.cash: strings.t('cash'),
-      PaymentMethod.mobileMoney: strings.t('mobileMoney'),
-      PaymentMethod.card: strings.t('card'),
-      PaymentMethod.bankTransfer: strings.t('bankTransfer'),
-    };
+    final methods =
+        widget.controller.isOnline
+            ? <PaymentMethod, String>{
+              PaymentMethod.cash: strings.t('cash'),
+              PaymentMethod.mobileMoney: strings.t('mobileMoney'),
+              PaymentMethod.card: strings.t('card'),
+              PaymentMethod.bankTransfer: strings.t('bankTransfer'),
+            }
+            : <PaymentMethod, String>{PaymentMethod.cash: strings.t('cash')};
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(17),
@@ -762,7 +769,9 @@ class _NewSalePageState extends State<NewSalePage> {
             _CreditRow(
               label: strings.t('dueDate'),
               value:
-                  '${credit.dueDate.day}/${credit.dueDate.month}/${credit.dueDate.year}',
+                  credit.dueDate == null
+                      ? '—'
+                      : '${credit.dueDate!.day}/${credit.dueDate!.month}/${credit.dueDate!.year}',
             ),
           ],
         ),
@@ -886,7 +895,12 @@ class _NewSalePageState extends State<NewSalePage> {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 30),
                     child: Center(
-                      child: Text(strings.t('noEligibleCustomers')),
+                      child: Text(
+                        type == SaleType.credit
+                            ? strings.t('creditPolicyUnavailable')
+                            : strings.t('noEligibleCustomers'),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   )
                 else
@@ -1256,12 +1270,35 @@ class ReceiptPage extends StatelessWidget {
                       Flexible(
                         child: Text(
                           synced
-                              ? sale.receiptNumber
+                              ? sale.receiptReference
                               : sale.clientTransactionId,
                           textAlign: TextAlign.end,
                           style: const TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Text(
+                        strings.t('fiscalStatus'),
+                        style: const TextStyle(color: Colors.blueGrey),
+                      ),
+                      const Spacer(),
+                      Flexible(
+                        child: Text(
+                          strings.t('fiscal_${sale.fiscalStatus.name}'),
+                          textAlign: TextAlign.end,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color:
+                                sale.fiscalStatus == FiscalStatus.fiscalized
+                                    ? AppTheme.teal
+                                    : Colors.blueGrey,
                           ),
                         ),
                       ),
@@ -1319,6 +1356,17 @@ class ReceiptPage extends StatelessWidget {
                     ),
                   ),
                   const Divider(),
+                  if (sale.subtotalMinor != null) ...[
+                    _ReceiptAmountRow(
+                      label: strings.t('subtotal'),
+                      amount: sale.subtotalMinor!,
+                    ),
+                    _ReceiptAmountRow(
+                      label: strings.t('tax'),
+                      amount: sale.taxMinor ?? 0,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Row(
                     children: [
                       Text(
@@ -1357,4 +1405,26 @@ class ReceiptPage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ReceiptAmountRow extends StatelessWidget {
+  const _ReceiptAmountRow({required this.label, required this.amount});
+
+  final String label;
+  final int amount;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Row(
+      children: [
+        Text(label, style: const TextStyle(color: Colors.blueGrey)),
+        const Spacer(),
+        Text(
+          money(amount),
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ],
+    ),
+  );
 }

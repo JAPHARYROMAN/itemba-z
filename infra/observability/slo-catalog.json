@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "status": "PROPOSED_EXTERNAL_APPROVAL",
+  "measurement_window_days": 28,
+  "slos": [
+    {
+      "id": "SLO-SALES-01",
+      "journey": "online_sale_posting",
+      "indicator": "successful_non_duplicate_posts / valid_post_attempts",
+      "target_percent": 99.9,
+      "latency_percentile": 95,
+      "latency_target_ms": 2000,
+      "runbook": "RB-OUTBOX"
+    },
+    {
+      "id": "SLO-SYNC-01",
+      "journey": "mobile_sale_synchronization",
+      "indicator": "accepted_or_idempotently_replayed_syncs / valid_sync_attempts",
+      "target_percent": 99.5,
+      "latency_percentile": 95,
+      "latency_target_ms": 5000,
+      "runbook": "RB-DEVICE"
+    },
+    {
+      "id": "SLO-POSTING-01",
+      "journey": "financial_and_stock_posting",
+      "indicator": "balanced_exactly_once_postings / authorized_posting_attempts",
+      "target_percent": 100,
+      "latency_percentile": 95,
+      "latency_target_ms": 3000,
+      "runbook": "RB-DATABASE"
+    },
+    {
+      "id": "SLO-REPORTING-01",
+      "journey": "governed_financial_reporting",
+      "indicator": "successful_report_requests / valid_report_requests",
+      "target_percent": 99.5,
+      "latency_percentile": 95,
+      "latency_target_ms": 10000,
+      "runbook": "RB-DATABASE"
+    },
+    {
+      "id": "SLO-INTEGRATION-01",
+      "journey": "mandatory_integration_delivery",
+      "indicator": "deliveries_completed_within_provider_budget / eligible_deliveries",
+      "target_percent": 99.5,
+      "latency_percentile": 95,
+      "latency_target_ms": 60000,
+      "runbook": "RB-CONNECTOR"
+    }
+  ]
+}

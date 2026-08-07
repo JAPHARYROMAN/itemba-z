@@ -1,0 +1,37 @@
+"use client";
+
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { AlertTriangle, ClipboardCheck, PackageCheck, Search, Truck } from "lucide-react";
+import { CommercialModuleNav } from "@/components/commercial/commercial-module-nav";
+import { useLanguage } from "@/components/language-provider";
+import { text } from "@/lib/i18n";
+import type { SupplierWorkspace } from "@/live-api/types";
+import styles from "@/components/commercial/commercial.module.css";
+
+type Filter = "all" | "active" | "inactive";
+
+export function SupplierDirectory({ workspace }: { workspace: SupplierWorkspace }) {
+  const { l } = useLanguage();
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const suppliers = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase("en");
+    return workspace.suppliers.filter((supplier) => (!needle || supplier.code.toLocaleLowerCase("en").includes(needle) || supplier.name.toLocaleLowerCase("en").includes(needle)) && (filter === "all" || supplier.active === (filter === "active")));
+  }, [filter, query, workspace.suppliers]);
+  const activeCount = workspace.suppliers.filter((supplier) => supplier.active).length;
+  const revisions = workspace.commercial?.revisions.filter((revision) => revision.entity_type === "SUPPLIER") ?? [];
+  const pending = revisions.filter((revision) => revision.status === "SUBMITTED");
+  const awards = workspace.commercial?.awards.length ?? 0;
+
+  return <div className={styles.page}>
+    <CommercialModuleNav area="suppliers" permissions={workspace.context.permissions} />
+    <header className={styles.hero}><div><p className={styles.scope}>{workspace.context.company_name} · {workspace.context.branch_name}</p><h1>{l(text("Suppliers", "Wasambazaji"))}</h1><p>{l(text("Review approved trading partners, payment terms, and governed supplier changes in one place.", "Kagua washirika wa biashara walioidhinishwa, masharti ya malipo, na mabadiliko yaliyodhibitiwa ya wasambazaji sehemu moja."))}</p></div><Link className={styles.heroAction} href="/purchases"><PackageCheck size={17} />{l(text("Open purchasing", "Fungua ununuzi"))}</Link></header>
+    <section className={styles.metrics} aria-label={l(text("Supplier summary", "Muhtasari wa wasambazaji"))}><article className={styles.metric}><span><Truck size={17} />{l(text("Active suppliers", "Wasambazaji hai"))}</span><strong>{activeCount}</strong></article><article className={styles.metric}><span><ClipboardCheck size={17} />{l(text("Pending approvals", "Idhini zinazosubiri"))}</span><strong>{pending.length}</strong></article><article className={styles.metric}><span><PackageCheck size={17} />{l(text("Sourcing awards", "Tuzo za manunuzi"))}</span><strong>{awards}</strong></article></section>
+    {pending.length ? <aside className={styles.attention}><AlertTriangle size={19} /><div><strong>{l(text(`${pending.length} supplier change${pending.length === 1 ? "" : "s"} await independent review`, `Mabadiliko ${pending.length} ya wasambazaji yanasubiri ukaguzi huru`))}</strong><p>{l(text("Review the business reason and proposed master data before activation.", "Kagua sababu ya biashara na data msingi iliyopendekezwa kabla ya kuidhinisha."))}</p></div></aside> : null}
+    <section className={styles.card}><div className={styles.toolbar}><div><h2>{l(text("Supplier directory", "Orodha ya wasambazaji"))}</h2><p aria-live="polite">{suppliers.length} {l(text("results", "matokeo"))}</p></div><div className={styles.filters}><label className={styles.search}><Search size={16} /><span className="sr-only">{l(text("Search suppliers", "Tafuta wasambazaji"))}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={l(text("Search name or code", "Tafuta jina au msimbo"))} /></label><label className={styles.select}><span className="sr-only">{l(text("Filter suppliers", "Chuja wasambazaji"))}</span><select value={filter} onChange={(event) => setFilter(event.target.value as Filter)}><option value="all">{l(text("All suppliers", "Wasambazaji wote"))}</option><option value="active">{l(text("Active", "Hai"))}</option><option value="inactive">{l(text("Inactive", "Isiyotumika"))}</option></select></label></div></div>
+      {suppliers.length ? <div className={styles.tableRegion} tabIndex={0} role="region" aria-label={l(text("Supplier directory table", "Jedwali la wasambazaji"))}><table className={styles.table}><thead><tr><th>{l(text("Supplier", "Msambazaji"))}</th><th>{l(text("Payment terms", "Masharti ya malipo"))}</th><th>{l(text("Status", "Hali"))}</th><th>{l(text("Recent sourcing", "Manunuzi ya karibuni"))}</th></tr></thead><tbody>{suppliers.map((supplier) => { const quoteCount = workspace.commercial?.quotes.filter((quote) => quote.supplier_id === supplier.id).length ?? 0; return <tr key={supplier.id}><td><Link className={styles.primaryLink} href={`/suppliers/${supplier.id}`}>{supplier.name}<small>{supplier.code}</small></Link></td><td data-label={l(text("Payment terms", "Masharti"))}>{supplier.payment_terms_days === 0 ? l(text("Due immediately", "Lipa mara moja")) : `${supplier.payment_terms_days} ${l(text("days", "siku"))}`}</td><td data-label={l(text("Status", "Hali"))}><span className={`${styles.status} ${supplier.active ? styles.success : styles.neutral}`}>{supplier.active ? l(text("Active", "Hai")) : l(text("Inactive", "Isiyotumika"))}</span></td><td data-label={l(text("Recent sourcing", "Manunuzi"))}>{quoteCount ? `${quoteCount} ${l(text("quote records", "rekodi za bei"))}` : "—"}</td></tr>; })}</tbody></table></div> : <div className={styles.empty}><Truck size={30} /><strong>{l(text("No suppliers match these filters", "Hakuna msambazaji anayelingana na vichujio hivi"))}</strong><p>{l(text("Clear the search or choose a different status.", "Futa utafutaji au chagua hali tofauti."))}</p></div>}
+    </section>
+    {workspace.commercial ? <section id="approvals" className={styles.card}><div className={styles.sectionHead}><div><h2>{l(text("Supplier approval queue", "Foleni ya idhini za wasambazaji"))}</h2><p>{l(text("Governed master-data proposals and their current decision state.", "Mapendekezo ya data msingi yaliyodhibitiwa na hali yake ya uamuzi."))}</p></div></div>{revisions.length ? <div className={styles.tableRegion}><table className={styles.table}><thead><tr><th>{l(text("Proposal", "Pendekezo"))}</th><th>{l(text("Reason", "Sababu"))}</th><th>{l(text("Decision state", "Hali ya uamuzi"))}</th></tr></thead><tbody>{revisions.map((revision) => <tr key={revision.id}><td>{revision.supplier?.name ?? revision.supplier?.code ?? l(text("Supplier change", "Badiliko la msambazaji"))}<small className={styles.cellMeta}>{revision.supplier?.code}</small></td><td data-label={l(text("Reason", "Sababu"))}>{revision.reason}</td><td data-label={l(text("Decision state", "Hali"))}><span className={`${styles.status} ${revision.status === "ACTIVE" ? styles.success : revision.status === "SUBMITTED" ? styles.warning : styles.neutral}`}>{revision.status === "ACTIVE" ? l(text("Approved", "Imeidhinishwa")) : revision.status === "SUBMITTED" ? l(text("Awaiting review", "Inasubiri ukaguzi")) : revision.status === "REJECTED" ? l(text("Not approved", "Haijaidhinishwa")) : l(text("Draft", "Rasimu"))}</span></td></tr>)}</tbody></table></div> : <div className={styles.empty}><ClipboardCheck size={28} /><strong>{l(text("No supplier changes need review", "Hakuna mabadiliko ya wasambazaji yanayohitaji ukaguzi"))}</strong></div>}</section> : null}
+  </div>;
+}

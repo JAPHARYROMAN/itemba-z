@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
 )
@@ -15,12 +16,33 @@ type fixedAuthenticator struct {
 	err       error
 }
 
+func TestOIDCAssurancePolicyRequiresMFAClassMethodsAndRecentAuthentication(t *testing.T) {
+	now := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
+	policy := OIDCAssurancePolicy{RequiredACR: "urn:itemba:loa:2", RequiredAMR: []string{"pwd", "otp"}, MaxAuthAge: 30 * time.Minute, now: func() time.Time { return now }}
+	claims := oidcClaims{AssuranceClass: "urn:itemba:loa:2", AuthenticationMethods: []string{"pwd", "otp"}, AuthenticationTime: now.Add(-10 * time.Minute).Unix()}
+	if err := policy.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.validateClaims(claims); err != nil {
+		t.Fatalf("valid MFA claims rejected: %v", err)
+	}
+	claims.AuthenticationMethods = []string{"pwd"}
+	if !errors.Is(policy.validateClaims(claims), ErrUnauthenticated) {
+		t.Fatal("missing second factor was accepted")
+	}
+	claims.AuthenticationMethods = []string{"pwd", "otp"}
+	claims.AuthenticationTime = now.Add(-31 * time.Minute).Unix()
+	if !errors.Is(policy.validateClaims(claims), ErrUnauthenticated) {
+		t.Fatal("stale authentication was accepted")
+	}
+}
+
 func (a fixedAuthenticator) Authenticate(context.Context, *http.Request) (Principal, error) {
 	return a.principal, a.err
 }
 
 func TestVerifiedPrincipalIgnoresSpoofedScopeHeaders(t *testing.T) {
-	trusted := Principal{ActorID: "trusted-user", Scope: tenancy.Scope{TenantID: "trusted-tenant", CompanyID: "trusted-company", BranchID: "trusted-branch", WarehouseID: "trusted-warehouse"}}
+	trusted := Principal{ActorID: "10000000-0000-4000-8000-000000000005", Scope: tenancy.Scope{TenantID: "10000000-0000-4000-8000-000000000001", CompanyID: "10000000-0000-4000-8000-000000000002", BranchID: "10000000-0000-4000-8000-000000000003", WarehouseID: "10000000-0000-4000-8000-000000000004"}}
 	handler := &Handler{authenticator: fixedAuthenticator{principal: trusted}}
 	request := httptest.NewRequest(http.MethodGet, "/v1/sales/sale-1", nil)
 	request.Header.Set("X-Actor-ID", "spoofed-user")
@@ -56,17 +78,21 @@ func TestRejectedAuthenticationDoesNotFallBackToScopeHeaders(t *testing.T) {
 
 func TestDevelopmentHeaderAuthenticatorIsExplicitAndValidatesAllScope(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/v1/sales/sale-1", nil)
-	request.Header.Set("X-Actor-ID", "dev-user")
-	request.Header.Set("X-Tenant-ID", "dev-tenant")
-	request.Header.Set("X-Company-ID", "dev-company")
-	request.Header.Set("X-Branch-ID", "dev-branch")
+	request.Header.Set("X-Actor-ID", " 10000000-0000-4000-8000-00000000000A ")
+	request.Header.Set("X-Tenant-ID", "10000000-0000-4000-8000-000000000001")
+	request.Header.Set("X-Company-ID", "10000000-0000-4000-8000-000000000002")
+	request.Header.Set("X-Branch-ID", "10000000-0000-4000-8000-000000000003")
 	if _, err := (DevelopmentHeaderAuthenticator{}).Authenticate(context.Background(), request); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("incomplete scope accepted: %v", err)
 	}
-	request.Header.Set("X-Warehouse-ID", "dev-warehouse")
+	request.Header.Set("X-Warehouse-ID", "10000000-0000-4000-8000-000000000004")
 	principal, err := (DevelopmentHeaderAuthenticator{}).Authenticate(context.Background(), request)
-	if err != nil || principal.ActorID != "dev-user" {
+	if err != nil || principal.ActorID != "10000000-0000-4000-8000-00000000000a" {
 		t.Fatalf("development auth failed: %+v %v", principal, err)
+	}
+	request.Header.Set("X-Actor-ID", "opaque-dev-user")
+	if _, err := (DevelopmentHeaderAuthenticator{}).Authenticate(context.Background(), request); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("non-UUID development actor accepted: %v", err)
 	}
 }
 

@@ -20,7 +20,7 @@ func (s *Store) TenantIDs(ctx context.Context) ([]string, error) {
 	if _, err := tx.Exec(ctx, "SET LOCAL search_path TO "+s.searchPath); err != nil {
 		return nil, err
 	}
-	rows, err := tx.Query(ctx, `SELECT id FROM tenants ORDER BY id`)
+	rows, err := tx.Query(ctx, `SELECT tenant_id FROM pending_outbox_tenant_ids()`)
 	if err != nil {
 		return nil, err
 	}

@@ -3,8 +3,29 @@ package identity
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 )
+
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
+
+func IsUUID(value string) bool { return uuidPattern.MatchString(value) }
+
+var ErrInvalidUUID = errors.New("value is not a canonicalizable UUID")
+
+func CanonicalUUID(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if !IsUUID(value) {
+		return "", ErrInvalidUUID
+	}
+	return strings.ToLower(value), nil
+}
+
+// NormalizeClaim canonicalizes valid UUID spellings and also gives in-memory
+// domain tests deterministic lower-case keys for their opaque fixture IDs.
+func NormalizeClaim(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
 
 type Generator interface {
 	New() (string, error)

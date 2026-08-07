@@ -5,14 +5,15 @@ package customers
 import "time"
 
 type Account struct {
-	ID               string
-	TenantID         string
-	CompanyID        string
-	Name             string
-	Active           bool
-	General          bool
-	CreditEnabled    bool
-	CreditLimitMinor int64
+	ID               string `json:"id"`
+	Code             string `json:"code"`
+	TenantID         string `json:"tenant_id"`
+	CompanyID        string `json:"company_id"`
+	Name             string `json:"name"`
+	Active           bool   `json:"active"`
+	General          bool   `json:"is_general_customer"`
+	CreditEnabled    bool   `json:"legacy_credit_enabled"`
+	CreditLimitMinor int64  `json:"legacy_credit_limit_minor"`
 }
 
 // LedgerEntry uses positive amounts for receivable increases and negative

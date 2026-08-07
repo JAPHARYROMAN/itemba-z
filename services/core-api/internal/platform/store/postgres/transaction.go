@@ -14,7 +14,9 @@ import (
 	"github.com/itemba-z/itemba-z/services/core-api/internal/catalog"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/customers"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/finance"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/financialops"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/inventory"
+	"github.com/itemba-z/itemba-z/services/core-api/internal/operations"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/outbox"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/sales"
 	"github.com/itemba-z/itemba-z/services/core-api/internal/tenancy"
@@ -33,6 +35,8 @@ func (t *transaction) Authorize(ctx context.Context, scope tenancy.Scope, actorI
 			JOIN role_permissions rp ON rp.tenant_id = urs.tenant_id AND rp.role_id = urs.role_id
 			WHERE u.tenant_id = $1 AND u.id = $2 AND u.active
 			  AND urs.company_id = $3 AND urs.branch_id = $4 AND urs.warehouse_id = $5
+			  AND urs.revoked_at IS NULL AND urs.valid_from <= now()
+			  AND (urs.valid_until IS NULL OR urs.valid_until > now())
 			  AND rp.permission_code = $6
 		)`, scope.TenantID, actorID, scope.CompanyID, scope.BranchID, scope.WarehouseID, permission).Scan(&authorized)
 	return authorized, normalizeError(err)
@@ -95,12 +99,52 @@ func (t *transaction) Customer(ctx context.Context, scope tenancy.Scope, custome
 	}
 	var value customers.Account
 	err := t.tx.QueryRow(ctx, `
-		SELECT id, tenant_id, company_id, name, active, is_general, credit_enabled, credit_limit_minor
-		FROM customer_accounts WHERE tenant_id = $1 AND company_id = $2 AND id = $3
-		FOR UPDATE`, scope.TenantID, scope.CompanyID, customerID).Scan(
-		&value.ID, &value.TenantID, &value.CompanyID, &value.Name, &value.Active,
+		SELECT id, code, tenant_id, company_id, name, active, is_general, credit_enabled, credit_limit_minor
+		FROM customer_accounts WHERE tenant_id = $1 AND company_id = $2 AND id = $3`,
+		scope.TenantID, scope.CompanyID, customerID).Scan(
+		&value.ID, &value.Code, &value.TenantID, &value.CompanyID, &value.Name, &value.Active,
 		&value.General, &value.CreditEnabled, &value.CreditLimitMinor)
 	return value, normalizeError(err)
+}
+
+func (t *transaction) OfflineCatalogCustomer(ctx context.Context, scope tenancy.Scope, catalogSnapshotToken, customerID string) (customers.Account, error) {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return customers.Account{}, err
+	}
+	var value customers.Account
+	err := t.tx.QueryRow(ctx, `
+		SELECT customer_id, code, tenant_id, company_id, name, active, is_general,
+		       credit_enabled, credit_limit_minor
+		FROM catalog_publication_customers
+		WHERE tenant_id = $1 AND company_id = $2
+		  AND catalog_snapshot_token = $3 AND customer_id = $4`,
+		scope.TenantID, scope.CompanyID, catalogSnapshotToken, customerID).Scan(
+		&value.ID, &value.Code, &value.TenantID, &value.CompanyID, &value.Name,
+		&value.Active, &value.General, &value.CreditEnabled, &value.CreditLimitMinor)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return customers.Account{}, sales.ErrOfflineReconciliation
+	}
+	return value, normalizeError(err)
+}
+
+func (t *transaction) LockCustomerCredit(ctx context.Context, scope tenancy.Scope, customerID string) error {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return err
+	}
+	lockKey := scope.TenantID + ":" + scope.CompanyID + ":customer-credit:" + customerID
+	if _, err := t.tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
+		return normalizeError(err)
+	}
+	var exists bool
+	if err := t.tx.QueryRow(ctx, `SELECT EXISTS(
+		SELECT 1 FROM customer_accounts WHERE tenant_id=$1 AND company_id=$2 AND id=$3
+	)`, scope.TenantID, scope.CompanyID, customerID).Scan(&exists); err != nil {
+		return normalizeError(err)
+	}
+	if !exists {
+		return sales.ErrNotFound
+	}
+	return nil
 }
 
 func (t *transaction) Product(ctx context.Context, scope tenancy.Scope, productID string) (catalog.Product, error) {
@@ -109,14 +153,52 @@ func (t *transaction) Product(ctx context.Context, scope tenancy.Scope, productI
 	}
 	var value catalog.Product
 	err := t.tx.QueryRow(ctx, `
-		SELECT id, tenant_id, company_id, sku, name, active, currency, list_price_minor,
-		       standard_cost_minor, tax_code, revenue_account_id, cogs_account_id, inventory_account_id
+		SELECT id, tenant_id, company_id, sku, name, base_unit_code, active, currency, list_price_minor,
+		       standard_cost_minor, tax_code, revenue_account_id, cogs_account_id, inventory_account_id,
+		       price_version, master_data_version
 		FROM products WHERE tenant_id = $1 AND company_id = $2 AND id = $3`,
 		scope.TenantID, scope.CompanyID, productID).Scan(
-		&value.ID, &value.TenantID, &value.CompanyID, &value.SKU, &value.Name, &value.Active,
+		&value.ID, &value.TenantID, &value.CompanyID, &value.SKU, &value.Name, &value.BaseUnitCode, &value.Active,
 		&value.Currency, &value.ListPriceMinor, &value.StandardCostMinor, &value.TaxCode,
-		&value.RevenueAccountID, &value.COGSAccountID, &value.InventoryAccountID)
+		&value.RevenueAccountID, &value.COGSAccountID, &value.InventoryAccountID,
+		&value.PriceVersion, &value.MasterDataVersion)
 	return value, normalizeError(err)
+}
+
+func (t *transaction) OfflineCatalogProduct(ctx context.Context, scope tenancy.Scope, catalogSnapshotToken, productID string, at time.Time) (catalog.Product, int64, error) {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return catalog.Product{}, 0, err
+	}
+	var value catalog.Product
+	var rate int64
+	err := t.tx.QueryRow(ctx, `
+		SELECT p.product_id, p.tenant_id, p.company_id, p.sku, p.name,
+		       p.base_unit_code, p.active, p.currency, p.list_price_minor,
+		       p.standard_cost_minor, p.tax_code, p.revenue_account_id,
+		       p.cogs_account_id, p.inventory_account_id, p.price_version,
+		       p.master_data_version, tax.basis_points
+		FROM catalog_publication_products p
+		JOIN LATERAL (
+			SELECT r.basis_points
+			FROM catalog_publication_tax_rules r
+			WHERE r.tenant_id = p.tenant_id AND r.company_id = p.company_id
+			  AND r.catalog_snapshot_token = p.catalog_snapshot_token
+			  AND r.code = p.tax_code AND r.effective_from <= $5
+			  AND (r.effective_to IS NULL OR r.effective_to > $5)
+			ORDER BY r.effective_from DESC LIMIT 1
+		) tax ON true
+		WHERE p.tenant_id = $1 AND p.company_id = $2
+		  AND p.catalog_snapshot_token = $3 AND p.product_id = $4`,
+		scope.TenantID, scope.CompanyID, catalogSnapshotToken, productID, at).Scan(
+		&value.ID, &value.TenantID, &value.CompanyID, &value.SKU, &value.Name,
+		&value.BaseUnitCode, &value.Active, &value.Currency, &value.ListPriceMinor,
+		&value.StandardCostMinor, &value.TaxCode, &value.RevenueAccountID,
+		&value.COGSAccountID, &value.InventoryAccountID, &value.PriceVersion,
+		&value.MasterDataVersion, &rate)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return catalog.Product{}, 0, sales.ErrOfflineReconciliation
+	}
+	return value, rate, normalizeError(err)
 }
 
 func (t *transaction) TaxRateBasisPoints(ctx context.Context, scope tenancy.Scope, taxCode string, at time.Time) (int64, error) {
@@ -142,10 +224,68 @@ func (t *transaction) AvailableStock(ctx context.Context, scope tenancy.Scope, p
 	}
 	var quantity int64
 	err := t.tx.QueryRow(ctx, `
-		SELECT COALESCE(sum(quantity), 0)::bigint FROM inventory_stock_ledger
-		WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3 AND warehouse_id = $4 AND product_id = $5`,
+		SELECT COALESCE((SELECT sum(quantity) FROM inventory_stock_ledger
+		WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND product_id=$5),0)::bigint
+		- COALESCE((SELECT sum(quantity) FROM inventory_reservation_ledger
+		WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND product_id=$5),0)::bigint`,
 		scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, productID).Scan(&quantity)
 	return quantity, normalizeError(err)
+}
+
+func (t *transaction) FulfillSalesOrder(ctx context.Context, scope tenancy.Scope, orderID, customerID, saleID string, lines []sales.CommandLine, releaseIDs []string, transitionID, actorID, correlationID string, at time.Time) error {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return err
+	}
+	var documentType, status, partyType, partyID string
+	if err := t.tx.QueryRow(ctx, `SELECT document_type,status,party_type,COALESCE(party_id::text,'') FROM operation_documents
+		WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND id=$5 FOR UPDATE`, scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, orderID).Scan(&documentType, &status, &partyType, &partyID); err != nil {
+		return normalizeError(err)
+	}
+	if documentType != string(operations.SalesOrder) || status != "APPROVED" || partyType != "CUSTOMER" || partyID != customerID || len(lines) != len(releaseIDs) {
+		return operations.ErrSourceMismatch
+	}
+	rows, err := t.tx.Query(ctx, `SELECT l.product_id::text,l.quantity,l.unit_price_minor,p.list_price_minor FROM operation_document_lines l JOIN products p ON p.tenant_id=l.tenant_id AND p.company_id=l.company_id AND p.id=l.product_id WHERE l.tenant_id=$1 AND l.company_id=$2 AND l.document_id=$3`, scope.TenantID, scope.CompanyID, orderID)
+	if err != nil {
+		return normalizeError(err)
+	}
+	ordered := make(map[string]int64, len(lines))
+	for rows.Next() {
+		var product string
+		var quantity, orderPrice, currentPrice int64
+		if err := rows.Scan(&product, &quantity, &orderPrice, &currentPrice); err != nil {
+			rows.Close()
+			return normalizeError(err)
+		}
+		if orderPrice != currentPrice {
+			rows.Close()
+			return operations.ErrSourceMismatch
+		}
+		ordered[product] = quantity
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil || len(ordered) != len(lines) {
+		if err != nil {
+			return normalizeError(err)
+		}
+		return operations.ErrSourceMismatch
+	}
+	for index, line := range lines {
+		if ordered[line.ProductID] != line.Quantity {
+			return operations.ErrSourceMismatch
+		}
+		if _, err := t.tx.Exec(ctx, `INSERT INTO inventory_reservation_ledger(id,tenant_id,company_id,branch_id,warehouse_id,product_id,source_type,source_id,quantity,occurred_at)
+			VALUES($1,$2,$3,$4,$5,$6,'SALES_ORDER_FULFILMENT',$7,$8,$9)`, releaseIDs[index], scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, line.ProductID, orderID, -line.Quantity, at); err != nil {
+			return normalizeError(err)
+		}
+	}
+	if _, err := t.tx.Exec(ctx, `UPDATE operation_documents SET status='CLOSED',posted_at=$6 WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND id=$5`, scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, orderID, at); err != nil {
+		return normalizeError(err)
+	}
+	if _, err := t.tx.Exec(ctx, `INSERT INTO operation_document_transitions(id,tenant_id,company_id,document_id,from_status,to_status,reason,actor_id,occurred_at,correlation_id)
+		VALUES($1,$2,$3,$4,'APPROVED','CLOSED',$5,$6,$7,$8)`, transitionID, scope.TenantID, scope.CompanyID, orderID, "Fulfilled by posted sale "+saleID, actorID, at, correlationID); err != nil {
+		return normalizeError(err)
+	}
+	return nil
 }
 
 func (t *transaction) CreditExposure(ctx context.Context, scope tenancy.Scope, customerID string) (int64, error) {
@@ -175,6 +315,42 @@ func (t *transaction) FiscalPeriodOpen(ctx context.Context, scope tenancy.Scope,
 	return open, normalizeError(err)
 }
 
+func (t *transaction) FiscalPeriod(ctx context.Context, scope tenancy.Scope, at time.Time) (sales.FiscalPeriod, error) {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return sales.FiscalPeriod{}, err
+	}
+	var value sales.FiscalPeriod
+	err := t.tx.QueryRow(ctx, `
+		SELECT id, starts_at, ends_at, is_open FROM fiscal_periods
+		WHERE tenant_id = $1 AND company_id = $2 AND starts_at <= $3 AND ends_at > $3
+		ORDER BY starts_at DESC LIMIT 1`, scope.TenantID, scope.CompanyID, at).Scan(&value.ID, &value.StartsAt, &value.EndsAt, &value.Open)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return sales.FiscalPeriod{}, nil
+	}
+	return value, normalizeError(err)
+}
+
+func (t *transaction) OfflinePostingPolicy(ctx context.Context, scope tenancy.Scope, at time.Time) (sales.OfflinePostingPolicy, error) {
+	if err := t.ensureScope(ctx, scope); err != nil {
+		return sales.OfflinePostingPolicy{}, err
+	}
+	var value sales.OfflinePostingPolicy
+	err := t.tx.QueryRow(ctx, `
+		SELECT tenant_id, company_id, accounting_time_basis, maximum_future_skew_seconds,
+		       require_same_fiscal_period, effective_from, effective_to
+		FROM offline_posting_policies
+		WHERE tenant_id = $1 AND company_id = $2 AND effective_from <= $3
+		  AND (effective_to IS NULL OR effective_to > $3)
+		ORDER BY effective_from DESC LIMIT 1`, scope.TenantID, scope.CompanyID, at).Scan(
+		&value.TenantID, &value.CompanyID, &value.AccountingTimeBasis,
+		&value.MaximumFutureSkewSeconds, &value.RequireSameFiscalPeriod,
+		&value.EffectiveFrom, &value.EffectiveTo)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return sales.OfflinePostingPolicy{}, sales.ErrPostingConfig
+	}
+	return value, normalizeError(err)
+}
+
 func (t *transaction) SalesPostingConfig(ctx context.Context, scope tenancy.Scope) (finance.SalesPostingConfig, error) {
 	if err := t.ensureScope(ctx, scope); err != nil {
 		return finance.SalesPostingConfig{}, err
@@ -191,6 +367,24 @@ func (t *transaction) SalesPostingConfig(ctx context.Context, scope tenancy.Scop
 	if err := json.Unmarshal(cashJSON, &value.CashAccounts); err != nil {
 		return finance.SalesPostingConfig{}, fmt.Errorf("decode cash account mapping: %w", err)
 	}
+	mappings, err := t.activePostingAccounts(ctx, scope, time.Now().UTC())
+	if err != nil {
+		return finance.SalesPostingConfig{}, err
+	}
+	if account := mappings[financialops.MapSalesReceivable]; account != "" {
+		value.ReceivableAccountID = account
+	}
+	if account := mappings[financialops.MapSalesTaxPayable]; account != "" {
+		value.TaxPayableAccountID = account
+	}
+	for key, method := range map[financialops.MappingKey]string{
+		financialops.MapPaymentCash: sales.PaymentCash, financialops.MapPaymentMobileMoney: sales.PaymentMobileMoney,
+		financialops.MapPaymentBankCard: sales.PaymentBankCard, financialops.MapPaymentBankTransfer: sales.PaymentBankTransfer,
+	} {
+		if account := mappings[key]; account != "" {
+			value.CashAccounts[method] = account
+		}
+	}
 	return value, nil
 }
 
@@ -200,18 +394,28 @@ func (t *transaction) Sale(ctx context.Context, scope tenancy.Scope, saleID stri
 	}
 	var value sales.Sale
 	var paymentMethod, reversalReason pgtype.Text
-	var reversalOf pgtype.UUID
-	var reversedAt pgtype.Timestamptz
+	var reversalOf, sourceDocumentID pgtype.UUID
+	var deviceID, clientTransactionID pgtype.UUID
+	var catalogSnapshotToken pgtype.UUID
+	var clientTimestamp, reversedAt pgtype.Timestamptz
+	var clientAppVersion pgtype.Text
+	var clientMasterDataVersion, clientPriceVersion pgtype.Int8
 	err := t.tx.QueryRow(ctx, `
 		SELECT id, tenant_id, company_id, branch_id, warehouse_id, record_type, sale_kind, status,
-		       customer_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor,
-		       payment_method, reversal_of, reversal_reason, created_by, correlation_id, created_at, reversed_at
-		FROM sales WHERE tenant_id = $1 AND company_id = $2 AND id = $3 FOR UPDATE`,
-		scope.TenantID, scope.CompanyID, saleID).Scan(
+		       customer_id, source_document_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor,
+		       payment_method, reversal_of, reversal_reason, device_id, client_transaction_id,
+		       client_timestamp, client_app_version, client_master_data_version, client_price_version, client_catalog_snapshot_token, offline,
+		       receipt_reference, fiscal_status, created_by, correlation_id,
+		       document_at, received_at, accounting_at, accounting_time_basis, created_at, reversed_at
+		FROM sales WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3 AND warehouse_id = $4 AND id = $5 FOR UPDATE`,
+		scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, saleID).Scan(
 		&value.ID, &value.Scope.TenantID, &value.Scope.CompanyID, &value.Scope.BranchID, &value.Scope.WarehouseID,
-		&value.RecordType, &value.Kind, &value.Status, &value.CustomerID, &value.Currency,
+		&value.RecordType, &value.Kind, &value.Status, &value.CustomerID, &sourceDocumentID, &value.Currency,
 		&value.SubtotalMinor, &value.TaxMinor, &value.TotalMinor, &value.COGSMinor,
-		&paymentMethod, &reversalOf, &reversalReason, &value.CreatedBy, &value.CorrelationID, &value.CreatedAt, &reversedAt)
+		&paymentMethod, &reversalOf, &reversalReason, &deviceID, &clientTransactionID,
+		&clientTimestamp, &clientAppVersion, &clientMasterDataVersion, &clientPriceVersion, &catalogSnapshotToken, &value.Offline,
+		&value.ReceiptReference, &value.FiscalStatus, &value.CreatedBy, &value.CorrelationID,
+		&value.DocumentAt, &value.ReceivedAt, &value.AccountingAt, &value.AccountingTimeBasis, &value.CreatedAt, &reversedAt)
 	if err != nil {
 		return sales.Sale{}, normalizeError(err)
 	}
@@ -221,8 +425,33 @@ func (t *transaction) Sale(ctx context.Context, scope tenancy.Scope, saleID stri
 	if reversalOf.Valid {
 		value.ReversalOf = reversalOf.String()
 	}
+	if sourceDocumentID.Valid {
+		value.SourceDocumentID = sourceDocumentID.String()
+	}
 	if reversalReason.Valid {
 		value.ReversalReason = reversalReason.String
+	}
+	if deviceID.Valid {
+		value.DeviceID = deviceID.String()
+	}
+	if clientTransactionID.Valid {
+		value.ClientTransactionID = clientTransactionID.String()
+	}
+	if clientTimestamp.Valid {
+		parsed := clientTimestamp.Time
+		value.ClientTimestamp = &parsed
+	}
+	if clientAppVersion.Valid {
+		value.AppVersion = clientAppVersion.String
+	}
+	if clientMasterDataVersion.Valid {
+		value.MasterDataVersion = clientMasterDataVersion.Int64
+	}
+	if clientPriceVersion.Valid {
+		value.PriceVersion = clientPriceVersion.Int64
+	}
+	if catalogSnapshotToken.Valid {
+		value.CatalogSnapshotToken = catalogSnapshotToken.String()
 	}
 	if reversedAt.Valid {
 		parsed := reversedAt.Time
@@ -257,6 +486,20 @@ func nullableText(value string) any {
 	return value
 }
 
+func nullableTime(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return value.UTC()
+}
+
+func nullablePositiveInt64(value int64) any {
+	if value < 1 {
+		return nil
+	}
+	return value
+}
+
 func (t *transaction) CreateSale(ctx context.Context, value sales.Sale) error {
 	if err := t.ensureScope(ctx, value.Scope); err != nil {
 		return err
@@ -264,14 +507,20 @@ func (t *transaction) CreateSale(ctx context.Context, value sales.Sale) error {
 	_, err := t.tx.Exec(ctx, `
 		INSERT INTO sales (
 			id, tenant_id, company_id, branch_id, warehouse_id, record_type, sale_kind, status,
-			customer_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor,
-			payment_method, reversal_of, reversal_reason, created_by, correlation_id, created_at, reversed_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+			customer_id, source_document_id, currency, subtotal_minor, tax_minor, total_minor, cogs_minor,
+			payment_method, reversal_of, reversal_reason, device_id, client_transaction_id,
+			client_timestamp, client_app_version, client_master_data_version, client_price_version, client_catalog_snapshot_token, offline,
+			receipt_reference, fiscal_status, created_by, correlation_id,
+			document_at, received_at, accounting_at, accounting_time_basis, created_at, reversed_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)`,
 		value.ID, value.Scope.TenantID, value.Scope.CompanyID, value.Scope.BranchID, value.Scope.WarehouseID,
-		value.RecordType, value.Kind, value.Status, value.CustomerID, value.Currency,
+		value.RecordType, value.Kind, value.Status, value.CustomerID, nullableText(value.SourceDocumentID), value.Currency,
 		value.SubtotalMinor, value.TaxMinor, value.TotalMinor, value.COGSMinor,
 		nullableText(value.PaymentMethod), nullableText(value.ReversalOf), nullableText(value.ReversalReason),
-		value.CreatedBy, value.CorrelationID, value.CreatedAt, value.ReversedAt)
+		nullableText(value.DeviceID), nullableText(value.ClientTransactionID), nullableTime(value.ClientTimestamp),
+		nullableText(value.AppVersion), nullablePositiveInt64(value.MasterDataVersion), nullablePositiveInt64(value.PriceVersion),
+		nullableText(value.CatalogSnapshotToken), value.Offline, value.ReceiptReference, value.FiscalStatus, value.CreatedBy, value.CorrelationID,
+		value.DocumentAt, value.ReceivedAt, value.AccountingAt, value.AccountingTimeBasis, value.CreatedAt, value.ReversedAt)
 	if err != nil {
 		return normalizeError(err)
 	}
@@ -295,9 +544,9 @@ func (t *transaction) MarkSaleReversed(ctx context.Context, scope tenancy.Scope,
 	if err := t.ensureScope(ctx, scope); err != nil {
 		return err
 	}
-	command, err := t.tx.Exec(ctx, `UPDATE sales SET status = 'REVERSED', reversed_at = $4
-		WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND status = 'POSTED'`,
-		scope.TenantID, scope.CompanyID, saleID, reversedAt)
+	command, err := t.tx.Exec(ctx, `UPDATE sales SET status = 'REVERSED', reversed_at = $6
+		WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3 AND warehouse_id = $4 AND id = $5 AND status = 'POSTED'`,
+		scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, saleID, reversedAt)
 	if err != nil {
 		return normalizeError(err)
 	}
@@ -318,17 +567,23 @@ func (t *transaction) AppendStockMovement(ctx context.Context, value inventory.M
 		id, tenant_id, company_id, branch_id, warehouse_id, product_id, source_type, source_id, quantity, occurred_at
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, value.ID, value.TenantID, value.CompanyID,
 		value.BranchID, value.WarehouseID, value.ProductID, value.SourceType, value.SourceID, value.Quantity, value.OccurredAt)
-	return normalizeError(err)
+	if err != nil {
+		return normalizeError(err)
+	}
+	return t.applyControlledLotMovement(ctx, value)
 }
 
 func (t *transaction) StockMovementsBySource(ctx context.Context, scope tenancy.Scope, sourceType, sourceID string) ([]inventory.Movement, error) {
 	if err := t.ensureScope(ctx, scope); err != nil {
 		return nil, err
 	}
+	if err := t.ensureSaleSourceScope(ctx, scope, sourceType, sourceID); err != nil {
+		return nil, err
+	}
 	rows, err := t.tx.Query(ctx, `SELECT id, tenant_id, company_id, branch_id, warehouse_id,
 		product_id, source_type, source_id, quantity, occurred_at FROM inventory_stock_ledger
-		WHERE tenant_id=$1 AND company_id=$2 AND source_type=$3 AND source_id=$4 ORDER BY id`,
-		scope.TenantID, scope.CompanyID, sourceType, sourceID)
+		WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4 AND source_type=$5 AND source_id=$6 ORDER BY id`,
+		scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, sourceType, sourceID)
 	if err != nil {
 		return nil, normalizeError(err)
 	}
@@ -357,6 +612,9 @@ func (t *transaction) AppendCustomerLedgerEntry(ctx context.Context, value custo
 
 func (t *transaction) CustomerLedgerBySource(ctx context.Context, scope tenancy.Scope, sourceType, sourceID string) ([]customers.LedgerEntry, error) {
 	if err := t.ensureScope(ctx, scope); err != nil {
+		return nil, err
+	}
+	if err := t.ensureSaleSourceScope(ctx, scope, sourceType, sourceID); err != nil {
 		return nil, err
 	}
 	rows, err := t.tx.Query(ctx, `SELECT id, tenant_id, company_id, customer_id, source_type,
@@ -391,6 +649,9 @@ func (t *transaction) CreatePayment(ctx context.Context, value sales.Payment) er
 
 func (t *transaction) PaymentsBySale(ctx context.Context, scope tenancy.Scope, saleID string) ([]sales.Payment, error) {
 	if err := t.ensureScope(ctx, scope); err != nil {
+		return nil, err
+	}
+	if err := t.ensureSaleSourceScope(ctx, scope, string(sales.RecordSale), saleID); err != nil {
 		return nil, err
 	}
 	rows, err := t.tx.Query(ctx, `SELECT id, tenant_id, company_id, sale_id, account_id, method,
@@ -442,6 +703,9 @@ func (t *transaction) JournalBySource(ctx context.Context, scope tenancy.Scope, 
 	if err := t.ensureScope(ctx, scope); err != nil {
 		return finance.Journal{}, err
 	}
+	if err := t.ensureSaleSourceScope(ctx, scope, sourceType, sourceID); err != nil {
+		return finance.Journal{}, err
+	}
 	var value finance.Journal
 	err := t.tx.QueryRow(ctx, `SELECT id, tenant_id, company_id, source_type, source_id, currency,
 		occurred_at FROM journals WHERE tenant_id=$1 AND company_id=$2 AND source_type=$3 AND source_id=$4`,
@@ -467,6 +731,25 @@ func (t *transaction) JournalBySource(ctx context.Context, scope tenancy.Scope, 
 		return finance.Journal{}, normalizeError(err)
 	}
 	return value, nil
+}
+
+func (t *transaction) ensureSaleSourceScope(ctx context.Context, scope tenancy.Scope, sourceType, sourceID string) error {
+	if sourceType != string(sales.RecordSale) {
+		return sales.ErrNotFound
+	}
+	var exists bool
+	if err := t.tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM sales
+			WHERE tenant_id=$1 AND company_id=$2 AND branch_id=$3 AND warehouse_id=$4
+			  AND id=$5 AND record_type='SALE'
+		)`, scope.TenantID, scope.CompanyID, scope.BranchID, scope.WarehouseID, sourceID).Scan(&exists); err != nil {
+		return normalizeError(err)
+	}
+	if !exists {
+		return sales.ErrNotFound
+	}
+	return nil
 }
 
 func (t *transaction) AppendAuditEvent(ctx context.Context, value audit.Event) error {

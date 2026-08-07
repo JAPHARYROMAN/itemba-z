@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "status": "READY_FOR_PLATFORM_BINDING",
+  "alerts": [
+    { "id": "ALERT-AVAILABILITY", "signal": "service_availability", "severity": "critical", "runbook": "RB-IDENTITY" },
+    { "id": "ALERT-LATENCY", "signal": "request_latency", "severity": "warning", "runbook": "RB-DATABASE" },
+    { "id": "ALERT-ERROR-RATE", "signal": "request_error_rate", "severity": "critical", "runbook": "RB-DATABASE" },
+    { "id": "ALERT-DB-SATURATION", "signal": "database_saturation", "severity": "critical", "runbook": "RB-DATABASE" },
+    { "id": "ALERT-OUTBOX-LAG", "signal": "oldest_unpublished_outbox_age", "severity": "critical", "runbook": "RB-OUTBOX" },
+    { "id": "ALERT-FISCAL-BACKLOG", "signal": "fiscal_delivery_backlog", "severity": "critical", "runbook": "RB-FISCAL" },
+    { "id": "ALERT-PAYMENT-FAILURE", "signal": "payment_callback_failure_rate", "severity": "critical", "runbook": "RB-CALLBACK" },
+    { "id": "ALERT-SYNC-FAILURE", "signal": "mobile_sync_failure_rate", "severity": "warning", "runbook": "RB-DEVICE" },
+    { "id": "ALERT-RECONCILIATION", "signal": "unresolved_reconciliation_exception", "severity": "critical", "runbook": "RB-RECOVERY" },
+    { "id": "ALERT-BACKUP", "signal": "backup_or_restore_verification_failure", "severity": "critical", "runbook": "RB-RECOVERY" },
+    { "id": "ALERT-MIGRATION", "signal": "database_migration_stalled", "severity": "critical", "runbook": "RB-MIGRATION" },
+    { "id": "ALERT-SECURITY", "signal": "suspected_data_breach", "severity": "critical", "runbook": "RB-BREACH" }
+  ]
+}

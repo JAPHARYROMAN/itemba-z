@@ -66,6 +66,10 @@ class StatusPill extends StatelessWidget {
         strings.t('requiresReview'),
         const Color(0xFFB54708),
       ),
+      SyncStatus.reconciliationRequired => (
+        strings.t('reconciliationRequired'),
+        const Color(0xFFB54708),
+      ),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
