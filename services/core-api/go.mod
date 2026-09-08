@@ -3,8 +3,8 @@ module github.com/itemba-z/itemba-z/services/core-api
 go 1.26.5
 
 require (
-	github.com/coreos/go-oidc/v3 v3.20.0
-	github.com/jackc/pgx/v5 v5.9.2
+	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/jackc/pgx/v5 v5.10.0
 )
 
 require (
